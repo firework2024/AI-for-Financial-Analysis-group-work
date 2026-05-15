@@ -1,0 +1,643 @@
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Bot, User, Copy, RefreshCcw, Trash2, Download, ExternalLink, Link2 } from 'lucide-react';
+import { normalizeMarkdown } from '../utils/markdown';
+import { v4 as uuidv4 } from 'uuid';
+import clsx from 'clsx';
+import { InlineChart } from './InlineChart';
+import { SmartChartRenderer, parseSmartChartBlocks, stripSmartChartTags } from './SmartChart';
+import { ThinkingProcess } from './thinking';
+import { ReportView } from './report';
+import { apiClient } from '../api/client';
+import { useStore } from '../store/useStore';
+import type { ChartType, ThinkingStep, ReportIR, EvidenceItem } from '../types/index';
+
+const chartKeywords = ['trend', 'chart', 'kline', 'k-line', '走势', '趋势', '图表'];
+const STOPPED_GENERATION_MESSAGE = '已停止生成，保留已完成的结果。';
+
+const shouldGenerateChart = async (
+  query: string,
+  currentTicker?: string | null,
+): Promise<{ tickers: string[]; chartType: string | null }> => {
+  try {
+    const response = await apiClient.detectChartType(query, currentTicker || undefined);
+    const apiCandidates = Array.isArray(response?.ticker_candidates)
+      ? response.ticker_candidates.map((value: unknown) => String(value))
+      : [];
+    const resolvedTicker = typeof response?.resolved_ticker === 'string' && response.resolved_ticker.trim()
+      ? [response.resolved_ticker]
+      : [];
+    const localCandidates = extractTickers(query);
+    const contextual = currentTicker ? [currentTicker] : [];
+    const merged = mergeTickerCandidates(apiCandidates, resolvedTicker, localCandidates, contextual);
+
+    if (response.success && response.should_generate) {
+      return {
+        tickers: merged,
+        chartType: response.chart_type || 'line',
+      };
+    }
+  } catch {
+    console.error('Chart detection failed');
+  }
+
+  const lowerQuery = query.toLowerCase();
+  const hasChartKeyword = chartKeywords.some((keyword) => lowerQuery.includes(keyword));
+  if (!hasChartKeyword) return { tickers: [], chartType: null };
+
+  const localCandidates = extractTickers(query);
+  const contextual = currentTicker ? [currentTicker] : [];
+  return { tickers: mergeTickerCandidates(localCandidates, contextual), chartType: 'line' };
+};
+
+const TICKER_STOPWORDS = new Set([
+  'A', 'I', 'AM', 'PM', 'US', 'UK', 'AI', 'CEO', 'IPO', 'ETF', 'VS',
+  'PE', 'EPS', 'MACD', 'RSI', 'KDJ', 'GDP', 'CPI', 'PPI', 'FOMC',
+  'WITH', 'VIEW', 'FROM', 'FOR', 'OVER', 'NEWS', 'WHAT', 'WHEN', 'WHERE',
+  'WHY', 'THIS', 'THAT', 'THE', 'AND', 'ARE', 'WAS', 'WERE',
+]);
+
+const MAX_AUTO_CHART_TICKERS = 3;
+const TICKER_PATTERN = /^[A-Z0-9^][A-Z0-9.^=-]{0,19}$/;
+
+const mergeTickerCandidates = (...sources: Array<string[] | undefined>): string[] => {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    for (const raw of source ?? []) {
+      const ticker = String(raw || '').trim().toUpperCase();
+      if (!ticker || seen.has(ticker)) continue;
+      if (TICKER_STOPWORDS.has(ticker)) continue;
+      if (!TICKER_PATTERN.test(ticker)) continue;
+      seen.add(ticker);
+      merged.push(ticker);
+      if (merged.length >= MAX_AUTO_CHART_TICKERS) return merged;
+    }
+  }
+  return merged;
+};
+
+const extractTickers = (text: string): string[] => {
+  if (!text || !text.trim()) return [];
+
+  const seen = new Set<string>();
+  const tickers: string[] = [];
+  const addTicker = (raw: string) => {
+    const symbol = String(raw || '').trim().toUpperCase();
+    if (!symbol || seen.has(symbol)) return;
+    if (symbol.length > 20 || /\s/.test(symbol)) return;
+    seen.add(symbol);
+    tickers.push(symbol);
+  };
+
+  for (const match of text.matchAll(/\^([A-Za-z]{1,8})\b/g)) {
+    addTicker(`^${match[1]}`);
+  }
+  for (const match of text.matchAll(/\b(\d{5,6}\.(?:SS|SZ|BJ|HK))\b/gi)) {
+    addTicker(match[1]);
+  }
+  for (const match of text.matchAll(/\b([A-Za-z]{1,8}-[A-Za-z]{2,5})\b/g)) {
+    addTicker(match[1]);
+  }
+  for (const match of text.matchAll(/\b([A-Za-z]{1,4}=F)\b/g)) {
+    addTicker(match[1]);
+  }
+  for (const match of text.matchAll(/\$([A-Za-z]{1,6})\b/g)) {
+    addTicker(match[1]);
+  }
+  for (const match of text.matchAll(/\b([A-Za-z]{1,6}[.-][A-Za-z]{1,4})\b/g)) {
+    addTicker(match[1]);
+  }
+
+  // Plain words: only accept user-explicit uppercase tokens (e.g. AAPL, TSLA).
+  const alphaTokens = text.match(/\b[A-Za-z]{1,6}\b/g) ?? [];
+  for (const token of alphaTokens) {
+    if (token !== token.toUpperCase()) continue;
+    const upper = token.toUpperCase();
+    if (TICKER_STOPWORDS.has(upper)) continue;
+    addTicker(upper);
+  }
+
+  return tickers.slice(0, MAX_AUTO_CHART_TICKERS);
+};
+
+export const ChatList: React.FC = () => {
+  const {
+    messages,
+    isChatLoading,
+    statusMessage,
+    statusSince,
+    executionProgress,
+    currentStep,
+    removeMessage,
+    setStatus,
+    setLoading,
+    setTicker,
+    addMessage,
+    updateMessage,
+  } = useStore();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [elapsed, setElapsed] = useState<string>('0.0');
+  const showExecutionBanner = isChatLoading
+    || statusMessage === STOPPED_GENERATION_MESSAGE
+    || currentStep === '已停止生成';
+
+  // 只滚动聊天容器本身，避免整页被拉走
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [messages, isChatLoading, showExecutionBanner]);
+
+  // 动态计时
+  useEffect(() => {
+    if (!statusSince) {
+      setElapsed('0.0');
+      return;
+    }
+    const timer = setInterval(() => {
+      const delta = (Date.now() - statusSince) / 1000;
+      setElapsed(delta.toFixed(1));
+    }, 200);
+    return () => clearInterval(timer);
+  }, [statusSince]);
+
+  const findNearestUserQuery = (index: number): string | null => {
+    const before = [...messages.slice(0, index)].reverse().find((m) => m.role === 'user');
+    if (before?.content?.trim()) return before.content.trim();
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    return lastUser?.content?.trim() || null;
+  };
+
+  const handleRetry = async (messageId: string) => {
+    if (isChatLoading) return;
+
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const originalMsg = messages[idx];
+    const query = findNearestUserQuery(idx);
+    if (!query) {
+      setStatus('No user query found to retry');
+      setTimeout(() => setStatus(null), 1500);
+      return;
+    }
+
+    setLoading(true);
+    setStatus('Retrying request...');
+    updateMessage(messageId, { isLoading: true, content: '' });
+
+    try {
+      const response = await apiClient.sendMessage(query, undefined, {
+        output_mode: 'chat',
+        confirmation_mode: 'skip',
+      });
+
+      const chartInfo = await shouldGenerateChart(query, response.current_focus ?? null);
+      const tickerToChart = chartInfo.tickers[0] || null;
+      const evidencePool = (response as any).evidence_pool ?? response.data?.evidence_pool;
+
+      let responseContent = typeof response.response === 'string'
+        ? response.response
+        : JSON.stringify(response.response, null, 2);
+      const markerRegex = /\[CHART:([A-Z0-9.^=-]+):([a-z]+)\]/g;
+      const existingTickers = new Set(
+        Array.from(responseContent.matchAll(markerRegex)).map((match) => match[1])
+      );
+      const tickers = chartInfo.tickers.length ? chartInfo.tickers : extractTickers(query);
+      const forceMulti = tickers.length > 1;
+      if (chartInfo.chartType || forceMulti) {
+        const targetTickers = tickers.slice(0, MAX_AUTO_CHART_TICKERS);
+        const missingTickers = targetTickers.filter((ticker) => !existingTickers.has(ticker));
+        if (missingTickers.length > 0) {
+          const chartType = forceMulti ? 'line' : (chartInfo.chartType || 'line');
+          missingTickers.forEach((ticker) => {
+            responseContent += `
+
+[CHART:${ticker}:${chartType}]`;
+          });
+        }
+      }
+
+
+      updateMessage(messageId, {
+        content: responseContent,
+        timestamp: Date.now(),
+        intent: response.intent,
+        relatedTicker: response.current_focus || tickerToChart || undefined,
+        thinking: response.thinking,
+        data_origin: response.data?.data_origin,
+        as_of: response.data?.as_of ?? null,
+        fallback_used: response.data?.fallback_used,
+        tried_sources: response.data?.tried_sources,
+        evidence_pool: evidencePool,
+        report: response.report,  // Phase 2: 深度研报数据
+        isLoading: false,
+      });
+
+      const elapsedSeconds =
+        (response.thinking_elapsed_seconds ?? (response.response_time_ms != null ? response.response_time_ms / 1000 : 0)).toFixed(1);
+      setStatus(`Completed in ${elapsedSeconds}s`);
+
+      if (response.current_focus || tickerToChart) {
+        setTicker(response.current_focus || tickerToChart);
+      }
+    } catch {
+      updateMessage(messageId, {
+        content: originalMsg.content,
+        isLoading: false,
+      });
+      addMessage({
+        id: uuidv4(),
+        role: 'system',
+        content: 'Retry failed. Please confirm the backend service is running.',
+        timestamp: Date.now(),
+      });
+      setStatus('Retry failed');
+    } finally {
+      setLoading(false);
+      setTimeout(() => setStatus(null), 2000);
+    }
+  };
+
+  return (
+    <div
+      id="chat-scroll-container"
+      ref={containerRef}
+      className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6"
+    >
+      {messages.map((msg) => (
+        <div
+          key={msg.id}
+          className={clsx(
+            "flex w-full animate-slide-up",
+            msg.role === 'user' ? "justify-end" : "justify-start"
+          )}
+        >
+          <div className={clsx(
+            "flex max-w-[85%] md:max-w-[75%] lg:max-w-[65%] xl:max-w-[55%]",
+            msg.role === 'user' ? "flex-row-reverse" : "flex-row"
+          )}>
+            {/* 头像 */}
+            <div className={clsx(
+              "flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mx-2",
+              msg.role === 'user' ? "bg-fin-primary text-white" : "bg-fin-panel border border-fin-border text-fin-primary"
+            )}>
+              {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+            </div>
+
+            {/* 气泡 */}
+            <div className={clsx(
+              "p-4 rounded-xl text-sm leading-relaxed shadow-sm",
+              msg.role === 'user'
+                ? "bg-fin-hover text-fin-text rounded-tr-sm"
+                : "bg-fin-panel border border-fin-border text-fin-text rounded-tl-sm relative overflow-visible"
+            )}>
+              {msg.role === 'user' ? (
+                msg.content
+              ) : (
+                <>
+                  {msg.isLoading ? (
+                    // 加载中：如果有内容则显示流式文本，否则显示加载动画
+                    msg.content ? (
+                      <MessageWithChart content={msg.content} />
+                    ) : (
+                      <div className="py-4 flex items-center justify-start">
+                        <LoadingDots />
+                      </div>
+                    )
+                  ) : msg.report ? (
+                    // 完成且有报告：显示报告卡片
+                    <ReportView report={msg.report} />
+                  ) : (
+                    // 完成无报告：显示普通文本
+                    <MessageWithChart content={msg.content} />
+                  )}
+                  {msg.evidence_pool && msg.evidence_pool.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-fin-border/60 bg-fin-bg/40 px-3 py-2">
+                      <div className="text-[11px] text-fin-muted mb-2">Evidence ({msg.evidence_pool.length})</div>
+                      <div className="flex flex-wrap gap-2">
+                        {msg.evidence_pool.map((ev: EvidenceItem, idx: number) => {
+                          const label = ev.title || ev.source || ev.url || `Source ${idx + 1}`;
+                          if (ev.url) {
+                            return (
+                              <SourceLink key={`${ev.url}-${idx}`} href={ev.url} label={label} />
+                            );
+                          }
+                          return (
+                            <span key={`ev-${idx}`} className="px-2 py-1 rounded-full border border-fin-border/70 bg-fin-panel text-[11px] text-fin-text">
+                              {label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {msg.data_origin && (
+                    <div className="mt-2 text-[11px] text-fin-muted flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full border border-fin-border/60 bg-fin-bg/60">
+                        来源: {msg.data_origin} {msg.fallback_used ? '(兜底)' : ''}
+                      </span>
+                      {msg.as_of && <span className="px-2 py-0.5 rounded-full border border-fin-border/60 bg-fin-bg/60">截至: {msg.as_of}</span>}
+                      {msg.tried_sources && msg.tried_sources.length > 0 && (
+                        <span className="text-2xs text-fin-muted/70">
+                          尝试: {msg.tried_sources.join(' → ')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {msg.thinking && msg.thinking.length > 0 && (
+                    <ThinkingProcess thinking={msg.thinking} />
+                  )}
+                  <MessageActions
+                    messageId={msg.id}
+                    content={msg.content}
+                    thinking={msg.thinking}
+                    report={msg.report}
+                    onRetry={() => handleRetry(msg.id)}
+                    onDelete={() => removeMessage(msg.id)}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Loading Indicator */}
+      {showExecutionBanner && (
+        <div className="flex w-full justify-start animate-fade-in">
+          <div className="ml-12 rounded-xl border border-fin-border/60 bg-fin-panel/60 px-3 py-2 shadow-sm min-w-[280px] max-w-[420px]">
+            <div className="flex items-center gap-2">
+              <div className="flex space-x-1">
+                <div className="w-2 h-2 bg-fin-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-fin-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-fin-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="text-xs text-fin-muted">
+                {statusMessage === STOPPED_GENERATION_MESSAGE
+                  ? '本次生成已停止（结果已保留）'
+                  : statusMessage || 'Analyzing...'}（用时 {elapsed}s）
+              </span>
+            </div>
+            <div className="mt-2">
+              <div className="h-1.5 rounded-full bg-fin-border/70 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-fin-primary transition-all duration-300"
+                  style={{ width: `${Math.max(0, Math.min(100, executionProgress ?? 0))}%` }}
+                />
+              </div>
+              <div className="mt-1 flex items-center justify-between text-2xs text-fin-muted">
+                <span className="truncate">{currentStep || 'Preparing execution...'}</span>
+                <span>{Math.round(executionProgress ?? 0)}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div ref={messagesEndRef} />
+    </div>
+  );
+};
+
+// 支持图表的消息组件
+const MessageWithChart: React.FC<{ content: string }> = ({ content }) => {
+  const [chartData, setChartData] = useState<Array<{ ticker: string; chartType: ChartType; summary: string }>>([]);
+
+  // Step 1: Extract smart chart blocks (before Markdown rendering)
+  const smartChartBlocks = useMemo(() => parseSmartChartBlocks(content), [content]);
+
+  useEffect(() => {
+    const matches = Array.from(content.matchAll(/\[CHART:([A-Z0-9.^=-]+):([a-z]+)\]/g));
+    if (matches.length === 0) {
+      setChartData([]);
+      return;
+    }
+    const validChartTypes: ChartType[] = ['line', 'candlestick', 'pie', 'bar', 'tree', 'area', 'scatter', 'heatmap'];
+    const seen = new Set<string>();
+    const nextData: Array<{ ticker: string; chartType: ChartType; summary: string }> = [];
+    matches.forEach((match) => {
+      const ticker = match[1];
+      const chartTypeStr = match[2];
+      const chartType = (validChartTypes.includes(chartTypeStr as ChartType) ? chartTypeStr : 'line') as ChartType;
+      const key = `${ticker}-${chartType}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      nextData.push({ ticker, chartType, summary: '' });
+    });
+    setChartData(nextData);
+  }, [content]);
+
+  const handleChartDataReady = (ticker: string, summary: string) => {
+    setChartData((prev) => prev.map((item) => (item.ticker === ticker ? { ...item, summary } : item)));
+    sendChartDataToBackend(ticker, summary);
+  };
+
+  const sendChartDataToBackend = async (ticker: string, summary: string) => {
+    try {
+      await apiClient.addChartData(ticker, summary);
+    } catch (err) {
+      console.error('Chart data upload failed:', err);
+    }
+  };
+
+  // Step 2: Clean text — remove both [CHART:] and <chart>/<chart_ref> tags
+  const textContent = stripSmartChartTags(
+    content.replace(/\[CHART:[^\]]+\]/g, '')
+  );
+
+  return (
+    <div className="prose prose-invert prose-sm max-w-none">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => (
+            <SourceLink href={href || ''} label={children} />
+          ),
+        }}
+      >
+        {normalizeMarkdown(textContent)}
+      </ReactMarkdown>
+      {/* Existing InlineChart rendering (API-fetched K-line data) */}
+      {chartData.map((chart) => (
+        <InlineChart
+          key={`${chart.ticker}-${chart.chartType}`}
+          ticker={chart.ticker}
+          chartType={chart.chartType}
+          onDataReady={(_data, summary) => handleChartDataReady(chart.ticker, summary)}
+        />
+      ))}
+      {/* G3 SmartChart rendering (LLM-generated or API-ref data) */}
+      {smartChartBlocks.map((block, idx) => (
+        <SmartChartRenderer key={`smart-${idx}-${block.type}-${block.title}`} block={block} />
+      ))}
+    </div>
+  );
+};
+
+const SourceLink: React.FC<{ href: string; label: React.ReactNode }> = ({ href, label }) => {
+  const urlMeta = useMemo(() => {
+    try {
+      const url = new URL(href);
+      return {
+        domain: url.hostname.replace(/^www\./, ''),
+      };
+    } catch {
+      return { domain: '' };
+    }
+  }, [href]);
+
+  const stringLabel = Array.isArray(label)
+    ? label.map((node) => (typeof node === 'string' ? node : '')).join('')
+    : typeof label === 'string'
+      ? label
+      : '';
+
+  const displayText =
+    stringLabel && stringLabel !== href
+      ? stringLabel
+      : urlMeta.domain || '来源链接';
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-fin-border/70 bg-fin-bg hover:border-fin-primary/80 hover:text-fin-primary transition text-fin-text no-underline"
+      title={href}
+    >
+      {urlMeta.domain ? <Link2 size={14} /> : <ExternalLink size={14} />}
+      <span className="truncate max-w-[160px]">{displayText}</span>
+      {urlMeta.domain && (
+        <span className="text-2xs text-fin-muted/70">({urlMeta.domain})</span>
+      )}
+    </a>
+  );
+};
+
+const MessageActions: React.FC<{
+  messageId: string;
+  content: string;
+  thinking?: ThinkingStep[];
+  report?: ReportIR;
+  onRetry: () => void;
+  onDelete: () => void;
+}> = ({ content, thinking, report, onRetry, onDelete }) => {
+  const buildTraceMarkdown = () => {
+    const lines: string[] = [];
+
+    if (report) {
+      lines.push(`# Report: ${report.title || report.ticker}`);
+      lines.push(`Ticker: ${report.ticker}`);
+      if (report.summary) {
+        lines.push('');
+        lines.push('## Summary');
+        lines.push(report.summary);
+      }
+    }
+
+    if (content) {
+      lines.push('');
+      lines.push('## Assistant Response');
+      lines.push(content);
+    }
+
+    if (thinking && thinking.length > 0) {
+      lines.push('');
+      lines.push('## Reasoning Trace');
+      thinking.forEach((step, idx) => {
+        lines.push('');
+        lines.push(`### ${idx + 1}. ${step.stage}`);
+        if (step.message) {
+          lines.push(step.message);
+        }
+        if (step.result) {
+          lines.push('```json');
+          lines.push(JSON.stringify(step.result, null, 2));
+          lines.push('```');
+        }
+        if (step.timestamp) {
+          lines.push(`Time: ${new Date(step.timestamp).toLocaleString()}`);
+        }
+      });
+    }
+
+    if (report?.citations?.length) {
+      lines.push('');
+      lines.push('## Sources');
+      report.citations.forEach((citation) => {
+        lines.push(`- [${citation.title || citation.source_id}](${citation.url}) (${citation.published_date || 'n/a'})`);
+        if (citation.snippet) {
+          lines.push(`  - ${citation.snippet}`);
+        }
+      });
+    }
+
+    return lines.filter((line) => line !== undefined).join('\n');
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch (e) {
+      console.error('Copy failed', e);
+    }
+  };
+
+  const handleExport = () => {
+    const payload = buildTraceMarkdown() || content;
+    const blob = new Blob([payload], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = report?.report_id ? `trace_${report.report_id}.md` : 'message.md';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="absolute bottom-0 right-2 translate-y-full flex items-center gap-3 text-fin-muted pointer-events-auto">
+      <button
+        className="p-1 rounded hover:text-fin-text"
+        title="复制"
+        onClick={handleCopy}
+      >
+        <Copy size={14} />
+      </button>
+      <button
+        className="p-1 rounded hover:text-fin-text"
+        title="重试"
+        onClick={onRetry}
+      >
+        <RefreshCcw size={14} />
+      </button>
+      <button
+        className="p-1 rounded hover:text-fin-text"
+        title="导出"
+        onClick={handleExport}
+      >
+        <Download size={14} />
+      </button>
+      <button
+        className="p-1 rounded hover:text-fin-text"
+        title="删除"
+        onClick={onDelete}
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+};
+
+const LoadingDots: React.FC = () => (
+  <div className="flex space-x-2">
+    <span className="w-2 h-2 rounded-full bg-fin-muted animate-bounce" style={{ animationDelay: '0ms' }} />
+    <span className="w-2 h-2 rounded-full bg-fin-muted animate-bounce" style={{ animationDelay: '150ms' }} />
+    <span className="w-2 h-2 rounded-full bg-fin-muted animate-bounce" style={{ animationDelay: '300ms' }} />
+  </div>
+);
