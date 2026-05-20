@@ -125,6 +125,152 @@ FinSight项目介绍详见`readme_cn.md`
 - `backend/services/` — 执行服务 `execution_service.py`、预警调度 `alert_scheduler.py`
 - `backend/llm_config.py` — LLM 配置管理（端点轮询、失败冷却、速率限制）
 
+### FinSight 快速开始
+
+本节面向从零开始搭建 FinSight 的开发者，涵盖克隆后的准备工作、启动/关闭方式以及推荐的上手路径。
+
+#### 克隆后的准备工作
+
+**1. Python 虚拟环境与后端依赖**
+
+```bash
+cd FinSight
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# Linux/Mac
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+**2. 前端依赖**
+
+```bash
+cd frontend
+pnpm install
+cd ..
+```
+
+**3. 配置环境变量**
+
+FinSight 有两份环境配置文件：
+
+| 文件 | 用途 | 关键配置项 |
+|------|------|-----------|
+| `.env.server` | 后端运行时配置 | LLM API Key、数据库、数据源 API Key、RAG 模式 |
+| `.env` | 前端编译期配置 + 部分后端回退 | SEC User-Agent、RAG 设置等 |
+
+```bash
+# 从模板创建（如果不存在）
+copy .env.server.example .env.server
+```
+
+**必填配置**（否则应用无法启动）：
+
+```ini
+# .env.server — LLM API（以 MiniMax-M2.7 为例）
+OPENAI_COMPATIBLE_API_KEY=sk-xxx
+OPENAI_COMPATIBLE_API_BASE=https://api.minimaxi.com/v1
+OPENAI_COMPATIBLE_MODEL=MiniMax-M2.7
+```
+
+**建议修改的配置**（当前已修改，参见 Issue 001）：
+
+```ini
+# .env.server — 将 RAG 嵌入模型改为 hash（开发环境无需下载 2.2GB 的 bge-m3）
+RAG_EMBEDDING=hash
+```
+
+**推荐注册的免费 API Key**（仅推荐，不完成不影响使用，参见 Issue 002）：
+
+| API | 注册地址 | 用途 | 没有的影响 |
+|-----|---------|------|-----------|
+| Finnhub | `finnhub.io` | 同行对比、财务数据回退 | 同行 Tab 可能无数据 |
+| FMP | `financialmodelingprep.com` | 行业权重、持仓数据 | 部分指标回退链断裂 |
+
+**4. 验证 SEC User-Agent（可选）**
+
+```ini
+# .env — 确保格式为"应用名 (邮箱)"
+SEC_USER_AGENT=FinSight (finsight@example.com)
+```
+
+#### 启动与关闭 FinSight
+
+**启动后端**（需要先激活虚拟环境）：
+
+```bash
+# 在 FinSight/ 目录下
+python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+> `--reload` 可在代码变更时自动重启，开发阶段推荐开启。
+
+**启动前端**（新开一个终端）：
+
+```bash
+cd frontend
+pnpm dev
+# 前端地址: http://localhost:5173
+```
+
+启动后访问 `http://localhost:5173` 即可使用。
+
+**关闭服务**：
+
+```bash
+# 关闭前端：在终端按 Ctrl+C 或关闭终端窗口
+# 关闭后端：在终端按 Ctrl+C
+
+# 如果端口被占用，查找并杀掉进程：
+# netstat -ano | findstr :8000     Windows
+# lsof -i :8000                    Linux/Mac
+# taskkill /PID <PID> /F            Windows
+# kill -9 <PID>                     Linux/Mac
+```
+
+#### 推荐上手路径
+
+建议先用三十分钟阅读FinSight文件夹里的`readme_cn.md`，然后上手实操。
+
+实操请按照以下顺序逐步熟悉 FinSight，每步验证通过后再进入下一步：
+
+**Step 1 — 确认基础可用性**
+
+1. 启动后端和前端
+2. 在 Chat 对话框发送 `AAPL 当前股价`，确认能收到正常响应
+3. 如果 Chat 在 "Executing completed" 后卡住超过 30 秒，检查 `.env.server` 中 `RAG_EMBEDDING=hash` 是否生效（参见 Issue 001）
+
+**Step 2 — 探索 Dashboard**
+
+1. 搜索 `GOOGL` 或 `AAPL` 进入 Dashboard
+2. 依次点击各 Tab：总览、财务、技术、新闻、同行、研究
+3. 如果技术面/财务报表/同行对比 Tab 报错或数据空白：
+   - 后端已应用超时修复（参见 Issue 002）
+   - 若仍失败，需注册 Finnhub/FMP API Key
+4. Research Tab → 点击"生成深度报告"，确认不再报 `missing done event`（参见 Issue 003）
+
+**Step 3 — 深入 LLM 配置**
+
+理解 `backend/llm_config.py` 的工作原理：
+- 支持多个 LLM 端点轮询与失败冷却
+- 可在 `.env.server` 中通过 `LLM_ENDPOINT_DEFAULT_COOLDOWN_SEC` 控制冷却时间
+- `LANGGRAPH_PLANNER_MODE=llm` 和 `LANGGRAPH_SYNTHESIZE_MODE=llm` 分别控制规划器和合成器使用 LLM 模式
+
+**Step 4 — 理解 LangGraph 流水线**
+
+阅读后端核心文件，跟踪一次完整的请求处理流程：
+
+```
+backend/graph/runner.py          → 图构建入口
+backend/graph/nodes/understand_request.py → 意图理解
+backend/graph/nodes/planner.py   → 规划执行步骤
+backend/graph/nodes/execute_plan_stub.py → 并行执行 Agent
+backend/graph/nodes/synthesize.py → 多 Agent 结果合并
+backend/graph/nodes/confirmation_gate.py → 人工确认门控
+```
+
 ---
 
 ## Known Issues & Solutions
@@ -202,13 +348,13 @@ FinSight项目介绍详见`readme_cn.md`
   ```typescript
   // 增加变量
   let sawInterrupt = false;
-
+  
   // 包装 onInterrupt 回调
   onInterrupt: (data) => {
     sawInterrupt = true;
     callbacks.onInterrupt?.(data);
   };
-
+  
   // 修改结尾检查
   if (!sawDone && !sawError && !sawInterrupt) {
     wrappedOnError('Execution stream ended unexpectedly (missing done event)');
