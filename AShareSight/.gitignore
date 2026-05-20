@@ -1,0 +1,141 @@
+# --- Security & Credentials (CRITICAL) ---
+.env
+.env.*
+!.env.example
+!.env.server.example
+*.key
+*.pem
+*.cert
+*.pfx
+*.p12
+secrets.json
+user_config.json
+user_config_*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Testing & Coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# --- Virtual Environments ---
+venv/
+.venv/
+env/
+.env/
+
+# --- Node.js ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Editor & IDE ---
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Logs & Temp ---
+logs/
+*.log
+*.tmp
+.tmp*
+.tmp-*/
+temp/
+tmp/
+frontend/.tmp_*
+scripts/.tmp_*
+tmp_test_write.txt
+
+# --- Local Debug Screenshots ---
+desktop-welcome-check.png
+mobile-welcome-*.png
+welcome-dom-check.png
+rag-inspector-local-check.png
+*.bak
+
+# --- Auto-generated Reports ---
+docs/reports/
+
+# --- Lint / CI / Test Artifacts ---
+eslint_report.json
+eslint_remaining.json
+lint_output.txt
+scripts/test_*_output.json
+scripts/test_*_state.json
+scripts/test_*_report.json
+
+# --- Runtime Data ---
+data/langgraph/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.sqlite
+data/memory/*.json
+!data/memory/anonymous.json
+backend/data/*.sqlite
+backend/data/*.db
+backend/data/*.bak
+
+# --- Agentic Tools ---
+.antigravity/
+.cursor/
+.claude/
+
+# --- Windows reserved filenames ---
+nul
+NUL
+
+
+
+# oh-my-claudecode local config
+.omc/
+docs/DEPLOYMENT.md
+
+# Deploy scripts (contain server IP / sensitive paths, local-only)
+deploy.bat
+deploy*.bat
+deploy*.sh
+
+# --- OMX harness runtime state ---
+.omx/
+
+# --- Local UI audit screenshots (Playwright / manual) ---
+ui-audit-*.png
+ui-playwright-*.png
+
+# --- Conversation store runtime snapshot (not source) ---
+data/conversations.json
