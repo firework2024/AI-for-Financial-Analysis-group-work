@@ -1,0 +1,3 @@
+# Deprecated: keep this file only for backward compatibility.
+# Single source of truth is requirements.txt.
+-r requirements.txt

@@ -1,0 +1,83 @@
+name: Retrieval Nightly Benchmark
+
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  retrieval-nightly-postgres:
+    runs-on: ubuntu-latest
+    services:
+      pgvector:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify retrieval dependency versions
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+          import transformers
+
+          flag_ver = md.version("FlagEmbedding")
+          st_ver = md.version("sentence-transformers")
+          tf_ver = transformers.__version__
+          print(f"FlagEmbedding={flag_ver}")
+          print(f"sentence-transformers={st_ver}")
+          print(f"transformers={tf_ver}")
+
+          major = int(tf_ver.split(".")[0])
+          if major >= 5:
+              raise SystemExit("transformers major version must be <5 for FlagEmbedding compatibility")
+          PY
+
+      - name: Run nightly retrieval benchmark (postgres + drift gate)
+        env:
+          RAG_EMBEDDING: bge-m3
+          RAG_V2_VECTOR_DIM: "1024"
+          RAG_V2_POSTGRES_DSN: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          python - <<'PY'
+          from backend.rag.embedder import EmbeddingService
+          model = EmbeddingService().model_name
+          print(f"Nightly embedding backend: {model}")
+          if model == "hash":
+              raise SystemExit("Nightly must run with bge-m3, but got hash fallback.")
+          PY
+
+          python tests/retrieval_eval/run_retrieval_eval.py \
+            --backend postgres \
+            --postgres-dsn "$RAG_V2_POSTGRES_DSN" \
+            --gate \
+            --drift-gate \
+            --report-prefix nightly_pg \
+            --output-dir tests/retrieval_eval/reports/nightly
+
+      - name: Upload nightly retrieval reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-nightly-reports
+          path: tests/retrieval_eval/reports/nightly/
