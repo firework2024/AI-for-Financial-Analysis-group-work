@@ -1,0 +1,16 @@
+[project]
+name = "finagent"
+version = "0.1.0"
+description = "Annual-report centered financial analysis workflow for A-share companies."
+requires-python = ">=3.10"
+dependencies = [
+  "requests",
+  "pandas",
+  "PyMuPDF",
+  "rqdatac",
+  "openai",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
