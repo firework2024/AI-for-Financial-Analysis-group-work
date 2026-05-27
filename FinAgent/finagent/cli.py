@@ -21,15 +21,18 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     load_dotenv()
     args = build_parser().parse_args()
-    if args.command == "analyze":
-        result = run(
-            WorkflowOptions(
-                stock=args.stock,
-                as_of=args.as_of,
-                years=args.years,
-                output=args.output,
-                no_download_cache=args.no_download_cache,
+    try:
+        if args.command == "analyze":
+            result = run(
+                WorkflowOptions(
+                    stock=args.stock,
+                    as_of=args.as_of,
+                    years=args.years,
+                    output=args.output,
+                    no_download_cache=args.no_download_cache,
+                )
             )
-        )
-        print(f"Markdown report: {result['output_markdown']}")
-        print(f"JSON data: {result['output_json']}")
+            print(f"Markdown report: {result['output_markdown']}")
+            print(f"JSON data: {result['output_json']}")
+    except Exception as exc:
+        raise SystemExit(str(exc)) from exc

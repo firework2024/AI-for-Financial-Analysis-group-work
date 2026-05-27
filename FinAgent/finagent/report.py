@@ -9,6 +9,18 @@ from .fields import FIELD_MAP
 def render_markdown(result: dict[str, Any]) -> str:
     report = result["annual_report"]
     analysis = result["financial_analysis"]
+    reviewed_signals = analysis.get("reviewed_signals", [])
+    key_risk_lines = [f"- {item}" for item in analysis.get("key_risks", [])] or ["- 未识别到高优先级风险信号。"]
+    reviewed_signal_lines = [
+        "- [{severity}/{category}] {title}：{explanation} 证据：{evidence}".format(
+            severity=item.get("severity", ""),
+            category=item.get("category_cn") or item.get("category", ""),
+            title=item.get("title", ""),
+            explanation=item.get("explanation", ""),
+            evidence=item.get("evidence", ""),
+        )
+        for item in reviewed_signals[:8]
+    ] or ["- 未形成可展示的结构化审核信号。"]
     lines = [
         f"# {report.get('sec_name') or report['stock_code']} 年报智能体分析",
         "",
@@ -24,6 +36,12 @@ def render_markdown(result: dict[str, Any]) -> str:
         "",
         "### 消极信号",
         *[f"- {item}" for item in analysis["negative_signals"]],
+        "",
+        "### 关键风险",
+        *key_risk_lines,
+        "",
+        "### 审核后重点信号",
+        *reviewed_signal_lines,
         "",
         "### 数据说明",
         *[f"- {item}" for item in analysis["data_notes"]],
