@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
+import re
 from typing import Any
 
 from .env import get_env
@@ -25,8 +25,9 @@ def financial_signal_review_agent(
     model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
     prompt = _build_financial_prompt(framework_text, evidence, company_context)
     response = client.chat.completions.create(
-        model=model,
-        messages=[
+        **_chat_completion_kwargs(
+            model=model,
+            messages=[
             {
                 "role": "system",
                 "content": (
@@ -38,12 +39,12 @@ def financial_signal_review_agent(
                 ),
             },
             {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
-        response_format={"type": "json_object"},
+            ],
+            response_format={"type": "json_object"},
+        )
     )
-    content = response.choices[0].message.content or "{}"
-    data = json.loads(content)
+    content = _clean_model_text(response.choices[0].message.content or "{}")
+    data = json.loads(_extract_json_object(content))
     return _normalize_financial_analysis_output(data)
 
 
@@ -73,14 +74,95 @@ def investment_director_analysis(mda_text: str, financial_analysis: dict[str, An
     model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
     prompt = _build_prompt(mda_text, financial_analysis, company_context)
     response = client.chat.completions.create(
-        model=model,
-        messages=[
+        **_chat_completion_kwargs(
+            model=model,
+            messages=[
             {"role": "system", "content": "你是投资总监。请基于 MD&A 与财务数据解释经营表现，给出克制、可追溯的总结分析，不给买卖建议。"},
             {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
+            ],
+        )
     )
-    return response.choices[0].message.content or ""
+    return _clean_model_text(response.choices[0].message.content or "")
+
+
+def llm_text(system: str, user: str) -> str:
+    if not get_env("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is required for LLM text generation.")
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=get_env("OPENAI_API_KEY"),
+        base_url=get_env("OPENAI_BASE_URL") or None,
+        timeout=float(get_env("OPENAI_TIMEOUT", "1800")),
+    )
+    model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
+    response = client.chat.completions.create(
+        **_chat_completion_kwargs(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+    )
+    return _clean_model_text(response.choices[0].message.content or "")
+
+
+def llm_json(system: str, user: str) -> dict[str, Any]:
+    if not get_env("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is required for LLM JSON generation.")
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=get_env("OPENAI_API_KEY"),
+        base_url=get_env("OPENAI_BASE_URL") or None,
+        timeout=float(get_env("OPENAI_TIMEOUT", "1800")),
+    )
+    model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
+    response = client.chat.completions.create(
+        **_chat_completion_kwargs(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+        )
+    )
+    content = _clean_model_text(response.choices[0].message.content or "{}")
+    return json.loads(_extract_json_object(content))
+
+
+def _chat_completion_kwargs(*, model: str, messages: list[dict[str, str]], response_format: dict[str, str] | None = None) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": int(get_env("OPENAI_MAX_TOKENS", "2600")),
+    }
+    base_url = (get_env("OPENAI_BASE_URL") or "").lower()
+    if "moonshot" in base_url or "kimi" in model.lower():
+        kwargs["temperature"] = 1
+    if response_format is not None:
+        kwargs["response_format"] = response_format
+    return kwargs
+
+
+def _clean_model_text(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"^\s*```(?:json|markdown|md)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+    return cleaned.strip()
+
+
+def _extract_json_object(text: str) -> str:
+    cleaned = _clean_model_text(text)
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("LLM did not return a JSON object")
+    return cleaned[start : end + 1]
 
 
 def _build_prompt(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:

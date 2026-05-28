@@ -9,7 +9,12 @@ dependencies = [
   "PyMuPDF",
   "rqdatac",
   "openai",
+  "matplotlib",
 ]
+
+[tool.setuptools.packages.find]
+include = ["finagent*"]
+exclude = ["annual_reports*", "outputs*", "tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

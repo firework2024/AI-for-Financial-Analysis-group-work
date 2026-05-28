@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import os
 from typing import Any
 
 import pandas as pd
@@ -140,6 +141,19 @@ def _factor_date(rqdatac_module: Any, as_of: date) -> date:
 
 
 def _init_rqdata(rqdatac_module: Any) -> None:
+    user = os.getenv("RQ_USER")
+    password = os.getenv("RQ_PASSWORD")
+    host = os.getenv("RQ_HOST")
+    if user and password and host:
+        host_arg: Any = host
+        if ":" in host:
+            host_name, port = host.rsplit(":", 1)
+            try:
+                host_arg = (host_name, int(port))
+            except ValueError:
+                host_arg = host
+        _execute_rqdata_call("初始化米筐连接", rqdatac_module.init, user, password, host_arg)
+        return
     _execute_rqdata_call("初始化米筐连接", rqdatac_module.init)
 
 
