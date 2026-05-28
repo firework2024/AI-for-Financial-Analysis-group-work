@@ -5,14 +5,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .cninfo import default_as_of, download_report, latest_annual_report
+from .cninfo import default_as_of
 from .env import load_dotenv
-from .fallback import apply_financial_fallbacks
-from .financial_analysis import analyze_financials
-from .llm import investment_director_analysis
-from .pdf_text import extract_mda, extract_pdf_text
+from .fundamental_pipeline import run_fundamental_pipeline
 from .report import render_markdown, write_report
-from .rqdata_client import fetch_factor_fallbacks, fetch_financials, fetch_metric_factor_fallbacks
 
 
 @dataclass
@@ -23,49 +19,66 @@ class WorkflowOptions:
     output: str | None = None
     no_download_cache: bool = False
     workdir: str = "."
+    use_sina_text: bool = True
+
+
+def _log_step(step: str, input_summary: str = "", output_summary: str = "") -> None:
+    print(f"\n{'=' * 60}")
+    print(f"[STEP] {step}")
+    if input_summary:
+        print(f"[INPUT ] {input_summary}")
+    if output_summary:
+        print(f"[OUTPUT] {output_summary}")
+    print("=" * 60)
+
+
+def _log_dict(label: str, data: dict[str, Any]) -> None:
+    print(f"\n[{label}]")
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
 def run(options: WorkflowOptions) -> dict[str, Any]:
     load_dotenv()
     root = Path(options.workdir)
     as_of_date = default_as_of(options.as_of)
-    report = latest_annual_report(options.stock, as_of_date)
-    if report.report_year is None:
-        raise RuntimeError(f"无法从年报标题识别报告年份: {report.title}")
 
-    pdf_path = download_report(report, root / "annual_reports", use_cache=not options.no_download_cache)
-    full_text = extract_pdf_text(pdf_path)
-    mda = extract_mda(full_text)
-    fetched = fetch_financials(options.stock, report.report_year, options.years)
-    factor_values = fetch_factor_fallbacks(fetched.order_book_id, report.report_year, options.years, as_of_date)
-    metric_factor_values = fetch_metric_factor_fallbacks(fetched.order_book_id, report.report_year, options.years, as_of_date)
-    financial_data = apply_financial_fallbacks(fetched.rows, full_text, factor_values)
-    company_context = {
-        "stock_code": report.stock_code,
-        "sec_name": report.sec_name,
-        "report_year": report.report_year,
-        "order_book_id": fetched.order_book_id,
-        "quarters": fetched.quarters,
-    }
-    financial_analysis = analyze_financials(financial_data, metric_factor_values, company_context)
-    director = investment_director_analysis(mda.mda_text, financial_analysis, company_context)
+    _log_step(
+        "1/2 运行共享基本面管线",
+        f"stock={options.stock}, as_of={as_of_date}, use_sina_text={options.use_sina_text}",
+    )
+    pipeline_result = run_fundamental_pipeline(
+        stock=options.stock,
+        as_of=as_of_date,
+        years=options.years,
+        workdir=root,
+        no_download_cache=options.no_download_cache,
+        use_sina_text=options.use_sina_text,
+    )
+    result = pipeline_result.to_report_dict()
+    analysis = result["financial_analysis"]
+    report = result["annual_report"]
+    raw_signals = analysis.get("raw_signals", {})
+    print(f"  -> 公司简称: {report.get('sec_name', '')}")
+    print(f"  -> 标题: {report.get('title', '')}")
+    print(f"  -> 公告日期: {report.get('pub_date', '')}")
+    print(f"  -> 报告年份: {report.get('report_year', '')}")
+    print(f"  -> MD&A 提取置信度: {result['mda']['confidence']}")
+    print(f"  -> 结构化信号: {len(raw_signals.get('structured_signals', []))} 个")
+    print(f"  -> 组合信号: {len(raw_signals.get('compound_signals', []))} 个")
+    print(f"  -> 审核后信号: {len(analysis.get('reviewed_signals', []))} 个")
+    print(f"  -> 积极信号: {len(analysis.get('positive_signals', []))} 条")
+    print(f"  -> 消极信号: {len(analysis.get('negative_signals', []))} 条")
+    print(f"  -> 关键风险: {len(analysis.get('key_risks', []))} 条")
 
-    result = {
-        "annual_report": report.to_dict() | {"local_pdf": str(pdf_path)},
-        "mda": {
-            "confidence": mda.confidence,
-            "start_heading": mda.start_heading,
-            "end_heading": mda.end_heading,
-            "summary": mda.summary,
-        },
-        "financial_data": financial_data,
-        "financial_analysis": financial_analysis,
-        "investment_director": director,
-    }
-    output_path = Path(options.output) if options.output else root / "outputs" / f"{report.stock_code}_{report.report_year}_report.md"
+    _log_step("2/2 渲染报告并输出")
+    output_path = Path(options.output) if options.output else root / "outputs" / f"{options.stock}_{report['report_year']}_report.md"
     write_report(render_markdown(result), output_path)
     json_path = output_path.with_suffix(".json")
     json_path.write_text(json.dumps(_json_ready(result), ensure_ascii=False, indent=2), encoding="utf-8")
+    _log_step(
+        "2/2 渲染报告并输出",
+        output_summary=f"markdown={output_path}, json={json_path}",
+    )
     result["output_markdown"] = str(output_path)
     result["output_json"] = str(json_path)
     return result

@@ -24,6 +24,15 @@ def financial_signal_review_agent(
     )
     model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
     prompt = _build_financial_prompt(framework_text, evidence, company_context)
+
+    print(f"\n{'=' * 60}")
+    print("[LLM CALL] financial_signal_review_agent")
+    print(f"  -> model: {model}")
+    print(f"  -> prompt length: {len(prompt)} chars")
+    print("[PROMPT BEGIN]")
+    print(prompt)
+    print("[PROMPT END]")
+
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
@@ -43,8 +52,13 @@ def financial_signal_review_agent(
             response_format={"type": "json_object"},
         )
     )
-    content = _clean_model_text(response.choices[0].message.content or "{}")
-    data = json.loads(_extract_json_object(content))
+    content = response.choices[0].message.content or "{}"
+    print("[RESPONSE BEGIN]")
+    print(content)
+    print("[RESPONSE END]")
+    print("=" * 60)
+    cleaned_content = _clean_model_text(content)
+    data = json.loads(_extract_json_object(cleaned_content))
     return _normalize_financial_analysis_output(data)
 
 
@@ -63,6 +77,7 @@ def financial_analysis_agent(
 
 def investment_director_analysis(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
     if not get_env("OPENAI_API_KEY"):
+        print(f"\n[LLM SKIP] investment_director_analysis — 未配置 OPENAI_API_KEY，使用本地摘要")
         return _local_summary(mda_text, financial_analysis, company_context)
 
     from openai import OpenAI
@@ -73,6 +88,15 @@ def investment_director_analysis(mda_text: str, financial_analysis: dict[str, An
     )
     model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
     prompt = _build_prompt(mda_text, financial_analysis, company_context)
+
+    print(f"\n{'=' * 60}")
+    print("[LLM CALL] investment_director_analysis")
+    print(f"  -> model: {model}")
+    print(f"  -> prompt length: {len(prompt)} chars")
+    print("[PROMPT BEGIN]")
+    print(prompt)
+    print("[PROMPT END]")
+
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
@@ -82,7 +106,12 @@ def investment_director_analysis(mda_text: str, financial_analysis: dict[str, An
             ],
         )
     )
-    return _clean_model_text(response.choices[0].message.content or "")
+    content = response.choices[0].message.content or ""
+    print("[RESPONSE BEGIN]")
+    print(content)
+    print("[RESPONSE END]")
+    print("=" * 60)
+    return _clean_model_text(content)
 
 
 def llm_text(system: str, user: str) -> str:

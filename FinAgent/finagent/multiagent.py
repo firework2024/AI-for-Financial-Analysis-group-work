@@ -10,6 +10,7 @@ import pandas as pd
 
 from .cninfo import default_as_of, normalize_stock_code, to_order_book_id
 from .env import get_env, load_dotenv
+from .fundamental_pipeline import FundamentalPipelineResult, run_fundamental_pipeline
 from .llm import llm_json, llm_text
 from .rqdata_client import _init_rqdata
 
@@ -559,6 +560,9 @@ def section_writer_agents(*, plan: dict[str, Any], data: dict[str, Any], charts:
     for spec in specs:
         name = str(spec.get("name") or "分析章节")
         agent = str(spec.get("agent") or "section_writer")
+        if agent == "fundamental_writer":
+            sections[name] = _write_fundamental_section(section_name=name, data=data, charts=charts)
+            continue
         prompt_data = _compact_data_for_prompt(data, charts, name)
         sections[name] = _write_section(agent=agent, section_name=name, data=prompt_data)
     return sections
@@ -766,6 +770,144 @@ def _write_section(*, agent: str, section_name: str, data: dict[str, Any]) -> st
         )
     except Exception as exc:
         return f"{agent} 章节生成失败，已保留数据摘要。错误：{exc}"
+
+
+def _write_fundamental_section(*, section_name: str, data: dict[str, Any], charts: dict[str, str]) -> str:
+    stock_code = str(data.get("order_book_id") or "").split(".")[0]
+    as_of_text = str(data.get("end_date") or "")
+    prompt_data = _compact_data_for_prompt(data, charts, section_name)
+    if not stock_code or not as_of_text:
+        return _write_section(agent="fundamental_writer", section_name=section_name, data=prompt_data)
+
+    try:
+        pipeline_result = run_fundamental_pipeline(
+            stock=stock_code,
+            as_of=date.fromisoformat(as_of_text),
+            years=3,
+            workdir=_infer_workdir_from_data(data),
+            no_download_cache=False,
+            use_sina_text=True,
+        )
+        return _render_fundamental_section(section_name=section_name, pipeline_result=pipeline_result, data=data)
+    except Exception as exc:
+        prompt_data["fallback_reason"] = f"fundamental pipeline failed: {type(exc).__name__}: {exc}"
+        return _write_section(agent="fundamental_writer", section_name=section_name, data=prompt_data)
+
+
+def _render_fundamental_section(*, section_name: str, pipeline_result: FundamentalPipelineResult, data: dict[str, Any]) -> str:
+    report = pipeline_result.annual_report
+    analysis = pipeline_result.financial_analysis
+    stock_code = str(report.get("stock_code") or data.get("order_book_id") or "")
+    sec_name = str(report.get("sec_name") or stock_code)
+    report_year = report.get("report_year") or "最新"
+    lines = [
+        f"{sec_name}（{stock_code}）{report_year} 年度报告的基本面与估值章节，基于新浪财经年报文本、MD&A 提取结果与米筐年报口径财务数据生成。",
+        "",
+        "### 财务信号概览",
+    ]
+
+    positive_signals = _string_list(analysis.get("positive_signals"))[:4]
+    negative_signals = _string_list(analysis.get("negative_signals"))[:6]
+    key_risks = _string_list(analysis.get("key_risks"))[:5]
+    reviewed_signals = analysis.get("reviewed_signals") if isinstance(analysis.get("reviewed_signals"), list) else []
+
+    if positive_signals:
+        lines.append("积极信号：")
+        lines.extend(f"- {item}" for item in positive_signals)
+        lines.append("")
+    if negative_signals:
+        lines.append("消极信号：")
+        lines.extend(f"- {item}" for item in negative_signals)
+        lines.append("")
+    if key_risks:
+        lines.append("关键风险：")
+        lines.extend(f"- {item}" for item in key_risks)
+        lines.append("")
+    if reviewed_signals:
+        lines.append("审核后重点信号：")
+        lines.extend(_render_reviewed_signal_lines(reviewed_signals[:6]))
+        lines.append("")
+
+    lines.extend(
+        [
+            "### 经营解读",
+            pipeline_result.investment_director or f"{sec_name}（{stock_code}）当前未生成投资总监总结。",
+            "",
+            "### 数据说明",
+            f"- 年报来源：新浪财经纯文本（{report.get('title', '')}）。",
+            f"- MD&A 提取置信度：{pipeline_result.mda.get('confidence', 'unknown')}。",
+        ]
+    )
+    lines.extend(f"- {item}" for item in _string_list(analysis.get("data_notes")))
+
+    valuation_lines = _valuation_observation_lines(data)
+    if valuation_lines:
+        lines.extend(["", "### 估值观察"])
+        lines.extend(f"- {item}" for item in valuation_lines)
+
+    return "\n".join(lines).strip()
+
+
+def _render_reviewed_signal_lines(items: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        severity = str(item.get("severity") or "")
+        category = str(item.get("category_cn") or item.get("category") or "")
+        title = str(item.get("title") or "").strip()
+        explanation = str(item.get("explanation") or "").strip()
+        evidence = str(item.get("evidence") or "").strip()
+        text = f"- [{severity}/{category}] {title}"
+        if explanation:
+            text += f"：{explanation}"
+        if evidence:
+            text += f" 证据：{evidence}"
+        lines.append(text)
+    return lines
+
+
+def _valuation_observation_lines(data: dict[str, Any]) -> list[str]:
+    factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
+    if not factor:
+        return []
+
+    lines: list[str] = []
+    pe = _float(factor.get("pe_ratio_ttm"))
+    pb = _float(factor.get("pb_ratio_ttm"))
+    ps = _float(factor.get("ps_ratio_ttm"))
+    market_cap = _float(factor.get("market_cap"))
+    dividend_yield = _float(factor.get("dividend_yield_ttm"))
+    gross_margin = _float(factor.get("gross_profit_margin_ttm"))
+    profit_growth = _float(factor.get("net_profit_growth_ratio_ttm"))
+
+    if pe is not None or pb is not None or ps is not None:
+        parts = []
+        if pe is not None:
+            parts.append(f"PE(TTM) 约为 {pe:.2f}")
+        if pb is not None:
+            parts.append(f"PB(TTM) 约为 {pb:.2f}")
+        if ps is not None:
+            parts.append(f"PS(TTM) 约为 {ps:.2f}")
+        lines.append("当前估值因子口径显示，" + "，".join(parts) + "。")
+    if market_cap is not None:
+        lines.append(f"最新总市值约为 {market_cap / 100000000:.2f} 亿元，可作为当前估值讨论的体量背景。")
+    if dividend_yield is not None:
+        lines.append(f"股息率(TTM) 约为 {dividend_yield:.2%}，可作为分红回报观察的辅助指标。")
+    if gross_margin is not None or profit_growth is not None:
+        detail = []
+        if gross_margin is not None:
+            detail.append(f"毛利率(TTM) 约为 {gross_margin:.2%}")
+        if profit_growth is not None:
+            detail.append(f"净利润增速(TTM) 约为 {profit_growth:.2%}")
+        lines.append("估值观察应结合盈利质量一起看待，当前" + "，".join(detail) + "。")
+    return lines[:4]
+
+
+def _infer_workdir_from_data(data: dict[str, Any]) -> Path:
+    script = str(data.get("python_script") or "").strip()
+    if not script:
+        return Path(".")
+    path = Path(script)
+    return path.parent.parent if path.parent != Path("") else Path(".")
 
 
 def _previous_trading_date(rqdatac: Any, value: date) -> date:

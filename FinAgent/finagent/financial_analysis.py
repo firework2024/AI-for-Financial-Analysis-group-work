@@ -20,9 +20,12 @@ def analyze_financials(
     _apply_metric_factor_fallbacks(metrics, metric_factor_values or {})
 
     signal_pack = _build_signal_pack(rows, metrics)
+    print(f"  -> 规则层信号汇总: {signal_pack.get('signal_summary', {})}")
+
     evidence = _build_llm_evidence(rows, metrics, signal_pack, company_context or {})
 
     if get_env("OPENAI_API_KEY"):
+        print("  -> 检测到 OPENAI_API_KEY，走 LLM 审核路径")
         try:
             analysis = financial_signal_review_agent(
                 evidence=evidence,
@@ -30,8 +33,10 @@ def analyze_financials(
                 company_context=company_context or {},
             )
             return _finalize_signal_review(analysis, signal_pack, rows, metrics)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  -> LLM 调用失败 ({exc})，回退到本地规则审核")
+    else:
+        print("  -> 未检测到 OPENAI_API_KEY，走本地规则审核路径")
 
     return _finalize_signal_review(_local_signal_review(signal_pack), signal_pack, rows, metrics)
 
