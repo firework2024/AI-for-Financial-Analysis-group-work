@@ -18,6 +18,11 @@ HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 EXCLUDE_PATTERN = re.compile(r"摘要|英文版|更正|修订|补充|取消")
+STOCK_LIST_URLS = (
+    "http://www.cninfo.com.cn/new/data/szse_stock.json",
+    "http://www.cninfo.com.cn/new/data/sse_stock.json",
+)
+_ORG_ID_CACHE: dict[str, str] | None = None
 
 
 @dataclass
@@ -60,10 +65,49 @@ def to_order_book_id(stock_code: str) -> str:
     return f"{code}.{suffix}"
 
 
-def _stock_param(stock_code: str, column: str) -> str:
-    prefix = "gssh0" if column == "sse" else "gssz0"
+def _fallback_org_id(stock_code: str, column: str) -> str:
     code = normalize_stock_code(stock_code)
-    return f"{code},{prefix}{code}"
+    if column == "sse":
+        if code.startswith("688"):
+            return f"gshk0{code}"
+        return f"gssh0{code}"
+    return f"gssz0{code}"
+
+
+def _load_org_id_map(session: requests.Session | None = None) -> dict[str, str]:
+    global _ORG_ID_CACHE
+    if _ORG_ID_CACHE is not None:
+        return _ORG_ID_CACHE
+    http = session or requests.Session()
+    mapping: dict[str, str] = {}
+    for url in STOCK_LIST_URLS:
+        try:
+            response = http.get(url, headers=HEADERS, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            continue
+        for item in data.get("stockList") or []:
+            code = str(item.get("code") or "").strip()
+            org_id = str(item.get("orgId") or "").strip()
+            if code and org_id:
+                mapping[code] = org_id
+    _ORG_ID_CACHE = mapping
+    return mapping
+
+
+def org_id_for(stock_code: str, column: str | None = None, session: requests.Session | None = None) -> str:
+    code = normalize_stock_code(stock_code)
+    org_id = _load_org_id_map(session).get(code)
+    if org_id:
+        return org_id
+    col = column or classify_stock(code)[0]
+    return _fallback_org_id(code, col)
+
+
+def _stock_param(stock_code: str, column: str, session: requests.Session | None = None) -> str:
+    code = normalize_stock_code(stock_code)
+    return f"{code},{org_id_for(code, column, session)}"
 
 
 def parse_report_year(title: str) -> int | None:
@@ -82,7 +126,7 @@ def fetch_annual_reports(
     column, plate, _ = classify_stock(code)
     http = session or requests.Session()
     params = {
-        "stock": _stock_param(code, column),
+        "stock": _stock_param(code, column, http),
         "tabName": "fulltext",
         "pageNum": "1",
         "pageSize": str(page_size),
@@ -120,7 +164,11 @@ def latest_annual_report(stock_code: str, as_of: date) -> AnnualReport:
     start = f"{as_of.year - 5}-01-01"
     reports = fetch_annual_reports(stock_code, start, end)
     if not reports:
-        raise RuntimeError(f"未在巨潮资讯找到 {stock_code} 截至 {end} 的正式年报。")
+        raise RuntimeError(
+            f"未在巨潮资讯找到 {stock_code} 截至 {end} 的正式年报。"
+            "可能原因：该时段尚未披露年报、查询截止日期过早，或巨潮接口暂时不可用。"
+            "请尝试将「截止日期」设为最新披露日之后，或稍后重试。"
+        )
     return reports[0]
 
 

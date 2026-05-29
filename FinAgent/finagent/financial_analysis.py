@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .env import get_env
@@ -76,11 +77,14 @@ def _finalize_signal_review(
     data_notes = _dedupe_strings([*analysis.get("data_notes", []), *_data_notes(rows)])
     key_risks = _dedupe_strings(analysis.get("key_risks") or _derive_key_risks(reviewed_signals))
 
+    display_signals = consolidate_reviewed_signals(reviewed_signals)
+
     return {
         "positive_signals": positive_signals,
         "negative_signals": negative_signals,
         "key_risks": key_risks,
         "reviewed_signals": reviewed_signals,
+        "display_signals": display_signals,
         "raw_signals": signal_pack,
         "data_notes": data_notes,
         "metrics": metrics,
@@ -218,6 +222,144 @@ def _dedupe_reviewed_signals(reviewed_signals: list[dict[str, Any]]) -> list[dic
         key = source_signal_id or f"{item.get('category')}|{item.get('severity')}|{item.get('title')}|{metrics}"
         deduped[key] = item
     return list(deduped.values())
+
+
+def consolidate_reviewed_signals(reviewed_signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按类别合并同类信号，生成精炼、全覆盖的展示条目（供报告渲染）。"""
+    if not reviewed_signals:
+        return []
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in reviewed_signals:
+        category = str(item.get("category_cn") or CATEGORY_LABELS.get(item.get("category", ""), item.get("category", "其他")))
+        polarity = str(item.get("polarity") or "negative")
+        groups.setdefault((category, polarity), []).append(item)
+    consolidated = [_merge_signal_group(items) for items in groups.values()]
+    return _sort_display_signals(consolidated)
+
+
+def _merge_signal_group(items: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = _sort_reviewed_signals(items)
+    if len(ordered) == 1:
+        return _compact_display_signal(ordered[0])
+    category_cn = str(
+        ordered[0].get("category_cn") or CATEGORY_LABELS.get(ordered[0].get("category", ""), ordered[0].get("category", "其他"))
+    )
+    severity = _best_severity(ordered)
+    polarity = str(ordered[0].get("polarity") or "negative")
+    evidence_bits: list[str] = []
+    seen_bits: set[str] = set()
+    for item in ordered:
+        bit = _extract_evidence_core(item.get("evidence"))
+        norm = re.sub(r"\s+", "", bit.lower())
+        if bit and norm not in seen_bits:
+            seen_bits.add(norm)
+            evidence_bits.append(bit)
+    summary = _synthesize_group_summary(category_cn, ordered, evidence_bits)
+    evidence = "；".join(evidence_bits[:4])
+    if len(evidence_bits) > 4:
+        evidence += " 等"
+    return {
+        "severity": severity,
+        "category": ordered[0].get("category"),
+        "category_cn": category_cn,
+        "polarity": polarity,
+        "summary": summary,
+        "evidence": "" if len(ordered) > 1 else evidence,
+        "merged_count": len(ordered),
+        "source_titles": [str(item.get("title") or "") for item in ordered if item.get("title")],
+    }
+
+
+def _compact_display_signal(item: dict[str, Any]) -> dict[str, Any]:
+    title = str(item.get("title") or "").strip()
+    explanation = str(item.get("explanation") or "").strip()
+    if title and explanation and title in explanation:
+        summary = explanation.split("。")[0].strip()
+        if summary and not summary.endswith("。"):
+            summary += "。"
+    elif explanation:
+        summary = explanation.split("。")[0].strip()
+        if summary and not summary.endswith("。"):
+            summary += "。"
+    else:
+        summary = title
+    evidence = _extract_evidence_core(item.get("evidence"))
+    return {
+        "severity": item.get("severity"),
+        "category": item.get("category"),
+        "category_cn": item.get("category_cn") or CATEGORY_LABELS.get(item.get("category", ""), item.get("category", "")),
+        "polarity": item.get("polarity"),
+        "summary": summary,
+        "evidence": evidence,
+        "merged_count": 1,
+        "source_titles": [title] if title else [],
+    }
+
+
+def _synthesize_group_summary(category_cn: str, items: list[dict[str, Any]], evidence_bits: list[str]) -> str:
+    if evidence_bits:
+        joined = "、".join(evidence_bits[:3])
+        if len(evidence_bits) > 3:
+            joined += " 等"
+        return f"{category_cn}承压：{joined}。"
+    titles = _dedupe_strings([str(item.get("title") or "").strip() for item in items if item.get("title")])
+    if len(titles) == 1:
+        return titles[0]
+    if len(titles) == 2:
+        return f"{titles[0]}；{titles[1]}。"
+    return f"{category_cn}：{'、'.join(titles[:2])} 等 {len(titles)} 项。"
+
+
+def _extract_evidence_core(evidence: Any) -> str:
+    text = str(evidence or "").strip().rstrip("。")
+    if not text:
+        return ""
+    text = re.sub(r"^\d{4}\s*年\s*", "", text)
+    clause = re.split(r"[，,；;]", text)[0].strip()
+    clause = re.sub(r"为\s*", "", clause)
+    clause = re.sub(r"\s+", "", clause)
+    clause = _format_large_number_in_text(clause)
+    return clause[:56]
+
+
+def _format_large_number_in_text(text: str) -> str:
+    match = re.search(r"(-?\d+(?:\.\d+)?)", text)
+    if not match:
+        return text
+    try:
+        number = float(match.group(1))
+    except ValueError:
+        return text
+    if abs(number) >= 100000000:
+        formatted = f"{number / 100000000:.2f}亿"
+        return text.replace(match.group(1), formatted, 1)
+    if abs(number) >= 10000:
+        formatted = f"{number / 10000:.2f}万"
+        return text.replace(match.group(1), formatted, 1)
+    return text
+
+
+def _best_severity(items: list[dict[str, Any]]) -> str:
+    best = "low"
+    best_rank = SEVERITY_RANK.get(best, 99)
+    for item in items:
+        severity = str(item.get("severity") or "low")
+        rank = SEVERITY_RANK.get(severity, 99)
+        if rank < best_rank:
+            best = severity
+            best_rank = rank
+    return best
+
+
+def _sort_display_signals(display_signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        display_signals,
+        key=lambda item: (
+            SEVERITY_RANK.get(item.get("severity", ""), 99),
+            POLARITY_RANK.get(item.get("polarity", ""), 99),
+            item.get("category_cn", ""),
+        ),
+    )
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:

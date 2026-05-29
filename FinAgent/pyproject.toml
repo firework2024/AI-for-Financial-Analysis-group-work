@@ -10,6 +10,8 @@ dependencies = [
   "rqdatac",
   "openai",
   "matplotlib",
+  "fastapi",
+  "uvicorn[standard]",
 ]
 
 [tool.setuptools.packages.find]

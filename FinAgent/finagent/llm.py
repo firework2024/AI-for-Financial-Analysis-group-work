@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from .env import get_env
+from .report_format import normalize_section_text
 
 
 def financial_signal_review_agent(
@@ -83,6 +84,26 @@ def investment_director_analysis(mda_text: str, financial_analysis: dict[str, An
         )
     )
     return _clean_model_text(response.choices[0].message.content or "")
+
+
+def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
+    if not get_env("OPENAI_API_KEY"):
+        return normalize_section_text(_local_mda_summary(mda_text), "MD&A 摘要")
+    try:
+        name = company_context.get("sec_name") or company_context.get("stock_code") or "目标公司"
+        year = company_context.get("report_year") or ""
+        result = llm_text(
+            "你是年报 MD&A 摘要 Agent。只基于给定 MD&A 原文提炼经营要点，不给买卖建议。"
+            "输出 Markdown：先 1 句总括，再 4-6 条 bullet；每条不超过 45 字，保留关键数字；"
+            "不要复制大段原文，不要输出 JSON 或代码块。",
+            f"公司：{name}（{year} 年报）\n\nMD&A 原文：\n{mda_text[:15000]}",
+        )
+        normalized = normalize_section_text(result, "MD&A 摘要")
+        if _looks_like_raw_mda_dump(normalized):
+            return normalize_section_text(_local_mda_summary(mda_text), "MD&A 摘要")
+        return normalized
+    except Exception:
+        return normalize_section_text(_local_mda_summary(mda_text), "MD&A 摘要")
 
 
 def llm_text(system: str, user: str) -> str:
@@ -197,6 +218,7 @@ def _build_financial_prompt(framework_text: str, evidence: dict[str, Any], compa
         "4. 如果某项证据缺失，写入 data_notes，不要编造。"
         "5. key_risks 请输出短语，不要输出句子。"
         "6. 尽量优先解释高强度负面信号和异常组合信号。"
+        "7. 同一 category 的重复信号应合并为一条，title/explanation 保持精炼，避免同主题多条罗列。"
     )
 
 
@@ -265,11 +287,93 @@ def _ensure_reviewed_signals(value: Any) -> list[dict[str, Any]]:
 def _local_summary(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
     positives = "；".join(financial_analysis.get("positive_signals", [])[:4])
     negatives = "；".join(financial_analysis.get("negative_signals", [])[:4])
-    mda_preview = " ".join(mda_text.split())[:600]
+    mda_preview = _local_mda_summary(mda_text)
     name = company_context.get("sec_name") or company_context.get("stock_code")
     return (
         f"本地摘要模式：{name} 的财务数据积极信号主要包括：{positives}。\n\n"
         f"消极或需要关注的数据信号主要包括：{negatives}。\n\n"
-        f"MD&A 摘要片段：{mda_preview}\n\n"
+        f"MD&A 摘要：\n{mda_preview}\n\n"
         "由于未配置 OPENAI_API_KEY，本次未调用外部大模型；以上为基于规则输出的投资总监占位总结。"
     )
+
+
+_MDA_SUMMARY_KEYWORDS = (
+    "收入",
+    "营收",
+    "利润",
+    "现金流",
+    "风险",
+    "同比",
+    "下降",
+    "增长",
+    "融资",
+    "债务",
+    "毛利率",
+    "挑战",
+    "举措",
+    "交付",
+    "销售",
+    "展期",
+    "流动性",
+)
+
+
+def _local_mda_summary(mda_text: str) -> str:
+    cleaned = _normalize_mda_source_text(mda_text)
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n+", cleaned) if len(part.strip()) > 24]
+    paragraphs = [part for part in paragraphs if not re.search(r"年度报告\s*\d+", part)]
+    if not paragraphs and len(cleaned) > 24:
+        paragraphs = [cleaned]
+    sentences: list[str] = []
+    for paragraph in paragraphs[:15]:
+        for sentence in re.split(r"(?<=[。！？!?])", paragraph):
+            text = sentence.strip()
+            if len(text) < 12:
+                continue
+            if _is_mda_summary_sentence(text):
+                normalized = re.sub(r"\s+", "", text)
+                if normalized not in {re.sub(r"\s+", "", item) for item in sentences}:
+                    sentences.append(text)
+            if len(sentences) >= 6:
+                break
+        if len(sentences) >= 6:
+            break
+    if not sentences:
+        fallback = paragraphs[0][:160].strip() if paragraphs else "未能从 MD&A 中提取有效摘要。"
+        return fallback + ("…" if paragraphs and len(paragraphs[0]) > 160 else "")
+    headline = sentences[0].rstrip("。！？!?")
+    lines = [f"{headline}。", ""]
+    for sentence in sentences[1:6]:
+        lines.append(f"- {sentence.rstrip('。！？!?')}。")
+    return "\n".join(lines)
+
+
+def _normalize_mda_source_text(text: str) -> str:
+    cleaned = str(text or "").replace("\r\n", "\n")
+    cleaned = re.sub(r"[^\n]{0,40}年度报告\s*\d+", "\n", cleaned)
+    cleaned = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", cleaned)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"(?<=[。！？!?])\s*(?=[（(]?[一二三四五六七八九十]+[、）)])", "\n\n", cleaned)
+    cleaned = re.sub(r"(?<=[。！？!?])\s*(?=\d+[、.])", "\n\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"(?<=\d)\s+(?=\d)", "", cleaned)
+    return cleaned.strip()
+
+
+def _looks_like_raw_mda_dump(text: str) -> bool:
+    if len(text) < 250:
+        return False
+    if re.search(r"^[-*]\s", text, re.MULTILINE):
+        return False
+    if "董事会报告" in text and "经营情况讨论与分析" in text:
+        return True
+    if "年度报告" in text and re.search(r"\d+\s*/\s*\d+", text):
+        return True
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return len(lines) <= 2 and len(text) > 400
+
+
+def _is_mda_summary_sentence(text: str) -> bool:
+    if re.search(r"\d", text) and any(keyword in text for keyword in _MDA_SUMMARY_KEYWORDS):
+        return True
+    return any(keyword in text for keyword in ("风险", "挑战", "压力", "改善", "下降", "增长", "展期"))

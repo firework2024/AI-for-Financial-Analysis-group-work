@@ -16,7 +16,8 @@ class MdaExtraction:
     end_heading: str | None
 
     @property
-    def summary(self) -> str:
+    def raw_preview(self) -> str:
+        """PDF 原文截取，仅供调试；报告展示请使用 mda_summary_agent 提炼结果。"""
         text = re.sub(r"\s+", " ", self.mda_text).strip()
         return text[:3000]
 

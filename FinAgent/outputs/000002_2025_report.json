@@ -1,0 +1,534 @@
+{
+  "meta": {
+    "report_type": "annual_analyze",
+    "stock_code": "000002",
+    "sec_name": "万科A",
+    "report_year": 2025,
+    "order_book_id": "000002.XSHE",
+    "output_markdown": "outputs\\000002_2025_report.md",
+    "output_json": "outputs\\000002_2025_report.json",
+    "generated_at": "2026-05-30T00:04:06",
+    "pdf_url": "http://static.cninfo.com.cn/finalpage/2026-04-01/1225067794.PDF",
+    "local_pdf": "annual_reports\\000002_万科A_2025年年度报告.pdf",
+    "mda_confidence": "high"
+  },
+  "summary": "好的，作为投资总监，基于您提供的财务数据信号与管理层讨论与分析（MD&A）内容，我对万科2025年的经营表现进行以下克制、可追溯的总结分析。\n\n#### 核心结论：战略收缩与财务承压并存，利润质量与流动性风险突出\n\n2025年，万科在行业深度调整期采取了“保交付、化风险、促回血”的积极自救策略，并取得了一定成效（如大宗交易、存量盘活、债务展期）。然而，财务数据显示，公司正面临**盈利能力恶化、现金流创造能力枯竭、杠杆高企与营运效率下降**的多重压力。尽管归母净利润亏损额同比大幅收窄（增长79.0%），但这并未转化为正向的经营现金流，利润质量存在显著风险，且流动性压力已导致债务展期。\n\n---\n\n#### 一、 经营战略与成果：聚焦化险与存量盘活\n\nMD&A清晰地展示了管理层在2025年的核心工作方向：\n\n1.  **全力化险与保交付**：在行业销售面积和金额继续下滑的背景下（同比分别下降8.7%和12.6%），公司成功交付11.7万套房屋，并完成332.1亿元公开债务偿付。对于无法偿付的债务，已启动展期协商程序并获得通过，这体现了公司在极端压力下的生存努力。\n2.  **积极“回血”与战略收缩**：公司通过大宗交易（签约113亿元）、存量资源盘活（新增和优化产能338亿元）以及退出冰雪业务等方式，积极回笼资金并聚焦核心主业。大股东深铁集团提供的335.2亿元股东借款是重要的外部支持。\n3.  **降本增效**：开发业务管理费用连续两年下降，经营性业务平台成本也有所压缩，显示出内部管理的精细化努力。\n\n**财务数据印证**：收入同比下降32.0%，与MD&A中描述的销售金额下降45.5%的趋势一致，反映了行业下行对公司主营业务的直接冲击。\n\n#### 二、 财务表现深度剖析：盈利、现金流与偿债能力的全面审视\n\n财务数据分析智能体提供的信号，揭示了战略行动背后的财务现实：\n\n1.  **盈利能力：双重挤压，股东回报为负**\n    *   **毛利率与费用率双重挤压**：毛利率从10.2%降至9.5%，同时销售、管理、财务费用率均上升。MD&A解释为结算项目地价高、销售不及预期，这直接导致了盈利空间被压缩。\n    *   **股东回报极弱**：ROE为-75.8%，表明公司不仅未能为股东创造价值，反而在大量消耗股东权益。这与归母净利润亏损885.6亿元直接相关。\n\n2.  **现金流质量：利润增长与现金流的严重背离**\n    *   **利润现金含量极低**：尽管归母净利润亏损额同比大幅收窄（财务数据中“归母净利润增长79.0%”指亏损减少），但净现比仅为0.01，收现比为0.53。这意味着公司的“减亏”主要来自非现金项目（如资产减值计提减少或非经常性损益），而非经营活动的现金流入。MD&A中提到的“新增计提了信用减值和资产减值”是重要原因。\n    *   **自由现金流持续为负**：自由现金流连续两年为负，表明公司经营活动产生的现金不足以覆盖资本开支，必须依赖外部融资或资产处置来维持运营。\n\n3.  **偿债能力：杠杆高企，流动性承压**\n    *   **资产负债率上升**：从73.7%升至76.9%，处于高位。MD&A中“流动性压力进一步加大”和债务展期的描述，直接印证了这一风险。\n    *   **速动比率偏低**：仅为0.57，表明即使不考虑存货，公司的短期偿债能力也较弱。\n\n4.  **营运效率：回款与库存双重压力**\n    *   **应收账款增长快于收入**：在收入下降32%的情况下，应收账款反而增长16.9%，说明回款压力显著上升，销售回款质量下降。\n    *   **存货与应收周转放缓**：存货周转率和应收账款周转率均下降，表明从拿地、建设到销售、回款的整个链条效率都在降低。\n\n#### 三、 总结与风险提示\n\n综合来看，万科2025年的经营表现呈现出 **“战略积极，财务承压”** 的显著特征。\n\n*   **积极面**：管理层在极端困难的市场环境下，展现了较强的执行力，在保交付、化风险、盘活资产方面取得了阶段性成果，并获得了大股东和金融机构的支持。归母净利润亏损额的大幅收窄是一个积极信号。\n*   **风险面**：财务数据揭示了更深层次的挑战。**核心风险在于利润质量差、现金流创造能力枯竭以及高杠杆下的流动性压力**。公司通过资产处置和债务展期争取了时间，但并未从根本上解决经营造血能力不足的问题。毛利率的持续下降和营运效率的恶化，预示着若市场环境未能显著回暖，公司经营仍将面临严峻考验。\n\n**可追溯的总结**：MD&A中描述的“自救”行动（如大宗交易、存量盘活、债务展期）与财务数据中“自由现金流为负”、“资产负债率上升”、“应收账款增长”等信号高度吻合，共同勾勒出一家正在通过“变卖资产、借新还旧”来应对流动性危机的企业画像。其“减亏”的利润表，并未能改善其脆弱的资产负债表和紧张的现金流量表。",
+  "executive_summary": "#### 核心结论：战略收缩与财务承压并存，利润质量与流动性风险突出\n\n2025年，万科在行业深度调整期采取了“保交付、化风险、促回血”的积极自救策略，并取得了一定成效（如大宗交易、存量盘活、债务展期）。然而，财务数据显示，公司正面临**盈利能力恶化、现金流创造能力枯竭、杠杆高企与营运效率下降**的多重压力。尽管归母净利润亏损额同比大幅收窄（增长79.0%），但这并未转化为正向的经营现金流，利润质量存在显著风险，且流动性压力已导致债务展期。",
+  "mda": {
+    "confidence": "high",
+    "start_heading": "董事会报告",
+    "end_heading": "\n第五节  公司治理",
+    "summary_brief": "2025年，万科在行业下行中全力化险、保交付，但营收和利润大幅下滑，流动性压力加剧。\n\n- 全年销售金额1,340.6亿元，同比下降45.5%；营业收入2,334.3亿元，同比下降32.0%。\n- 归母净亏损885.6亿元，主要因结算规模下降、毛利率低位及新增减值计提。\n- 保质交付11.7万套房子，完成31个项目大宗交易，签约金额113亿元。\n- 新增融资和再融资280亿元，存量融资综合成本降至3.02%，下降85个基点。\n- 大股东深铁集团累计提供股东借款335.2亿元，已完成332.1亿元公开债务偿付。\n- 启动两笔中票及一笔公司债展期协商，展期议案已获债券持有人会议通过。",
+    "raw_preview_length": 3000
+  },
+  "signals": {
+    "reviewed_signals": [
+      {
+        "category": "earnings_quality",
+        "category_cn": "利润质量",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "利润增长未同步转化为现金",
+        "explanation": "利润增长未同步转化为经营现金流，利润质量需关注。",
+        "evidence": "2025 年归母净利润增长 79.0%，经营现金流变动 -126.0%。",
+        "metrics": [
+          "net_profit_parent_company_growth",
+          "cash_flow_from_operating_activities_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "compound_earnings_quality_profit_growth_vs_cash_flow_2025_negative",
+        "type": "compound"
+      },
+      {
+        "category": "operating_efficiency",
+        "category_cn": "营运效率",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "营运资本占用加重",
+        "explanation": "应收账款和存货同时快于收入增长，可能存在回款和库存双重压力。",
+        "evidence": "2025 年收入增速 -32.0%，应收增速 16.9%，存货增速 -28.0%。",
+        "metrics": [
+          "revenue_growth",
+          "receivable_growth",
+          "inventory_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "compound_operating_efficiency_working_capital_pressure_2025_negative",
+        "type": "compound"
+      },
+      {
+        "category": "profitability",
+        "category_cn": "盈利能力",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "毛利率与费用率双重挤压",
+        "explanation": "毛利率下降且费用率上升，盈利能力受到双重挤压。",
+        "evidence": "2025 年毛利率由 10.2% 降至 9.5%，同时 销售费用率, 管理费用率, 财务费用率 上升。",
+        "metrics": [
+          "gross_margin",
+          "selling_expense_ratio",
+          "ga_expense_ratio",
+          "financing_expense_ratio"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "compound_profitability_gross_margin_vs_expense_ratio_2025_negative",
+        "type": "compound"
+      },
+      {
+        "category": "solvency",
+        "category_cn": "偿债能力",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "杠杆与现金流压力同步上升",
+        "explanation": "资产负债率上升且经营现金流下降，偿债安全边际下降。",
+        "evidence": "2025 年资产负债率由 73.7% 升至 76.9%，经营现金流同比变动 -126.0%。",
+        "metrics": [
+          "debt_to_assets",
+          "cash_flow_from_operating_activities_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "compound_solvency_debt_to_assets_vs_cash_flow_2025_negative",
+        "type": "compound"
+      },
+      {
+        "category": "cash_quality",
+        "category_cn": "现金流质量",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "利润现金含量偏弱",
+        "explanation": "净现比较低，利润转化为经营现金流的能力偏弱。",
+        "evidence": "2025 年净现比为 0.01，低于 0.5。",
+        "metrics": [
+          "cash_to_profit"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_cash_quality_cash_to_profit_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "cash_quality",
+        "category_cn": "现金流质量",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "收入回款偏弱",
+        "explanation": "收现比较低，收入回款压力较大。",
+        "evidence": "2025 年收现比为 0.53，低于 0.6。",
+        "metrics": [
+          "cash_to_revenue"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_cash_quality_cash_to_revenue_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "cash_quality",
+        "category_cn": "现金流质量",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "自由现金流持续承压",
+        "explanation": "自由现金流连续两年为负，资本开支后现金留存持续承压。",
+        "evidence": "2025 年自由现金流为 -4183216405.24，且最近两年持续为负。",
+        "metrics": [
+          "free_cash_flow"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_cash_quality_free_cash_flow_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "growth",
+        "category_cn": "成长性",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "收入连续下滑",
+        "explanation": "营业总收入连续两年下降，成长承压。",
+        "evidence": "2025 年收入同比变动 -32.0%。",
+        "metrics": [
+          "revenue_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_growth_revenue_growth_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "operating_efficiency",
+        "category_cn": "营运效率",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "应收账款增长明显快于收入",
+        "explanation": "应收账款增速显著快于收入增速，回款压力上升。",
+        "evidence": "2025 年应收增速 16.9%，收入增速 -32.0%。",
+        "metrics": [
+          "receivable_growth",
+          "revenue_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_operating_efficiency_receivable_growth_gap_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "solvency",
+        "category_cn": "偿债能力",
+        "polarity": "negative",
+        "severity": "high",
+        "title": "资产负债率偏高",
+        "explanation": "资产负债率处于较高水平，杠杆压力较大。",
+        "evidence": "2025 年资产负债率为 76.9%。",
+        "metrics": [
+          "debt_to_assets"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_solvency_debt_to_assets_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "growth",
+        "category_cn": "成长性",
+        "polarity": "negative",
+        "severity": "medium",
+        "title": "经营现金流下滑",
+        "explanation": "经营现金流同比下降，现金创造能力走弱。",
+        "evidence": "2025 年经营现金流同比变动 -126.0%。",
+        "metrics": [
+          "cash_flow_from_operating_activities_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_growth_cash_flow_from_operating_activities_growth_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "operating_efficiency",
+        "category_cn": "营运效率",
+        "polarity": "negative",
+        "severity": "medium",
+        "title": "存货周转放缓",
+        "explanation": "存货周转率下降，库存周转效率走弱。",
+        "evidence": "2025 年存货周转率为 0.47，低于上年的 0.51。",
+        "metrics": [
+          "inventory_turnover"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_operating_efficiency_inventory_turnover_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "operating_efficiency",
+        "category_cn": "营运效率",
+        "polarity": "negative",
+        "severity": "medium",
+        "title": "存货增速快于收入",
+        "explanation": "存货增速高于收入增速，需关注库存消化。",
+        "evidence": "2025 年存货增速 -28.0%，收入增速 -32.0%。",
+        "metrics": [
+          "inventory_growth",
+          "revenue_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_operating_efficiency_inventory_growth_gap_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "operating_efficiency",
+        "category_cn": "营运效率",
+        "polarity": "negative",
+        "severity": "medium",
+        "title": "应收周转放缓",
+        "explanation": "应收账款周转率下降，回款效率走弱。",
+        "evidence": "2025 年应收周转率为 26.42，低于上年的 44.40。",
+        "metrics": [
+          "receivable_turnover"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_operating_efficiency_receivable_turnover_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "profitability",
+        "category_cn": "盈利能力",
+        "polarity": "negative",
+        "severity": "medium",
+        "title": "毛利率承压",
+        "explanation": "毛利率较上年下降，盈利能力受到挤压。",
+        "evidence": "2025 年毛利率为 9.5%，低于上年的 10.2%。",
+        "metrics": [
+          "gross_margin"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_profitability_gross_margin_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "profitability",
+        "category_cn": "盈利能力",
+        "polarity": "negative",
+        "severity": "medium",
+        "title": "股东回报偏弱",
+        "explanation": "ROE 偏低，股东权益回报能力较弱。",
+        "evidence": "2025 年 ROE 为 -75.8%。",
+        "metrics": [
+          "roe"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_profitability_roe_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "solvency",
+        "category_cn": "偿债能力",
+        "polarity": "negative",
+        "severity": "medium",
+        "title": "速动比率偏低",
+        "explanation": "速动比率偏低，剔除存货后的流动性支持较弱。",
+        "evidence": "2025 年速动比率为 0.57。",
+        "metrics": [
+          "quick_ratio"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_solvency_quick_ratio_2025_negative",
+        "type": "single"
+      },
+      {
+        "category": "growth",
+        "category_cn": "成长性",
+        "polarity": "positive",
+        "severity": "medium",
+        "title": "归母净利润增长较快",
+        "explanation": "归母净利润保持较快增长，利润扩张表现较好。",
+        "evidence": "2025 年归母净利润同比增长 79.0%。",
+        "metrics": [
+          "net_profit_parent_company_growth"
+        ],
+        "confidence": "high",
+        "source": "rules",
+        "source_signal_id": "single_growth_net_profit_parent_company_growth_2025_positive",
+        "type": "single"
+      }
+    ],
+    "display_signals": [
+      {
+        "severity": "high",
+        "category": "solvency",
+        "category_cn": "偿债能力",
+        "polarity": "negative",
+        "summary": "偿债能力承压：资产负债率由73.7%升至76.9%、资产负债率76.9%、速动比率0.57。",
+        "evidence": "",
+        "merged_count": 3,
+        "source_titles": [
+          "杠杆与现金流压力同步上升",
+          "资产负债率偏高",
+          "速动比率偏低"
+        ]
+      },
+      {
+        "severity": "high",
+        "category": "earnings_quality",
+        "category_cn": "利润质量",
+        "polarity": "negative",
+        "summary": "利润增长未同步转化为经营现金流，利润质量需关注。",
+        "evidence": "归母净利润增长79.0%",
+        "merged_count": 1,
+        "source_titles": [
+          "利润增长未同步转化为现金"
+        ]
+      },
+      {
+        "severity": "high",
+        "category": "growth",
+        "category_cn": "成长性",
+        "polarity": "negative",
+        "summary": "成长性承压：收入同比变动-32.0%、经营现金流同比变动-126.0%。",
+        "evidence": "",
+        "merged_count": 2,
+        "source_titles": [
+          "收入连续下滑",
+          "经营现金流下滑"
+        ]
+      },
+      {
+        "severity": "high",
+        "category": "cash_quality",
+        "category_cn": "现金流质量",
+        "polarity": "negative",
+        "summary": "现金流质量承压：净现比0.01、收现比0.53、自由现金流-41.83亿。",
+        "evidence": "",
+        "merged_count": 3,
+        "source_titles": [
+          "利润现金含量偏弱",
+          "收入回款偏弱",
+          "自由现金流持续承压"
+        ]
+      },
+      {
+        "severity": "high",
+        "category": "profitability",
+        "category_cn": "盈利能力",
+        "polarity": "negative",
+        "summary": "盈利能力承压：毛利率由10.2%降至9.5%、毛利率9.5%、ROE-75.8%。",
+        "evidence": "",
+        "merged_count": 3,
+        "source_titles": [
+          "毛利率与费用率双重挤压",
+          "毛利率承压",
+          "股东回报偏弱"
+        ]
+      },
+      {
+        "severity": "high",
+        "category": "operating_efficiency",
+        "category_cn": "营运效率",
+        "polarity": "negative",
+        "summary": "营运效率承压：收入增速-32.0%、应收增速16.9%、存货周转率0.47 等。",
+        "evidence": "",
+        "merged_count": 5,
+        "source_titles": [
+          "营运资本占用加重",
+          "应收账款增长明显快于收入",
+          "存货周转放缓",
+          "存货增速快于收入",
+          "应收周转放缓"
+        ]
+      },
+      {
+        "severity": "medium",
+        "category": "growth",
+        "category_cn": "成长性",
+        "polarity": "positive",
+        "summary": "归母净利润保持较快增长，利润扩张表现较好。",
+        "evidence": "归母净利润同比增长79.0%",
+        "merged_count": 1,
+        "source_titles": [
+          "归母净利润增长较快"
+        ]
+      }
+    ],
+    "positive_signals": [
+      "归母净利润增长较快：归母净利润保持较快增长，利润扩张表现较好。"
+    ],
+    "negative_signals": [
+      "利润增长未同步转化为现金：利润增长未同步转化为经营现金流，利润质量需关注。",
+      "营运资本占用加重：应收账款和存货同时快于收入增长，可能存在回款和库存双重压力。",
+      "毛利率与费用率双重挤压：毛利率下降且费用率上升，盈利能力受到双重挤压。",
+      "杠杆与现金流压力同步上升：资产负债率上升且经营现金流下降，偿债安全边际下降。",
+      "利润现金含量偏弱：净现比较低，利润转化为经营现金流的能力偏弱。",
+      "收入回款偏弱：收现比较低，收入回款压力较大。",
+      "自由现金流持续承压：自由现金流连续两年为负，资本开支后现金留存持续承压。",
+      "收入连续下滑：营业总收入连续两年下降，成长承压。",
+      "应收账款增长明显快于收入：应收账款增速显著快于收入增速，回款压力上升。",
+      "资产负债率偏高：资产负债率处于较高水平，杠杆压力较大。",
+      "经营现金流下滑：经营现金流同比下降，现金创造能力走弱。",
+      "存货周转放缓：存货周转率下降，库存周转效率走弱。",
+      "存货增速快于收入：存货增速高于收入增速，需关注库存消化。",
+      "应收周转放缓：应收账款周转率下降，回款效率走弱。",
+      "毛利率承压：毛利率较上年下降，盈利能力受到挤压。",
+      "股东回报偏弱：ROE 偏低，股东权益回报能力较弱。",
+      "速动比率偏低，剔除存货后的流动性支持较弱。"
+    ],
+    "key_risks": [
+      "利润质量风险",
+      "营运效率风险",
+      "盈利能力风险",
+      "偿债能力风险",
+      "现金流质量风险",
+      "成长性风险"
+    ],
+    "data_notes": [
+      "米筐核心字段未发现缺失。"
+    ]
+  },
+  "metrics": [
+    {
+      "year": 2023,
+      "revenue": 465739076702.23,
+      "net_profit_parent_company": 12162684368.86,
+      "cash_flow_from_operating_activities": 3912323920.11,
+      "gross_margin": 0.1523497184021026,
+      "cash_to_revenue": 0.6369427077592256,
+      "cash_to_profit": 0.1912596977695232,
+      "debt_to_assets": 0.7322434230245014,
+      "roe": 0.04849852709762607,
+      "free_cash_flow": -4421829124.99
+    },
+    {
+      "year": 2024,
+      "revenue": 343176440712.96,
+      "net_profit_parent_company": -49478429211.96,
+      "cash_flow_from_operating_activities": 3799847632.35,
+      "gross_margin": 0.10173067009183416,
+      "cash_to_revenue": 0.5856995083535737,
+      "cash_to_profit": -0.07801931566678964,
+      "debt_to_assets": 0.7365581613147495,
+      "roe": -0.24413720150196566,
+      "free_cash_flow": -719764542.2500005,
+      "revenue_growth": -0.26315729583418723,
+      "net_profit_parent_company_growth": -5.068051731954759,
+      "cash_flow_from_operating_activities_growth": -0.028749226816791262
+    },
+    {
+      "year": 2025,
+      "revenue": 233432768960.43,
+      "net_profit_parent_company": -88556470495.64,
+      "cash_flow_from_operating_activities": -988124860.96,
+      "gross_margin": 0.09461172605673789,
+      "cash_to_revenue": 0.5279428744678546,
+      "cash_to_profit": 0.010762704285607267,
+      "debt_to_assets": 0.7689057595522777,
+      "roe": -0.7575065241158622,
+      "free_cash_flow": -4183216405.2400002,
+      "revenue_growth": -0.31978789547596576,
+      "net_profit_parent_company_growth": 0.7897995531805202,
+      "cash_flow_from_operating_activities_growth": -1.2600432850379577
+    }
+  ],
+  "field_provenance": [
+    {
+      "year": 2023,
+      "counts": {
+        "rqdata": 38,
+        "rqdata_factor": 0,
+        "annual_report": 0,
+        "missing": 0
+      },
+      "missing_fields": [],
+      "missing_fields_total": 0
+    },
+    {
+      "year": 2024,
+      "counts": {
+        "rqdata": 38,
+        "rqdata_factor": 0,
+        "annual_report": 0,
+        "missing": 0
+      },
+      "missing_fields": [],
+      "missing_fields_total": 0
+    },
+    {
+      "year": 2025,
+      "counts": {
+        "rqdata": 38,
+        "rqdata_factor": 0,
+        "annual_report": 0,
+        "missing": 0
+      },
+      "missing_fields": [],
+      "missing_fields_total": 0
+    }
+  ]
+}

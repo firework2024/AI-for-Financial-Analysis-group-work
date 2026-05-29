@@ -5,6 +5,41 @@ FinAgent 是一个以 A 股年报为核心的本地命令行工作流。它会�
 - 财务分析智能体：先由规则引擎识别结构化财务信号和异常组合，再由 LLM 在 `财务分析智能体_知识框架提炼.md` 的约束下审核、归纳和解释这些信号，输出积极信号、消极信号、关键风险和可追溯的审核结果。
 - 投资总监智能体：结合 MD&A 文本和财务数据分析结果，解释数据变化并输出总结分析。
 
+## 快速开始
+
+```powershell
+# 1. 进入项目目录
+cd FinAgent
+
+# 2. 安装依赖（首次或更换 Python 环境时执行一次）
+pip install -e .
+
+# 3. 配置 .env：复制示例并填入你的密钥
+copy .env.example .env
+#    然后编辑 .env，至少填写 OPENAI_API_KEY；如使用兼容服务再改 OPENAI_BASE_URL / OPENAI_MODEL
+
+# 4. 运行年报分析（生成结构化 Markdown 报告，推荐入口）
+python -m finagent analyze --stock 600519 --as-of 2026-05-29
+
+# 5. 可选：运行多智能体研究报告（量价/资金/图表，支持并行加速）
+python -m finagent multi-analyze --stock 600519 --as-of 2026-05-29
+```
+
+运行结束后，报告输出在 `outputs/` 目录：
+
+- `analyze`：`outputs/{代码}_{年份}_report.md` 与 `.json`
+- `multi-analyze`：`outputs/{代码}_multi_agent_report.md`、`.json` 及 `outputs/charts/...` 图表
+
+> 提示：`.env` 须放在 `FinAgent` 目录下（与 `finagent` 包同级）。未配置 `OPENAI_API_KEY` 时会回退到本地规则摘要模式，不调用大模型。
+
+### 并行与性能
+
+`multi-analyze` 在延续原有功能的基础上做了并行化：米筐数据拉取、各章节写作与修订都使用线程池并发，提升速度与稳定性。并发线程数由环境变量 `FINAGENT_MAX_WORKERS` 控制（默认 `4`）。若触发 API 速率限制（如 429）或网络超时，可在 `.env` 中将其调小为 `2` 或 `3`：
+
+```env
+FINAGENT_MAX_WORKERS=4
+```
+
 ## 工作流
 
 1. 输入 A 股股票代码和查询截止日期。

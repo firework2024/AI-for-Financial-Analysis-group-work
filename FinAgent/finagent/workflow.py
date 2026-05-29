@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -9,9 +9,10 @@ from .cninfo import default_as_of, download_report, latest_annual_report
 from .env import load_dotenv
 from .fallback import apply_financial_fallbacks
 from .financial_analysis import analyze_financials
-from .llm import investment_director_analysis
+from .llm import investment_director_analysis, mda_summary_agent
 from .pdf_text import extract_mda, extract_pdf_text
-from .report import render_markdown, write_report
+from .report import build_annual_json_payload, render_markdown
+from .report_format import write_report
 from .rqdata_client import fetch_factor_fallbacks, fetch_financials, fetch_metric_factor_fallbacks
 
 
@@ -48,6 +49,7 @@ def run(options: WorkflowOptions) -> dict[str, Any]:
         "quarters": fetched.quarters,
     }
     financial_analysis = analyze_financials(financial_data, metric_factor_values, company_context)
+    mda_brief = mda_summary_agent(mda.mda_text, company_context)
     director = investment_director_analysis(mda.mda_text, financial_analysis, company_context)
 
     result = {
@@ -56,28 +58,23 @@ def run(options: WorkflowOptions) -> dict[str, Any]:
             "confidence": mda.confidence,
             "start_heading": mda.start_heading,
             "end_heading": mda.end_heading,
-            "summary": mda.summary,
+            "summary": mda_brief,
+            "raw_preview": mda.raw_preview,
         },
         "financial_data": financial_data,
         "financial_analysis": financial_analysis,
         "investment_director": director,
     }
     output_path = Path(options.output) if options.output else root / "outputs" / f"{report.stock_code}_{report.report_year}_report.md"
-    write_report(render_markdown(result), output_path)
+    write_report(render_markdown(result, order_book_id=fetched.order_book_id), output_path)
     json_path = output_path.with_suffix(".json")
-    json_path.write_text(json.dumps(_json_ready(result), ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = build_annual_json_payload(
+        result=result,
+        order_book_id=fetched.order_book_id,
+        output_markdown=str(output_path),
+        output_json=str(json_path),
+    )
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result["output_markdown"] = str(output_path)
     result["output_json"] = str(json_path)
     return result
-
-
-def _json_ready(value: Any) -> Any:
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {key: _json_ready(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_ready(item) for item in value]
-    if hasattr(value, "__dict__"):
-        return asdict(value)
-    return value

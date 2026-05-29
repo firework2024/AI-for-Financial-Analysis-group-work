@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinAgent · A 股财务分析</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">FA</div>
+        <div>
+          <h1>FinAgent</h1>
+          <p>A 股年报与多智能体财务分析</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="status-dot" id="serverStatus" title="服务状态"></span>
+        <button class="btn btn-ghost" id="refreshBtn" type="button">刷新列表</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>新建分析</h2>
+          <form id="analyzeForm" class="form">
+            <label>
+              股票代码
+              <input name="stock" type="text" inputmode="numeric" maxlength="6" placeholder="例如 600519" required>
+            </label>
+            <label>
+              截止日期
+              <input name="as_of" type="date">
+            </label>
+            <div class="form-row">
+              <label class="flex-1">
+                分析类型
+                <select name="mode">
+                  <option value="annual">年报分析</option>
+                  <option value="multi">多智能体报告</option>
+                </select>
+              </label>
+            </div>
+            <details class="advanced">
+              <summary>高级选项</summary>
+              <label class="checkbox">
+                <input name="no_download_cache" type="checkbox">
+                重新下载年报 PDF
+              </label>
+              <label>
+                财务年数（年报）
+                <input name="years" type="number" min="1" max="10" value="3">
+              </label>
+              <label>
+                回看天数（多智能体）
+                <input name="lookback_days" type="number" min="30" max="520" value="260">
+              </label>
+            </details>
+            <button class="btn btn-primary" type="submit" id="submitBtn">开始分析</button>
+          </form>
+          <p class="form-hint">「年报分析」需从巨潮资讯下载正式年报；若查不到，可改选「多智能体报告」（不依赖年报 PDF）。</p>
+          <div class="task-box hidden" id="taskBox">
+            <div class="task-status">
+              <span class="spinner" id="taskSpinner"></span>
+              <span id="taskMessage">处理中…</span>
+            </div>
+            <div class="task-meta" id="taskMeta"></div>
+          </div>
+        </section>
+
+        <section class="panel panel-grow">
+          <div class="panel-head">
+            <h2>历史报告</h2>
+            <span class="badge" id="reportCount">0</span>
+          </div>
+          <div class="report-list" id="reportList">
+            <div class="empty">暂无报告，请先运行分析</div>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main" id="mainPanel">
+        <div class="welcome" id="welcomeView">
+          <div class="welcome-card">
+            <h2>欢迎使用 FinAgent Web</h2>
+            <p>在左侧输入 6 位 A 股代码开始分析，或从报告列表中选择已有结果。</p>
+            <ul>
+              <li><strong>年报分析</strong>：巨潮年报 + 米筐财务 + 信号审核 + 投资总监总结</li>
+              <li><strong>多智能体报告</strong>：量价、估值、资金、技术、宏观等多章节研究 + 图表</li>
+            </ul>
+            <p class="disclaimer" id="welcomeDisclaimer"></p>
+          </div>
+        </div>
+
+        <article class="report-view hidden" id="reportView">
+          <div class="report-header">
+            <div>
+              <div class="report-tags" id="reportTags"></div>
+              <h2 id="reportTitle"></h2>
+              <p class="report-subtitle" id="reportSubtitle"></p>
+            </div>
+            <div class="report-actions">
+              <button class="btn btn-ghost" id="openHtmlBtn" type="button">打开 HTML</button>
+            </div>
+          </div>
+
+          <section class="card" id="summaryCard">
+            <h3>执行摘要</h3>
+            <div class="markdown" id="summaryContent"></div>
+          </section>
+
+          <div id="annualSections"></div>
+          <div id="multiSections"></div>
+
+          <section class="card disclaimer-card">
+            <h3>免责声明</h3>
+            <p id="reportDisclaimer"></p>
+          </section>
+        </article>
+      </main>
+    </div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>
