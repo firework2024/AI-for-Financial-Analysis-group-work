@@ -34,6 +34,81 @@ def _merge_graph(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     return {"nodes": list(nodes.values()), "edges": edges}
 
 
+_REPORT_CHUNK_KINDS = frozenset({"summary", "section", "analysis"})
+_PDF_CHUNK_KINDS = frozenset({"pdf", "pdf_full"})
+
+
+def _report_stock_code(report: dict[str, Any], report_id: str) -> str | None:
+    meta = report.get("meta") if isinstance(report.get("meta"), dict) else {}
+    stock = str(meta.get("order_book_id") or "").split(".")[0]
+    if stock and re.fullmatch(r"\d{6}", stock):
+        return stock
+    annual = report.get("annual_report") if isinstance(report.get("annual_report"), dict) else {}
+    code = str(annual.get("stock_code") or "").strip()
+    if code:
+        return code
+    prefix = str(report_id or "").split("_")[0]
+    return prefix if re.fullmatch(r"\d{6}", prefix) else None
+
+
+def _chunk_stock_code(item: dict[str, Any]) -> str | None:
+    meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+    stock = meta.get("stock_code")
+    if stock and re.fullmatch(r"\d{6}", str(stock)):
+        return str(stock)
+    source = str(item.get("source") or "")
+    match = re.search(r"\b([036]\d{5})\b", source)
+    return match.group(1) if match else extract_stock_code(str(item.get("text") or "")[:400])
+
+
+def _purge_stale_chunks(session: ChatSession, *, report_id: str, stock_code: str | None) -> list[str]:
+    """重绑报告时移除旧报告片段，并忽略与其它股票不符的 PDF 片段。"""
+    warnings: list[str] = []
+    kept: list[dict[str, Any]] = []
+    for item in session.chunks:
+        if not isinstance(item, dict):
+            continue
+        meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+        kind = meta.get("kind")
+        chunk_report = meta.get("report_id")
+        chunk_stock = _chunk_stock_code(item)
+
+        if kind in _REPORT_CHUNK_KINDS:
+            if chunk_report and chunk_report != report_id:
+                continue
+            if not chunk_report:
+                continue
+        elif kind in _PDF_CHUNK_KINDS and stock_code and chunk_stock and chunk_stock != stock_code:
+            warnings.append(f"已忽略与其它股票不符的 PDF 片段：{item.get('source') or session.pdf_name or 'pdf'}")
+            continue
+
+        kept.append(item)
+    session.chunks = kept
+    return warnings
+
+
+def _chunks_for_retrieval(session: ChatSession) -> list[TextChunk]:
+    chunks = _chunks_from_session(session)
+    stock = session.stock_code
+    report_id = session.report_id
+    if not stock and not report_id:
+        return chunks
+
+    filtered: list[TextChunk] = []
+    for chunk in chunks:
+        meta = chunk.meta or {}
+        kind = meta.get("kind")
+        if kind in _REPORT_CHUNK_KINDS:
+            if report_id and meta.get("report_id") and meta.get("report_id") != report_id:
+                continue
+            if stock and meta.get("stock_code") and meta.get("stock_code") != stock:
+                continue
+        elif kind in _PDF_CHUNK_KINDS and stock and meta.get("stock_code") and meta.get("stock_code") != stock:
+            continue
+        filtered.append(chunk)
+    return filtered or chunks
+
+
 def _chunks_from_session(session: ChatSession) -> list[TextChunk]:
     return [
         TextChunk(
@@ -47,7 +122,10 @@ def _chunks_from_session(session: ChatSession) -> list[TextChunk]:
     ]
 
 
-def _append_chunks(session: ChatSession, new_chunks: list[TextChunk]) -> None:
+def _append_chunks(session: ChatSession, new_chunks: list[TextChunk], *, replace_ids: bool = False) -> None:
+    if replace_ids:
+        replace = {chunk.id for chunk in new_chunks}
+        session.chunks = [item for item in session.chunks if not (isinstance(item, dict) and item.get("id") in replace)]
     existing = {item.get("id") for item in session.chunks if isinstance(item, dict)}
     for chunk in new_chunks:
         if chunk.id in existing:
@@ -62,31 +140,42 @@ def _append_chunks(session: ChatSession, new_chunks: list[TextChunk]) -> None:
         )
 
 
-def index_report(session: ChatSession, report: dict[str, Any], *, report_id: str) -> None:
+def index_report(session: ChatSession, report: dict[str, Any], *, report_id: str) -> dict[str, Any]:
+    stock = _report_stock_code(report, report_id)
+    warnings = _purge_stale_chunks(session, report_id=report_id, stock_code=stock)
+    if session.stock_code and stock and session.stock_code != stock:
+        warnings.append(f"会话原股票 {session.stock_code} 已切换为 {stock}（报告 {report_id}）")
     session.report_id = report_id
-    meta = report.get("meta") if isinstance(report.get("meta"), dict) else {}
-    stock = str(meta.get("order_book_id") or "").split(".")[0]
     if stock:
         session.stock_code = stock
 
+    base_meta = {"report_id": report_id, "stock_code": stock}
     pieces: list[tuple[str, str, dict[str, Any]]] = []
     summary = str(report.get("executive_summary") or report.get("summary") or "")
     if summary:
-        pieces.append(("summary", summary, {"kind": "summary"}))
+        pieces.append(("summary", summary, {"kind": "summary", **base_meta}))
     sections = report.get("sections") if isinstance(report.get("sections"), dict) else {}
     for name, content in sections.items():
-        pieces.append((f"section:{name}", str(content), {"kind": "section", "name": name}))
+        pieces.append((f"section:{name}", str(content), {"kind": "section", "name": name, **base_meta}))
     analysis = report.get("financial_analysis") if isinstance(report.get("financial_analysis"), dict) else {}
     if analysis:
-        pieces.append(("financial_analysis", json.dumps(analysis, ensure_ascii=False)[:12000], {"kind": "analysis"}))
+        pieces.append(
+            (
+                "financial_analysis",
+                json.dumps(analysis, ensure_ascii=False)[:12000],
+                {"kind": "analysis", **base_meta},
+            )
+        )
 
     new_chunks: list[TextChunk] = []
     for source, text, meta in pieces:
         new_chunks.extend(chunk_text(text, source=source, meta=meta))
-    _append_chunks(session, new_chunks)
-    session.knowledge_graph = _merge_graph(session.knowledge_graph, build_graph_from_report(report))
+    _append_chunks(session, new_chunks, replace_ids=True)
+    session.knowledge_graph = build_graph_from_report(report)
+    session.binding_warnings = warnings
     if not session.title or session.title == "新对话":
         session.title = f"{session.stock_code or report_id.split('_')[0]} 报告问答"
+    return {"stock_code": stock, "chunk_count": len(new_chunks), "warnings": warnings}
 
 
 def index_pdf(session: ChatSession, pdf_path: Path, *, display_name: str | None = None) -> dict[str, Any]:
@@ -94,12 +183,13 @@ def index_pdf(session: ChatSession, pdf_path: Path, *, display_name: str | None 
     mda = extract_mda(text)
     session.pdf_name = display_name or pdf_path.name
     stock = extract_stock_code(pdf_path.name) or extract_stock_code(text[:4000])
+    pdf_meta = {"kind": "pdf", "stock_code": stock}
     if stock:
         session.stock_code = stock
 
-    new_chunks = chunk_text(mda.mda_text or text[:80000], source=f"pdf:{session.pdf_name}", meta={"kind": "pdf"})
+    new_chunks = chunk_text(mda.mda_text or text[:80000], source=f"pdf:{session.pdf_name}", meta=pdf_meta)
     if len(new_chunks) < 3:
-        new_chunks = chunk_text(text[:120000], source=f"pdf:{session.pdf_name}", meta={"kind": "pdf_full"})
+        new_chunks = chunk_text(text[:120000], source=f"pdf:{session.pdf_name}", meta={**pdf_meta, "kind": "pdf_full"})
     _append_chunks(session, new_chunks)
     session.knowledge_graph = _merge_graph(
         session.knowledge_graph,
@@ -146,6 +236,74 @@ def _guess_report_year(filename: str, text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _hits_from_data_api(data_api: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not data_api or data_api.get("error"):
+        return []
+    stored = data_api.get("stored") or {}
+    stock = data_api.get("stock_code")
+    hits: list[dict[str, Any]] = []
+
+    annual = stored.get("annual_report") or {}
+    for index, item in enumerate(annual.get("mda_hits") or []):
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or item.get("snippet") or "").strip()
+        if not text:
+            continue
+        hits.append(
+            {
+                "source": "datastore:annual_mda",
+                "score": 0.96 - index * 0.01,
+                "text": text[:900],
+                "meta": {"kind": "mda", "stock_code": stock, "priority": "local_db"},
+            }
+        )
+
+    pit = stored.get("pit_financials_cache") or {}
+    for index, row in enumerate((pit.get("rows") or [])[-3:]):
+        hits.append(
+            {
+                "source": "datastore:pit_financials",
+                "score": 0.92 - index * 0.01,
+                "text": json.dumps(row, ensure_ascii=False)[:900],
+                "meta": {"kind": "pit_financials", "stock_code": stock, "priority": "local_db"},
+            }
+        )
+
+    for key in ("technical", "factor"):
+        block = stored.get(key) or data_api.get(key)
+        if isinstance(block, dict) and block:
+            hits.append(
+                {
+                    "source": f"datastore:{key}",
+                    "score": 0.88,
+                    "text": json.dumps(block, ensure_ascii=False)[:900],
+                    "meta": {"kind": key, "stock_code": stock, "priority": "local_db"},
+                }
+            )
+    return hits
+
+
+def _merge_retrieved_hits(
+    rag_hits: list[dict[str, Any]],
+    data_hits: list[dict[str, Any]],
+    *,
+    max_total: int = 8,
+) -> list[dict[str, Any]]:
+    merged = sorted([*data_hits, *rag_hits], key=lambda item: float(item.get("score") or 0), reverse=True)
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for item in merged:
+        fingerprint = re.sub(r"\s+", " ", str(item.get("text") or ""))[:120]
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        unique.append(item)
+        if len(unique) >= max_total:
+            break
+    return unique
+
+
 def _local_answer(
     query: str,
     hits: list[dict[str, Any]],
@@ -177,7 +335,7 @@ def _local_answer(
         for item in web["results"][:3]:
             parts.append(f"- {item.get('title')}: {str(item.get('snippet') or '')[:160]}")
     if hits:
-        parts.append("结合你上传/绑定的材料，相关片段是：")
+        parts.append("结合你上传/绑定的材料（含本地数据库），相关片段是：")
         for hit in hits[:3]:
             snippet = re.sub(r"\s+", " ", str(hit.get("text") or ""))[:220]
             parts.append(f"- {snippet}")
@@ -210,10 +368,15 @@ def _llm_answer(
     system = (
         "你是 FinAgent 研究助手，像同事聊天一样回答，口语自然、别写成研报八股。"
         "可以分段，但不要用过多小标题和编号列表；需要数字时引用上下文里的数据，别编造。"
-        "payload 中 tools.data_api 是本地 SQLite 原始数据（行情/财务/年报 MD&A）；"
-        "tools.live_data 是米筐实时快照；tools.web_search 是网页检索结果。"
-        "引用数字时优先 data_api / live_data；新闻政策类可结合 web_search，并注明来源标题。"
-        "如果材料里没有，就直说不知道；可以给下一步怎么查的建议。"
+        "回答优先级（必须遵守）："
+        "1) tools.data_api 本地 SQLite（pit_financials、annual_report.mda_hits、technical/factor 等）；"
+        "2) retrieved_chunks 绑定报告/PDF 片段；"
+        "3) tools.live_data 米筐实时快照；"
+        "4) tools.web_search 网页检索（已按 authority_score 排序）。"
+        "若 data_api 或 retrieved_chunks 里已有数字/表述，必须优先引用，禁止先说「报告里没有」或「未找到」。"
+        "只有上述来源都确实没有该字段时，才说明缺失并建议下一步。"
+        "引用新闻时优先 source_tier 为 official / financial_data 的结果，并注明标题；社区来源仅作参考。"
+        "session.binding_warnings 若有内容，说明上下文曾切换股票/报告，勿混用其它公司数据。"
         "不要输出 JSON，不要写「作为 AI」之类套话，不要给买卖建议。"
     )
     payload = {
@@ -221,6 +384,7 @@ def _llm_answer(
             "stock_code": session.stock_code,
             "report_id": session.report_id,
             "pdf_name": session.pdf_name,
+            "binding_warnings": session.binding_warnings,
         },
         "retrieved_chunks": hits,
         "graph_hits": graph_hits,
@@ -239,11 +403,13 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
     user = ChatMessage(role="user", content=query, created_at=_now())
     session.messages.append(user)
 
-    chunks = _chunks_from_session(session)
-    hits = format_hits(search_chunks(chunks, query, top_k=6))
+    chunks = _chunks_for_retrieval(session)
+    rag_hits = format_hits(search_chunks(chunks, query, top_k=6, stock_code=session.stock_code))
     graph_hits = query_graph(session.knowledge_graph, query, limit=8)
 
     tools_payload, tool_calls = gather_tool_context(query, session)
+    data_hits = _hits_from_data_api(tools_payload.get("data_api"))
+    hits = _merge_retrieved_hits(rag_hits, data_hits, max_total=8)
 
     try:
         if has_llm_api_key():

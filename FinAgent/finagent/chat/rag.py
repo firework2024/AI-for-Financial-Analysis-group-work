@@ -69,24 +69,91 @@ def chunk_text(
     ]
 
 
-def search_chunks(chunks: list[TextChunk], query: str, *, top_k: int = 6) -> list[tuple[TextChunk, float]]:
-    q_tokens = _tokenize(query)
+_QUERY_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "总资产": ("资产总计", "资产合计", "资产总额"),
+    "营收": ("营业收入", "收入"),
+    "净利润": ("归母净利润", "净利"),
+    "负债": ("总负债", "资产负债"),
+    "现金流": ("经营现金流", "经营活动产生的现金流量"),
+    "股价": ("收盘", "最新价"),
+    "融资": ("融资余额", "两融"),
+}
+
+
+def expand_query_terms(query: str) -> set[str]:
+    tokens = _tokenize(query)
+    expanded = set(tokens)
+    q = str(query or "")
+    for key, synonyms in _QUERY_SYNONYMS.items():
+        if key in q:
+            expanded.update(_tokenize(key))
+            for synonym in synonyms:
+                expanded.update(_tokenize(synonym))
+    return expanded
+
+
+def _score_chunk(chunk: TextChunk, q_tokens: set[str], *, stock_code: str | None) -> float:
+    c_tokens = _tokenize(chunk.text)
+    if not c_tokens:
+        return 0.0
+    overlap = len(q_tokens & c_tokens)
+    if overlap == 0 and not any(token in chunk.text for token in q_tokens if len(token) >= 2):
+        return 0.0
+    score = overlap / (len(q_tokens) ** 0.5)
+    if any(token in chunk.text for token in q_tokens if len(token) >= 3):
+        score += 0.5
+    if stock_code and stock_code in chunk.text:
+        score += 0.8
+    meta = chunk.meta or {}
+    if stock_code and meta.get("stock_code") == stock_code:
+        score += 0.6
+    if meta.get("kind") in {"summary", "section", "analysis", "mda", "pit_financials"}:
+        score += 0.15
+    return score
+
+
+def search_chunks(
+    chunks: list[TextChunk],
+    query: str,
+    *,
+    top_k: int = 6,
+    stock_code: str | None = None,
+) -> list[tuple[TextChunk, float]]:
+    q_tokens = expand_query_terms(query)
     if not q_tokens or not chunks:
         return []
+
     scored: list[tuple[TextChunk, float]] = []
     for chunk in chunks:
-        c_tokens = _tokenize(chunk.text)
-        if not c_tokens:
-            continue
-        overlap = len(q_tokens & c_tokens)
-        if overlap == 0 and query[:8] not in chunk.text:
-            continue
-        score = overlap / (len(q_tokens) ** 0.5)
-        if any(token in chunk.text for token in q_tokens if len(token) >= 3):
-            score += 0.5
-        scored.append((chunk, score))
+        score = _score_chunk(chunk, q_tokens, stock_code=stock_code)
+        if score > 0:
+            scored.append((chunk, score))
+
     scored.sort(key=lambda item: item[1], reverse=True)
-    return scored[:top_k]
+    hits = scored[:top_k]
+    if hits and hits[0][1] >= 0.45:
+        return hits
+
+    # 财务类问题：按同义词再扫一遍，避免「总资产」与「资产总计」零重叠
+    fallback_tokens = expand_query_terms(query)
+    for chunk in chunks:
+        if any(token in chunk.text for token in fallback_tokens if len(token) >= 2):
+            score = _score_chunk(chunk, fallback_tokens, stock_code=stock_code)
+            if score <= 0:
+                score = 0.35
+            scored.append((chunk, score))
+
+    scored.sort(key=lambda item: item[1], reverse=True)
+    deduped: list[tuple[TextChunk, float]] = []
+    seen: set[str] = set()
+    for chunk, score in scored:
+        if chunk.id in seen:
+            continue
+        seen.add(chunk.id)
+        deduped.append((chunk, score))
+        if len(deduped) >= top_k:
+            break
+    return deduped
 
 
 def format_hits(hits: list[tuple[TextChunk, float]]) -> list[dict[str, Any]]:

@@ -9,6 +9,13 @@ def test_rag_finds_relevant_chunk():
     assert "融资" in hits[0][0].text
 
 
+def test_rag_synonym_expansion():
+    chunks = chunk_text("公司资产总计达到 5000 亿元。", source="demo")
+    hits = search_chunks(chunks, "总资产")
+    assert hits
+    assert "5000" in hits[0][0].text
+
+
 def test_graph_query_finds_metric_topic():
     graph = build_graph_from_text("公司 PE 估值偏高，ROE 保持稳定，Shibor 短端上行。")
     hits = query_graph(graph, "PE ROE")

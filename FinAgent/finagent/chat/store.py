@@ -33,6 +33,7 @@ class ChatSession:
     stock_code: str | None = None
     report_id: str | None = None
     pdf_name: str | None = None
+    binding_warnings: list[str] = field(default_factory=list)
     messages: list[ChatMessage] = field(default_factory=list)
     chunks: list[dict[str, Any]] = field(default_factory=list)
     knowledge_graph: dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
@@ -47,6 +48,7 @@ class ChatSession:
             "stock_code": self.stock_code,
             "report_id": self.report_id,
             "pdf_name": self.pdf_name,
+            "binding_warnings": self.binding_warnings,
             "messages": [message.to_dict() for message in self.messages],
             "chunks": self.chunks,
             "knowledge_graph": self.knowledge_graph,
@@ -68,6 +70,7 @@ class ChatSession:
             stock_code=payload.get("stock_code"),
             report_id=payload.get("report_id"),
             pdf_name=payload.get("pdf_name"),
+            binding_warnings=list(payload.get("binding_warnings") or []),
             messages=messages,
             chunks=list(payload.get("chunks") or []),
             knowledge_graph=payload.get("knowledge_graph") if isinstance(payload.get("knowledge_graph"), dict) else {"nodes": [], "edges": []},
