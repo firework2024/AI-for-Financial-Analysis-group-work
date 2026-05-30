@@ -137,22 +137,69 @@ async function ensureAuth() {
   return fetchCurrentUser();
 }
 
+function showAuthError(message) {
+  if (window.App?.toast) {
+    window.App.toast(message, "error");
+    return;
+  }
+  const host = document.getElementById("toastHost");
+  if (host) {
+    const node = document.createElement("div");
+    node.className = "toast error";
+    node.textContent = message;
+    host.appendChild(node);
+    window.setTimeout(() => node.remove(), 4000);
+    return;
+  }
+  window.alert(message);
+}
+
 function bindAuthEvents() {
   document.getElementById("authLoginForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const username = document.getElementById("authLoginUsername")?.value?.trim();
     const password = document.getElementById("authLoginPassword")?.value || "";
+    if (!username || password.length < 6) {
+      showAuthError("用户名至少 2 位，密码至少 6 位");
+      return;
+    }
+    const submitBtn = event.target.querySelector(".auth-submit");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "登录中…";
+    }
     login(username, password)
       .then(() => window.onAuthReady?.())
-      .catch((error) => window.App?.toast?.(error.message, "error"));
+      .catch((error) => showAuthError(error.message))
+      .finally(() => {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "登录";
+        }
+      });
   });
   document.getElementById("authRegisterForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const username = document.getElementById("authRegisterUsername")?.value?.trim();
     const password = document.getElementById("authRegisterPassword")?.value || "";
+    if (!username || password.length < 6) {
+      showAuthError("用户名至少 2 位，密码至少 6 位");
+      return;
+    }
+    const submitBtn = event.target.querySelector(".auth-submit");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "注册中…";
+    }
     register(username, password)
       .then(() => window.onAuthReady?.())
-      .catch((error) => window.App?.toast?.(error.message, "error"));
+      .catch((error) => showAuthError(error.message))
+      .finally(() => {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "注册并登录";
+        }
+      });
   });
   document.getElementById("authShowRegister")?.addEventListener("click", () => showAuthGate("register"));
   document.getElementById("authShowLogin")?.addEventListener("click", () => showAuthGate("login"));

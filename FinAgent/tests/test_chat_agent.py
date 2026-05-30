@@ -22,6 +22,7 @@ def test_index_report_replaces_stale_summary_chunks():
     assert "宁德时代" in texts
     assert session.stock_code == "300750"
     assert all(item.get("meta", {}).get("report_id") == "300750_multi_agent_report.json" for item in session.chunks if item.get("meta", {}).get("kind") == "summary")
+    assert session.title == "300750 报告问答"
 
 
 def test_purge_drops_mismatched_pdf_chunks():

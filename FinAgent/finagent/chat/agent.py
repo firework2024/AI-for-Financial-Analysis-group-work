@@ -141,8 +141,13 @@ def _append_chunks(session: ChatSession, new_chunks: list[TextChunk], *, replace
 
 
 def index_report(session: ChatSession, report: dict[str, Any], *, report_id: str) -> dict[str, Any]:
+    previous_report_id = session.report_id
+    previous_stock = session.stock_code
     stock = _report_stock_code(report, report_id)
     warnings = _purge_stale_chunks(session, report_id=report_id, stock_code=stock)
+    switched_report = bool(previous_report_id and previous_report_id != report_id)
+    if switched_report:
+        warnings.append(f"已切换报告：{previous_report_id} -> {report_id}")
     if session.stock_code and stock and session.stock_code != stock:
         warnings.append(f"会话原股票 {session.stock_code} 已切换为 {stock}（报告 {report_id}）")
     session.report_id = report_id
@@ -173,7 +178,12 @@ def index_report(session: ChatSession, report: dict[str, Any], *, report_id: str
     _append_chunks(session, new_chunks, replace_ids=True)
     session.knowledge_graph = build_graph_from_report(report)
     session.binding_warnings = warnings
-    if not session.title or session.title == "新对话":
+    legacy_titles = {
+        "新对话",
+        f"{previous_stock} 报告问答" if previous_stock else "",
+        f"{(previous_report_id or '').split('_')[0]} 报告问答" if previous_report_id else "",
+    }
+    if not session.title or session.title in legacy_titles or switched_report:
         session.title = f"{session.stock_code or report_id.split('_')[0]} 报告问答"
     return {"stock_code": stock, "chunk_count": len(new_chunks), "warnings": warnings}
 

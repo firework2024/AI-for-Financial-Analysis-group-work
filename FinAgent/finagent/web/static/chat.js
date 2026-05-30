@@ -294,6 +294,54 @@ function closeReportPicker() {
   chatEls.reportPickerModal?.classList.add("hidden");
 }
 
+function sessionHasHistory(session) {
+  return Array.isArray(session?.messages) && session.messages.length > 0;
+}
+
+function reportStockPrefix(reportId) {
+  const prefix = String(reportId || "").split("_")[0];
+  return /^\d{6}$/.test(prefix) ? prefix : null;
+}
+
+async function createContextIsolatedSession(stockCode = null) {
+  const payload = await api("/api/chat/sessions", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "新对话",
+      ...( /^\d{6}$/.test(String(stockCode || "")) ? { stock_code: String(stockCode) } : {}),
+    }),
+  });
+  await loadChatSessions();
+  await openChatSession(payload.id);
+}
+
+async function ensureIsolatedSessionForReport(reportId) {
+  if (!chatState.activeSessionId) return;
+  const session = chatState.activeSession;
+  if (!sessionHasHistory(session)) return;
+  const currentReportId = session?.report_id || null;
+  if (!currentReportId || currentReportId === reportId) return;
+
+  const targetReport = (App.state.reports || []).find((item) => item.id === reportId);
+  const targetStock = targetReport?.stock_code || reportStockPrefix(reportId) || null;
+  await createContextIsolatedSession(targetStock);
+  App.toast("已为新报告创建独立对话，避免上下文混淆");
+}
+
+async function ensureIsolatedSessionForAnalyze(stock) {
+  if (!chatState.activeSessionId) return;
+  const session = chatState.activeSession;
+  if (!sessionHasHistory(session)) return;
+  const currentStock = String(session?.stock_code || "");
+  const currentReportStock = reportStockPrefix(session?.report_id || "");
+  const mismatch =
+    (currentStock && currentStock !== stock) ||
+    (currentReportStock && currentReportStock !== stock);
+  if (!mismatch) return;
+  await createContextIsolatedSession(stock);
+  App.toast("检测到股票已切换，已创建新对话");
+}
+
 function renderReportPicker() {
   if (!chatEls.reportPickerList) return;
   const reports = App.state.reports || [];
@@ -341,6 +389,7 @@ async function attachReportById(reportId) {
   if (!chatState.activeSessionId) {
     await createChatSession();
   }
+  await ensureIsolatedSessionForReport(reportId);
   const session = await api(`/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/attach-report`, {
     method: "POST",
     body: JSON.stringify({ report_id: reportId }),
@@ -350,6 +399,9 @@ async function attachReportById(reportId) {
   renderChatSessions();
   renderChatMessages(session);
   updateChatHeader(session);
+  if (session.stock_code && chatEls.chatStockInput) {
+    chatEls.chatStockInput.value = session.stock_code;
+  }
   await loadChatSessions();
   closeReportPicker();
   App.navigate("chat");
@@ -379,6 +431,7 @@ async function analyzeInChat() {
   if (!chatState.activeSessionId) {
     await createChatSession();
   }
+  await ensureIsolatedSessionForAnalyze(stock);
   const response = await api(`/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/analyze`, {
     method: "POST",
     body: JSON.stringify({ stock, mode: "multi" }),

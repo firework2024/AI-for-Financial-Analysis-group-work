@@ -11,10 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/app.css">
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
 </head>
-<body>
+<body class="auth-locked">
   <div id="toastHost" class="toast-host" aria-live="polite"></div>
 
   <div class="shell">
@@ -33,9 +31,15 @@
         </button>
       </div>
 
-      <button class="rail-primary" type="button" id="chatNewBtn">
-        <span>＋</span> 新对话
-      </button>
+      <div class="rail-chat-entry">
+        <button class="rail-primary rail-primary-chat" type="button" id="chatNewBtn">
+          <span>＋</span> 新对话
+        </button>
+        <div class="rail-stock-pill">
+          <label for="chatStockInput">代码</label>
+          <input id="chatStockInput" type="text" maxlength="6" placeholder="600519" inputmode="numeric" aria-label="股票代码">
+        </div>
+      </div>
 
       <div class="rail-user">
         <span class="rail-user-label" id="railUserLabel"></span>
@@ -160,10 +164,6 @@
                 <span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>
               </div>
               <div class="chat-composer-tools">
-                <div class="input-pill input-pill-compact">
-                  <label for="chatStockInput">代码</label>
-                  <input class="mini-input" id="chatStockInput" type="text" maxlength="6" placeholder="600519" inputmode="numeric">
-                </div>
                 <button class="ghost-btn ghost-btn-sm" type="button" id="chatAttachReportBtn" disabled>绑定报告</button>
                 <button class="ghost-btn ghost-btn-sm primary" type="button" id="chatAnalyzeBtn">生成研报</button>
               </div>
@@ -281,7 +281,6 @@
         <div class="brand-icon" aria-hidden="true">F</div>
         <div>
           <h2>FinAgent</h2>
-          <p>登录后对话与报告按账号隔离保存</p>
         </div>
       </div>
 
@@ -320,5 +319,7 @@
   <script src="/assets/settings.js"></script>
   <script src="/assets/app.js"></script>
   <script src="/assets/chat.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
 </body>
 </html>
