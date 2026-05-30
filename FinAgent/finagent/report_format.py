@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 from datetime import datetime
@@ -14,6 +15,48 @@ _LLM_REVISE_PREAMBLE = re.compile(
     r"^(?:根据验证 Agent[^\n]*(?:\n|$))+",
     re.DOTALL,
 )
+
+_FIELD_NAME = r"[a-z][a-z0-9_]{1,}"
+_QUARTER_CODE = r"20\d{2}q[1-4]"
+
+
+def polish_field_refs(text: str) -> str:
+    """去掉冗余的数据源/字段元数据；保留字段名时用反引号供前端统一标签样式。"""
+    if not text:
+        return text
+
+    result = str(text)
+    field = _FIELD_NAME
+    quarter = _QUARTER_CODE
+
+    result = re.sub(
+        rf"[（(]\s*`?quarter`?\s*为\s*`?({quarter})`?\s*[）)]",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(rf"根据\s*`?({field})`?\s*数据[，,]?\s*", "", result, flags=re.IGNORECASE)
+    result = re.sub(rf"基于\s*`?({field})`?\s*数据[，,]?\s*", "", result, flags=re.IGNORECASE)
+    result = re.sub(rf"基于\s*`?({field})`?\s*中", "", result, flags=re.IGNORECASE)
+    result = re.sub(rf"`?({field})`?\s*字段", "", result, flags=re.IGNORECASE)
+    result = re.sub(
+        rf"基于米筐数据\s*`?({field})`?\s*字段[，,]?\s*",
+        "基于米筐数据，",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(rf"JSON\s*中的\s*`?({field})`?\s*", "", result, flags=re.IGNORECASE)
+
+    def _wrap_token(match: re.Match[str]) -> str:
+        token = match.group(1)
+        if "_" not in token and not re.fullmatch(quarter, token, re.IGNORECASE):
+            return token
+        return f"`{token}`"
+
+    result = re.sub(rf"(?<![`/\w])({field}|{quarter})(?![`\w])", _wrap_token, result, flags=re.IGNORECASE)
+    result = re.sub(r"[，,]\s*[，,]", "，", result)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
 
 
 def disclaimer_lines() -> list[str]:
@@ -62,6 +105,7 @@ def normalize_section_text(content: Any, section_name: str) -> str:
     text = _strip_llm_preamble(text)
     text = _expand_inline_labels(text)
     text = _normalize_body_headings(text)
+    text = polish_field_refs(text)
     return text or "_本节暂无可用内容。_"
 
 
@@ -204,6 +248,57 @@ def normalize_chart_ref_path(path: str) -> str:
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix) :]
     return normalized
+
+
+def section_anchor(title: str, used: set[str] | None = None) -> str:
+    used = used if used is not None else set()
+    base = re.sub(r"\s+", "-", str(title).strip())
+    base = re.sub(r"[^\w\u4e00-\u9fff-]", "", base).lower() or "section"
+    anchor = base
+    index = 2
+    while anchor in used:
+        anchor = f"{base}-{index}"
+        index += 1
+    used.add(anchor)
+    return anchor
+
+
+def build_report_toc(section_titles: list[str]) -> list[dict[str, str]]:
+    used: set[str] = set()
+    entries: list[dict[str, str]] = []
+    for title in section_titles:
+        text = str(title or "").strip()
+        if not text:
+            continue
+        entries.append({"title": text, "id": section_anchor(text, used)})
+    return entries
+
+
+def toc_id_map(entries: list[dict[str, str]]) -> dict[str, str]:
+    return {str(item["title"]): str(item["id"]) for item in entries if item.get("title") and item.get("id")}
+
+
+def render_toc_markdown(entries: list[dict[str, str]]) -> list[str]:
+    if not entries:
+        return []
+    lines = ["## 目录", ""]
+    lines.extend(f"- [{item['title']}](#{item['id']})" for item in entries)
+    lines.append("")
+    return lines
+
+
+def render_toc_html(entries: list[dict[str, str]]) -> str:
+    if not entries:
+        return ""
+    items = "".join(
+        f'<li><a href="#{html.escape(item["id"])}">{html.escape(item["title"])}</a></li>'
+        for item in entries
+    )
+    return f'<nav class="report-toc"><h2>目录</h2><ul>{items}</ul></nav>'
+
+
+def markdown_section(title: str, anchor: str, body: str) -> list[str]:
+    return [f'<a id="{anchor}"></a>', "", f"## {title}", body.strip(), ""]
 
 
 def clean_chart_prose(text: str) -> str:

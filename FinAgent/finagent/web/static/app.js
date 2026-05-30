@@ -8,6 +8,8 @@ const state = {
   searchQuery: "",
   sidebar: "chat",
   view: "chat",
+  reportOutlineOpen: true,
+  tocObserver: null,
 };
 
 const els = {
@@ -39,8 +41,15 @@ const els = {
   askReportBtn: document.getElementById("askReportBtn"),
   backToChatBtn: document.getElementById("backToChatBtn"),
   chatAttachReportBtn: document.getElementById("chatAttachReportBtn"),
-  summaryCard: document.getElementById("summaryCard"),
+  summaryCard: document.getElementById("section-summary"),
   summaryContent: document.getElementById("summaryContent"),
+  reportToc: document.getElementById("reportToc"),
+  reportBody: document.getElementById("reportBody"),
+  reportOutline: document.getElementById("reportOutline"),
+  reportScroll: document.getElementById("reportScroll"),
+  reportOutlineClose: document.getElementById("reportOutlineClose"),
+  reportOutlineToggle: document.getElementById("reportOutlineToggle"),
+  reportOutlineToggleHead: document.getElementById("reportOutlineToggleHead"),
   annualSections: document.getElementById("annualSections"),
   multiSections: document.getElementById("multiSections"),
   reportDisclaimer: document.getElementById("reportDisclaimer"),
@@ -82,6 +91,7 @@ function setSidebarPanel(panel) {
 
 function normalizeFilePath(path) {
   return String(path || "")
+    .replace(/^FinAgent[\\/]outputs[\\/]/i, "")
     .replace(/^outputs[\\/]/, "")
     .replace(/\\/g, "/")
     .replace(/^\/+/, "");
@@ -89,20 +99,86 @@ function normalizeFilePath(path) {
 
 function fileUrl(path) {
   const normalized = normalizeFilePath(path);
-  return normalized ? `/files/${normalized}` : "";
+  if (!normalized) return "";
+  return `/files/${encodeURI(normalized)}`;
+}
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const FIGURE_PLACEHOLDER = "FINAGENT_FIGURE_";
+
+function extractMarkdownFigures(text) {
+  const figures = [];
+  const stripped = String(text).replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, rawPath) => {
+    figures.push({ alt: String(alt || "图表").trim(), path: String(rawPath || "").trim() });
+    return `\n\n${FIGURE_PLACEHOLDER}${figures.length - 1}\n\n`;
+  });
+  return { stripped, figures };
+}
+
+function figureHtml(fig) {
+  const url = fileUrl(fig.path);
+  if (!url) return "";
+  return `<figure class="report-figure"><img src="${url}" alt="${escapeHtml(fig.alt)}" loading="lazy" /></figure>`;
+}
+
+function injectFigurePlaceholders(html, figures) {
+  let result = html;
+  figures.forEach((fig, index) => {
+    const token = `${FIGURE_PLACEHOLDER}${index}`;
+    const block = figureHtml(fig);
+    result = result.replace(new RegExp(`<p>\\s*${token}\\s*</p>`, "g"), block);
+    result = result.replaceAll(token, block);
+  });
+  return result;
+}
+
+function polishFieldRefs(text) {
+  let result = String(text || "");
+  const field = "[a-z][a-z0-9_]{1,}";
+  const quarter = "20\\d{2}q[1-4]";
+  result = result.replace(new RegExp(`[（(]\\s*\`?quarter\`?\\s*为\\s*\`?(${quarter})\`?\\s*[）)]`, "gi"), "");
+  result = result.replace(new RegExp(`根据\\s*\`?(${field})\`?\\s*数据[，,]?\\s*`, "gi"), "");
+  result = result.replace(new RegExp(`基于\\s*\`?(${field})\`?\\s*数据[，,]?\\s*`, "gi"), "");
+  result = result.replace(new RegExp(`基于\\s*\`?(${field})\`?\\s*中`, "gi"), "");
+  result = result.replace(new RegExp(`\`?(${field})\`?\\s*字段`, "gi"), "");
+  result = result.replace(new RegExp(`基于米筐数据\\s*\`?(${field})\`?\\s*字段[，,]?\\s*`, "gi"), "基于米筐数据，");
+  result = result.replace(new RegExp(`JSON\\s*中的\\s*\`?(${field})\`?\\s*`, "gi"), "");
+  result = result.replace(new RegExp(`(?<![\`/\\w])(${field}|${quarter})(?![\`\\w])`, "gi"), (_m, token) => {
+    if (!token.includes("_") && !new RegExp(`^${quarter}$`, "i").test(token)) return token;
+    return `\`${token}\``;
+  });
+  result = result.replace(/[，,]\s*[，,]/g, "，");
+  result = result.replace(/\n{3,}/g, "\n\n");
+  return result.trim();
+}
+
+function tagFieldRefs(html) {
+  return html.replace(/<code>([^<]+)<\/code>/g, '<code class="field-ref">$1</code>');
 }
 
 function renderMarkdown(text, charts = null) {
   if (!text) return "<p>暂无内容</p>";
-  let source = cleanChartProse(String(text));
-  let html = fixImagePaths(marked.parse(source));
+  const cleaned = cleanChartProse(polishFieldRefs(String(text)));
+  const { stripped, figures } = extractMarkdownFigures(cleaned);
+  let html = marked.parse(stripped.trim() || " ");
+  html = injectFigurePlaceholders(html, figures);
+  html = fixImagePaths(html);
   html = html.replace(
     /<p><strong>图注<\/strong>\s([^<]*)<\/p>/g,
     '<p class="figure-note"><strong>图注</strong> $1</p>'
   );
+  html = tagFieldRefs(html);
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ["target"],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|data|blob):|\/files\/)/i,
+    ADD_TAGS: ["figure"],
+    ADD_ATTR: ["src", "alt", "loading", "class", "target"],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|data|blob):|\/(?:files|charts)\/)/i,
   });
 }
 
@@ -110,7 +186,7 @@ const CHART_PATH_PATTERN = String.raw`(?:charts|outputs)[\\/][\w./-]+\.(?:png|jp
 
 function cleanChartProse(text) {
   let result = String(text);
-  result = result.replace(new RegExp("!\\[[^\\]]*\\]\\((" + CHART_PATH_PATTERN + ")\\)", "gi"), "");
+  // 保留 ![caption](charts/...) 内嵌图；仅清理正文中的路径占位引用
   result = result.replace(new RegExp("`(" + CHART_PATH_PATTERN + ")`", "gi"), "");
   result = result.replace(
     /[a-zA-Z0-9_]+\s*图表\s*[（(]\s*`?(charts[\\/][^`)`\s]+\.(?:png|jpe?g|gif|webp))`?\s*[）)]/gi,
@@ -127,9 +203,13 @@ function cleanChartProse(text) {
 }
 
 function fixImagePaths(html) {
-  return html.replace(/src="(?!https?:|\/files\/)([^"]+)"/g, (_match, path) => {
+  let result = html.replace(/src="(?!https?:|\/(?:files|charts)\/)([^"]+)"/gi, (_match, path) => {
     return `src="${fileUrl(path)}"`;
   });
+  result = result.replace(/src='(?!https?:|\/(?:files|charts)\/)([^']+)'/gi, (_match, path) => {
+    return `src="${fileUrl(path)}"`;
+  });
+  return result;
 }
 
 async function api(path, options = {}) {
@@ -239,6 +319,8 @@ async function loadReport(filename) {
     state.activeReport = report;
     renderReportList();
     renderReportDetail(report);
+    const scrollEl = els.reportScroll;
+    if (scrollEl) scrollEl.scrollTop = 0;
     if (els.chatAttachReportBtn) els.chatAttachReportBtn.disabled = false;
     setSidebarPanel("reports");
     navigate("report");
@@ -280,8 +362,143 @@ function fmtNum(value) {
   return String(Number(number.toFixed(4)));
 }
 
-function cardSection(title, innerHtml) {
-  return `<section class="report-block"><h2>${title}</h2>${innerHtml}</section>`;
+function sectionAnchor(title, used = new Set()) {
+  let base = String(title || "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^\w\u4e00-\u9fff-]/gi, "")
+    .toLowerCase();
+  if (!base) base = "section";
+  let anchor = base;
+  let index = 2;
+  while (used.has(anchor)) {
+    anchor = `${base}-${index}`;
+    index += 1;
+  }
+  used.add(anchor);
+  return anchor;
+}
+
+function tocIdMap(entries) {
+  const map = {};
+  (entries || []).forEach((item) => {
+    if (item?.title && item?.id) map[item.title] = item.id;
+  });
+  return map;
+}
+
+function buildMultiTocFallback(report) {
+  const sections = report.sections || {};
+  const sectionOrder = getMultiSectionOrder(report);
+  const titles = ["执行摘要", "核心指标速览", ...sectionOrder, "免责声明"];
+  const used = new Set();
+  return titles.map((title) => ({ title, id: sectionAnchor(title, used) }));
+}
+
+function buildAnnualTocFallback(report) {
+  const dataNotes = report.signals?.data_notes || report.financial_analysis?.data_notes || [];
+  const titles = [
+    "执行摘要",
+    "核心指标",
+    "审核后重点信号",
+    "投资总监分析",
+    "MD&A 摘要",
+  ];
+  if (Array.isArray(dataNotes) && dataNotes.length) titles.push("数据说明");
+  titles.push("字段来源概览", "免责声明");
+  const used = new Set();
+  return titles.map((title) => ({ title, id: sectionAnchor(title, used) }));
+}
+
+function resolveReportToc(report) {
+  if (Array.isArray(report.table_of_contents) && report.table_of_contents.length) {
+    return report.table_of_contents;
+  }
+  const reportType = report._ui?.report_type || (report.sections ? "multi_analyze" : "annual_analyze");
+  return reportType === "multi_analyze" ? buildMultiTocFallback(report) : buildAnnualTocFallback(report);
+}
+
+function setReportOutlineOpen(open) {
+  state.reportOutlineOpen = open;
+  els.reportBody?.classList.toggle("outline-collapsed", !open);
+  if (els.reportOutlineToggleHead) {
+    els.reportOutlineToggleHead.textContent = open ? "收起目录" : "目录";
+  }
+}
+
+function scrollToReportSection(id) {
+  const target = document.getElementById(id);
+  const container = els.reportScroll;
+  if (!target || !container) return;
+  const next = container.scrollTop + target.getBoundingClientRect().top - container.getBoundingClientRect().top - 16;
+  container.scrollTo({ top: Math.max(0, next), behavior: "smooth" });
+}
+
+function bindReportOutlineEvents() {
+  const open = () => setReportOutlineOpen(true);
+  const close = () => setReportOutlineOpen(false);
+  els.reportOutlineClose?.addEventListener("click", close);
+  els.reportOutlineToggle?.addEventListener("click", open);
+  els.reportOutlineToggleHead?.addEventListener("click", () => setReportOutlineOpen(!state.reportOutlineOpen));
+  setReportOutlineOpen(window.innerWidth > 900);
+}
+
+function setupTocScrollSpy(entries) {
+  if (state.tocObserver) {
+    state.tocObserver.disconnect();
+    state.tocObserver = null;
+  }
+  if (!entries.length || !els.reportScroll) return;
+  const idSet = new Set(entries.map((item) => item.id));
+  const items = [...document.querySelectorAll(".report-outline-item")];
+  state.tocObserver = new IntersectionObserver(
+    (records) => {
+      const visible = records
+        .filter((record) => record.isIntersecting && idSet.has(record.target.id))
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      if (!visible.length) return;
+      const activeId = visible[0].target.id;
+      items.forEach((btn) => btn.classList.toggle("active", btn.dataset.target === activeId));
+    },
+    { root: els.reportScroll, rootMargin: "-20% 0px -55% 0px", threshold: [0, 0.15, 0.4, 1] }
+  );
+  entries.forEach((entry) => {
+    const node = document.getElementById(entry.id);
+    if (node) state.tocObserver.observe(node);
+  });
+}
+
+function renderReportToc(report) {
+  const entries = resolveReportToc(report);
+  if (!els.reportToc) return tocIdMap(entries);
+  if (!entries.length) {
+    els.reportToc.innerHTML = "";
+    setReportOutlineOpen(false);
+    return {};
+  }
+  setReportOutlineOpen(window.innerWidth > 900 || state.reportOutlineOpen);
+  els.reportToc.innerHTML = entries
+    .map(
+      (item, index) =>
+        `<button class="report-outline-item${index === 0 ? " active" : ""}" type="button" data-target="${item.id}">${item.title}</button>`
+    )
+    .join("");
+  els.reportToc.querySelectorAll(".report-outline-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      scrollToReportSection(btn.dataset.target);
+      if (window.innerWidth <= 900) setReportOutlineOpen(false);
+    });
+  });
+  setupTocScrollSpy(entries);
+  return tocIdMap(entries);
+}
+
+function cardSection(title, innerHtml, anchorId) {
+  const id = anchorId || sectionAnchor(title);
+  return `<section class="report-block report-block-accent" id="${id}">
+    <header class="report-section-head"><h2 class="report-section-title">${title}</h2></header>
+    <div class="report-section-body">${innerHtml}</div>
+  </section>`;
 }
 
 function renderAnnualMetricsTable(metrics) {
@@ -452,7 +669,7 @@ function getMultiSectionOrder(report) {
   return Object.keys(sections);
 }
 
-function renderAnnualReport(report) {
+function renderAnnualReport(report, anchors = {}) {
   const meta = report.meta || {};
   const analysis = report.financial_analysis || {};
   const signals = report.signals || analysis || {};
@@ -463,20 +680,22 @@ function renderAnnualReport(report) {
 
   els.multiSections.innerHTML = "";
   els.annualSections.innerHTML = [
-    cardSection("核心指标", renderAnnualMetricsTable(metrics)),
+    cardSection("核心指标", renderAnnualMetricsTable(metrics), anchors["核心指标"]),
     cardSection(
       "审核后重点信号",
-      renderDisplaySignals(signals.display_signals || analysis.display_signals, signals.reviewed_signals || analysis.reviewed_signals)
+      renderDisplaySignals(signals.display_signals || analysis.display_signals, signals.reviewed_signals || analysis.reviewed_signals),
+      anchors["审核后重点信号"]
     ),
-    cardSection("投资总监分析", `<div class="prose">${renderMarkdown(directorText)}</div>`),
+    cardSection("投资总监分析", `<div class="prose">${renderMarkdown(directorText)}</div>`, anchors["投资总监分析"]),
     cardSection(
       "MD&A 摘要",
-      `<div class="prose">${renderMarkdown(mda.summary_brief || mda.summary || analysis.mda_summary || "")}</div>`
+      `<div class="prose">${renderMarkdown(mda.summary_brief || mda.summary || analysis.mda_summary || "")}</div>`,
+      anchors["MD&A 摘要"]
     ),
     dataNotes.length
-      ? cardSection("数据说明", `<ul class="plain-list">${dataNotes.map((item) => `<li>${item}</li>`).join("")}</ul>`)
+      ? cardSection("数据说明", `<ul class="plain-list">${dataNotes.map((item) => `<li>${item}</li>`).join("")}</ul>`, anchors["数据说明"])
       : "",
-    cardSection("字段来源概览", renderProvenance(report.field_provenance)),
+    cardSection("字段来源概览", renderProvenance(report.field_provenance), anchors["字段来源概览"]),
   ]
     .filter(Boolean)
     .join("");
@@ -491,11 +710,10 @@ function renderAnnualReport(report) {
     .join(" · ");
 }
 
-function renderMultiReport(report) {
+function renderMultiReport(report, anchors = {}) {
   els.annualSections.innerHTML = "";
   const sections = report.sections || {};
   const sectionOrder = getMultiSectionOrder(report);
-  const charts = report.charts || {};
   const validation = report.validation || {};
   const meta = report.meta || {};
   const dataSummary = report.data_summary || {};
@@ -507,28 +725,14 @@ function renderMultiReport(report) {
 
   const sectionBlocks = sectionOrder
     .map((name) =>
-      cardSection(name, `<div class="prose">${renderMarkdown(sections[name] || "", charts)}</div>`)
+      cardSection(name, `<div class="prose">${renderMarkdown(sections[name] || "")}</div>`, anchors[name])
     )
     .join("");
 
-  const chartCards = Object.entries(charts)
-    .map(([name, path]) => {
-      const url = fileUrl(path);
-      const label = name.replace(/_/g, " ");
-      return `
-        <figure class="chart-card">
-          <img src="${url}" alt="${label}" loading="lazy">
-          <figcaption>${label}</figcaption>
-        </figure>
-      `;
-    })
-    .join("");
-
   els.multiSections.innerHTML = [
-    `<div class="report-block"><div class="validation-banner ${validationClass}">${validationText}</div></div>`,
-    cardSection("核心指标速览", renderMultiCoreMetrics(dataSummary)),
+    `<div class="report-block report-block-validation"><div class="validation-banner ${validationClass}">${validationText}</div></div>`,
+    cardSection("核心指标速览", renderMultiCoreMetrics(dataSummary), anchors["核心指标速览"]),
     sectionBlocks,
-    cardSection("图表总览", `<div class="chart-grid">${chartCards || '<div class="empty">暂无图表</div>'}</div>`),
   ].join("");
 
   const htmlPath = meta.output_html;
@@ -548,6 +752,7 @@ function renderMultiReport(report) {
 function renderReportDetail(report) {
   const ui = report._ui || {};
   const reportType = ui.report_type || (report.sections ? "multi_analyze" : "annual_analyze");
+  const anchors = renderReportToc(report);
 
   els.reportTags.innerHTML = `
     <span class="tag ${reportType === "multi_analyze" ? "multi" : "annual"}">${reportTypeLabel(reportType)}</span>
@@ -555,17 +760,23 @@ function renderReportDetail(report) {
   `;
   els.reportTitle.textContent = ui.title || report.meta?.stock_code || "分析报告";
   els.reportDisclaimer.textContent = report._disclaimer || state.disclaimer;
+  if (anchors["免责声明"] && els.reportDisclaimer?.closest("section")) {
+    els.reportDisclaimer.closest("section").id = anchors["免责声明"];
+  }
 
   const directorText = report.summary || report.investment_director || "";
   const executiveSummary =
     report.executive_summary || (reportType === "annual_analyze" ? extractExecutiveSummary(directorText) : report.summary) || "";
   els.summaryContent.innerHTML = renderMarkdown(executiveSummary);
-  els.summaryCard.classList.toggle("hidden", !executiveSummary);
+  if (els.summaryCard) {
+    els.summaryCard.classList.toggle("hidden", !executiveSummary);
+    if (anchors["执行摘要"]) els.summaryCard.id = anchors["执行摘要"];
+  }
 
   if (reportType === "multi_analyze") {
-    renderMultiReport(report);
+    renderMultiReport(report, anchors);
   } else {
-    renderAnnualReport(report);
+    renderAnnualReport(report, anchors);
   }
 }
 
@@ -676,6 +887,7 @@ async function bootstrap() {
   els.askReportBtn?.addEventListener("click", () => {
     if (typeof window.openChatWithReport === "function") window.openChatWithReport();
   });
+  bindReportOutlineEvents();
 
   const today = new Date().toISOString().slice(0, 10);
   if (els.analyzeForm?.elements.as_of) els.analyzeForm.elements.as_of.value = today;

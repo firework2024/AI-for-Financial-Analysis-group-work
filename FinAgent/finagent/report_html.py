@@ -81,6 +81,38 @@ h3.chart-group {
   font-size: 0.95rem;
 }
 .draft-banner p { margin: 0; }
+.report-toc {
+  margin: 0 0 1.75rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+.report-toc h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+  color: #374151;
+}
+.report-toc ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  columns: 2;
+  column-gap: 2rem;
+}
+.report-toc li {
+  margin: 0.25rem 0;
+  break-inside: avoid;
+}
+.report-toc a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.report-toc a:hover {
+  text-decoration: underline;
+}
+@media (max-width: 720px) {
+  .report-toc ul { columns: 1; }
+}
 ul, ol { margin: 0.75rem 0; padding-left: 1.4rem; font-size: 1rem; }
 li { margin: 0.35rem 0; }
 hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }

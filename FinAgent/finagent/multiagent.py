@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
@@ -154,6 +155,25 @@ CHART_QUALITY_REQUIREMENTS = [
     "分红、股本、两融等事件型或结构型数据若变化很少，优先在正文表述，图表可删除。",
 ]
 
+_SECTION_WRITING_STYLE = (
+    "全章统一采用「结论先行」叙事，写法对标《宏观利率背景》："
+    "（1）每个 ### 小标题用「主题：判断」格式（如「资金面与短端利率：融资成本边际变化」），标题本身给出方向；"
+    "（2）小节首段 1-2 句先写结论/格局，再展开；禁止以日度行情流水账或指标清单开篇；"
+    "（3）数字放在 bullet 里作证据，每条 bullet 尽量带一句含义，不要连续堆叠裸数字；"
+    "（4）每个主题块末尾用 **对 {order_book_id} 的影响**（或同等句式）点明对目标股票的含义；"
+    "（5）章末必须有 ### 综合判断，用 2-4 条收束全章主线。"
+    "禁止把章节写成数据清单、字段复述或「先列数字、后补一句总结」。"
+)
+
+_NARRATIVE_SECTIONS = frozenset(
+    {
+        MARKET_TECH_SECTION,
+        "基本面与估值",
+        "资金与交易结构",
+        RISK_SECTION,
+    }
+)
+
 
 @dataclass
 class MultiAgentOptions:
@@ -281,6 +301,7 @@ def planner_agent(*, stock_code: str, order_book_id: str, as_of: date, lookback_
         "sections": DEFAULT_SECTIONS,
         "risk_controls": [
             "仅基于可取得数据写结论",
+            "各分析章节采用结论先行结构，对标《宏观利率背景》",
             "不输出买卖建议",
             "说明缺失数据",
             "只能引用本系统实际采集的米筐数据与本地计算指标",
@@ -476,6 +497,9 @@ def validation_agent(
             "你是研报验证 Agent。只返回 JSON，不写 Markdown。"
             "你的任务是检查报告是否忠于已采集数据、是否遗漏应内嵌的重要图表、是否有应补充或应收敛的结论。"
             "你必须逐章节检查是否和目标股票直接相关；泛泛讲宏观、行业、市场或方法论但没有落到目标股票的数据、图表或结论的部分，必须要求改写。"
+            "分析章节（量价与技术面、基本面与估值、资金与交易结构、综合风险）须采用结论先行结构："
+            "小标题含判断、段首先结论、数字作证据、块末点明对目标股票的影响、章末有综合判断；"
+            "若以日期/指标堆叠为主、缺少判断性表述，须在 section_feedback 中要求按《宏观利率背景》改写。"
             "禁止要求补充 Wind、新闻、券商预测、管理层指引等本系统未采集数据。"
             "务必阅读 data_capability_inventory：MACD/回撤/RSI 若已在 computed 中 available，不得写「未采集」；"
             "pit_financials 仅年报 q4，不得要求季度环比；capital_flow row_count=0 时可建议 refresh_data 重拉一次。",
@@ -491,6 +515,8 @@ def validation_agent(
                     "chart_quality_requirements": CHART_QUALITY_REQUIREMENTS,
                     "local_chart_review": _chart_quality_review(data=data, charts=charts),
                     "local_stock_relevance_review": _stock_relevance_review(data=data, sections=sections),
+                    "local_narrative_review": _section_narrative_review(sections=sections),
+                    "section_writing_style": _SECTION_WRITING_STYLE,
                     "charts": charts,
                     "sections": sections,
                     "draft_markdown": draft_markdown[:14000],
@@ -526,8 +552,10 @@ def revise_sections_with_validation(
     feedback = validation.get("section_feedback") if isinstance(validation.get("section_feedback"), dict) else {}
     action_items = validation.get("action_items") if isinstance(validation.get("action_items"), list) else []
     relevance = validation.get("stock_relevance_review") if isinstance(validation.get("stock_relevance_review"), dict) else {}
+    narrative = validation.get("narrative_review") if isinstance(validation.get("narrative_review"), dict) else {}
     has_relevance_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in relevance.values())
-    if not get_env("OPENAI_API_KEY") or not (feedback or action_items or has_relevance_rewrite):
+    has_narrative_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in narrative.values())
+    if not get_env("OPENAI_API_KEY") or not (feedback or action_items or has_relevance_rewrite or has_narrative_rewrite):
         return sections
     revised = dict(sections)
     allowed = {str(name) for name in only_sections} if only_sections else None
@@ -539,17 +567,22 @@ def revise_sections_with_validation(
         section_relevance = relevance.get(name) if isinstance(relevance.get(name), dict) else {}
         if section_relevance.get("decision") == "rewrite":
             section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
+        section_narrative = narrative.get(name) if isinstance(narrative.get(name), dict) else {}
+        if section_narrative.get("decision") == "rewrite":
+            section_notes.append(str(section_narrative.get("reason") or "本节需要改为结论先行结构。"))
         if not section_notes and not action_items:
             return content
         prompt_data = _compact_data_for_prompt(data, charts, name)
         try:
             text = llm_text(
                 f"你是 revise_agent。请根据验证 Agent 的意见，重写《{name}》章节。"
+                f"{_SECTION_WRITING_STYLE}"
                 "只能使用 JSON 中已有数据；不要新增未采集来源；不要给买卖建议。"
                 "需要更可追溯的数字表述；不要在正文写图表解读或 charts/ 路径，图表与图注由系统统一编排。"
                 "不要写「数据局限」小节（报告末尾有《数据覆盖与局限》专章统一收录）。"
                 "每一段都必须回到目标股票本身：引用目标股票代码、目标股票的米筐数据字段或目标股票对应行业归属。"
                 "如果原文有泛泛讲宏观、行业、市场或方法论但没有连接目标股票的句子，请删除或改写。"
+                "如果原文以数字/日期堆叠为主，请改为结论先行：先判断、后证据、块末影响、章末综合判断。"
                 "直接输出 Markdown 正文，不要开场白、不要复述验证意见、不要写「好的，这是…」。"
                 "不要写 charts/ 路径、不要写「请参考图表」或正文内嵌图注。"
                 "分段落、用小标题或 bullet 组织，不要一大段连在一起。",
@@ -559,6 +592,7 @@ def revise_sections_with_validation(
                         "original_section": content,
                         "section_feedback": section_notes,
                         "stock_relevance_feedback": section_relevance,
+                        "narrative_feedback": section_narrative,
                         "global_action_items": action_items,
                         "data": prompt_data,
                     },
@@ -1262,10 +1296,13 @@ def _write_section(*, agent: str, section_name: str, data: dict[str, Any]) -> st
         hint = SECTION_WRITER_HINTS.get(section_name, "")
         prompt = (
             f"你是 {agent}。请写研报中的《{section_name}》章节。"
+            f"{_SECTION_WRITING_STYLE}"
             f"{hint}{_NO_DATA_LIMITATION_HINT}"
             "只能使用用户提供的 JSON 数据，不得补充外部来源、宏观、行业、新闻、Wind、券商预测或未采集信息。"
             "所有数值结论必须能从 JSON 中追溯。不要给买卖建议。"
             "输出 Markdown 正文：分段落、用小标题或 bullet 组织，不要一大段连在一起；"
+            "优先用自然语言写结论与数值，避免「根据 xxx 数据」「xxx 字段」等元数据句式；"
+            "确需引用米筐字段名时用反引号标注英文字段名即可，不要重复 quarter/2025q4 等口径说明。"
             "不要写 charts/ 路径、不要写「请参考图表」或正文图表解读（图表与图注由系统编排）。"
             "不要输出 JSON 或代码块。"
         )
@@ -1350,6 +1387,7 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
     action_items = []
     chart_review = _chart_quality_review(data=data, charts=charts)
     relevance_review = _stock_relevance_review(data=data, sections=sections)
+    narrative_review = _section_narrative_review(sections=sections)
     gap_review = build_data_gap_review(data, charts)
     if len(charts) < 8:
         action_items.append(f"图表数量只有 {len(charts)} 张，建议补充到至少 8 张。")
@@ -1358,6 +1396,9 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
     for name, review in relevance_review.items():
         if isinstance(review, dict) and review.get("decision") == "rewrite":
             action_items.append(f"章节 {name} 与目标股票关联不足，需要改写：{review.get('reason')}")
+    for name, review in narrative_review.items():
+        if isinstance(review, dict) and review.get("decision") == "rewrite":
+            action_items.append(f"章节 {name} 叙事结构需改写：{review.get('reason')}")
     missing_data_notes = [
         str(g.get("note") or "").strip()
         for g in gap_review.get("gaps", [])
@@ -1377,6 +1418,7 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
         "data_gap_review": gap_review,
         "chart_quality_review": chart_review,
         "stock_relevance_review": relevance_review,
+        "narrative_review": narrative_review,
         "final_decision": "revise" if action_items or unsupported or missing_data_notes else "pass",
         "refinement_requests": {
             "refresh_data": refresh_data,
@@ -1394,7 +1436,18 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
             "replan_charts_only": False,
             "rerun_section_writers": False,
             "rewrite_sections": bool(action_items),
-            "sections_to_rewrite": [name for name, review in relevance_review.items() if isinstance(review, dict) and review.get("decision") == "rewrite"],
+            "sections_to_rewrite": sorted(
+                {
+                    name
+                    for name, review in relevance_review.items()
+                    if isinstance(review, dict) and review.get("decision") == "rewrite"
+                }
+                | {
+                    name
+                    for name, review in narrative_review.items()
+                    if isinstance(review, dict) and review.get("decision") == "rewrite"
+                }
+            ),
             "lookback_days": None,
             "reason": "本地规则检测到需返工项" if action_items or missing_data_notes else None,
         },
@@ -1411,6 +1464,8 @@ def _sanitize_validation(validation: dict[str, Any], fallback: dict[str, Any]) -
     result["chart_quality_review"] = chart_review if isinstance(chart_review, dict) else fallback.get("chart_quality_review", {})
     relevance_review = result.get("stock_relevance_review")
     result["stock_relevance_review"] = relevance_review if isinstance(relevance_review, dict) else fallback.get("stock_relevance_review", {})
+    narrative_review = result.get("narrative_review")
+    result["narrative_review"] = narrative_review if isinstance(narrative_review, dict) else fallback.get("narrative_review", {})
     feedback = result.get("section_feedback")
     result["section_feedback"] = feedback if isinstance(feedback, dict) else {}
     decision = str(result.get("final_decision") or fallback["final_decision"]).lower()
@@ -1559,6 +1614,46 @@ def _finalize_validation_after_refinement(validation: dict[str, Any], charts: di
         validation["score"] = max(int(safe_float(validation.get("score")) or 0), 85)
 
 
+def _section_narrative_review(*, sections: dict[str, str]) -> dict[str, Any]:
+    """检测分析章节是否符合结论先行结构（对标《宏观利率背景》）。"""
+    judgment_re = re.compile(
+        r"构成|显示|表明|支撑|压力|偏弱|偏强|走弱|走强|分化|格局|意味着|反映|暗示|"
+        r"总体|综合判断|结论|边际|提供|抬升|下行|上行|背离|修复|承压|净流入|净流出"
+    )
+    impact_re = re.compile(r"\*\*对[^*]{0,48}影响\*\*|###\s*综合判断")
+    colon_heading_re = re.compile(r"^###\s*.+：.+", re.MULTILINE)
+    date_re = re.compile(r"\d{4}年\d{1,2}月\d{1,2}日|\d{4}-\d{2}-\d{2}")
+    review: dict[str, Any] = {}
+    for name, content in sections.items():
+        if name not in _NARRATIVE_SECTIONS:
+            continue
+        text = str(content or "").strip()
+        if len(text) < 120:
+            continue
+        judgments = len(judgment_re.findall(text))
+        impacts = len(impact_re.findall(text))
+        dates = len(date_re.findall(text))
+        colon_headings = len(colon_heading_re.findall(text))
+        has_synthesis = "### 综合判断" in text
+        issues: list[str] = []
+        if judgments < 2:
+            issues.append("判断性表述不足")
+        if impacts < 1 and not has_synthesis:
+            issues.append("缺少「对目标股票的影响」或章末综合判断")
+        if dates >= 4 and judgments < max(3, dates // 2):
+            issues.append("日期/数字堆叠过多，结论先行不足")
+        if colon_headings < 1 and name != RISK_SECTION:
+            issues.append("小标题未采用「主题：判断」格式")
+        if issues:
+            review[name] = {
+                "decision": "rewrite",
+                "reason": "；".join(issues) + "。请参照《宏观利率背景》采用结论先行结构。",
+            }
+        else:
+            review[name] = {"decision": "pass", "reason": "叙事结构符合结论先行要求。"}
+    return review
+
+
 def _stock_relevance_review(*, data: dict[str, Any], sections: dict[str, str]) -> dict[str, Any]:
     target = str(data.get("order_book_id") or "")
     code = target.split(".")[0] if target else ""
@@ -1620,6 +1715,10 @@ def _validation_markdown(validation: dict[str, Any] | None) -> list[str]:
     for name, review in list(relevance.items())[:8]:
         if isinstance(review, dict) and review.get("decision") == "rewrite":
             lines.append(f"- 目标股票相关性：{name} 需要改写，原因：{review.get('reason')}")
+    narrative = validation.get("narrative_review") if isinstance(validation.get("narrative_review"), dict) else {}
+    for name, review in list(narrative.items())[:8]:
+        if isinstance(review, dict) and review.get("decision") == "rewrite":
+            lines.append(f"- 叙事结构：{name} 需要改写，原因：{review.get('reason')}")
     for item in _string_list(validation.get("unsupported_claims"))[:5]:
         lines.append(f"- 疑似未支撑表述：{item}")
     if len(lines) == 2:
@@ -1645,24 +1744,33 @@ SECTION_PROMPT_KEYS: dict[str, tuple[str, ...]] = {
 
 SECTION_WRITER_HINTS: dict[str, str] = {
     MARKET_TECH_SECTION: (
-        "本章合并原「量价与趋势」与「技术因素」，须按固定小节组织，禁止在不同小节重复描述同一价格走势或同一指标："
-        "（1）### 近期价格与量价 — 日度价格、成交量、换手率；"
-        "（2）### 均线与区间收益 — MA20/MA60、return_20d/return_60d；"
-        "（3）### 动量与风险指标 — 必须使用 technical 中的 rsi14、macd、macd_signal、latest_drawdown、max_drawdown；"
-        "这些指标由行情派生，禁止写「MACD/回撤未采集」。"
+        "本章合并量价与技术，须按固定小节组织，禁止重复描述同一走势或同一指标。"
+        "每节遵循结论先行："
+        "（1）### 近期价格与量价：主题句概括短期走势（如震荡下行后反弹、量价是否配合），"
+        "再用 2-4 条 bullet 列关键价位/量/换手，禁止逐日流水账；"
+        "（2）### 均线与区间收益：先判断多空格局（如价在 MA20 下、MA60 上），再列 MA 与 return_20d/return_60d；"
+        "（3）### 动量与风险指标：先给动能总判断（偏弱/修复/背离），再列 technical 中的 rsi14、macd、macd_signal、latest_drawdown、max_drawdown；"
+        "禁止写「MACD/回撤未采集」。章末 ### 综合判断 收束短中长期含义。"
     ),
     "基本面与估值": (
-        "按 ### 估值倍数、### 盈利与增长、### 财务健康 组织；聚焦目标股票可验证数据，避免行业泛泛而谈。"
+        "按 ### 估值倍数、### 盈利与增长、### 财务健康 组织。"
+        "每节首句给出总判断（如估值中等、盈利高增、现金流覆盖良好），再用 bullet 列关键倍数/增速；"
+        "禁止罗列全部年份流水账，只保留最有说明力的 2-3 个对比点；"
+        "每个主题块末尾点明对目标股票估值或信用含义。章末 ### 综合判断。"
     ),
     "资金与交易结构": (
-        "先写两融/资金流向等可验证数据；若某数据源 row_count 为 0，正文一句说明未采集即可，不要展开局限列表。"
+        "按 ### 两融资金、### 大宗交易 组织；若 capital_flow row_count=0，单独 ### 资金流向 一句说明未采集即可。"
+        "每节首句给出结论（如杠杆净流入、机构分歧、大单减持），bullet 仅作证据；"
+        "禁止先列逐笔交易再总结。章末 ### 综合判断 概括资金面对价格含义。"
     ),
     "宏观利率背景": (
+        "本章为结论先行范本：小标题含判断、段首先结论、数字作证据、块末 **对目标股票的影响**、章末 ### 综合判断。"
         "必须说明利率/收益率变动如何作用于目标股票的融资成本或估值折现率，禁止脱离标的的宏观教科书式叙述。"
     ),
     RISK_SECTION: (
-        "本章仅汇总可从 JSON 追溯的风险点（交易状态、估值、杠杆、盈利波动、技术面等）；"
-        "禁止重复《综合判断》的跨维度对照；用 ### 小标题分类，bullet 列出，每条须有数据依据。"
+        "开篇 1-2 句给出总体风险画像，再按 ### 小标题分类（如交易状态、估值、盈利波动、技术面）；"
+        "每条风险用「判断 + 关键数字」表述，禁止逐指标复述 technical 或 pit_financials 清单；"
+        "禁止重复《综合判断》的跨维度对照。章末可 ### 综合判断 列出最需关注的 2-3 个风险。"
     ),
 }
 

@@ -26,6 +26,7 @@ from .data_registry import COLLECTED_SERIES
 from .report_format import (
     DISCLAIMER,
     MISSING_LABEL,
+    build_report_toc,
     clean_chart_prose,
     dedupe_strings,
     disclaimer_lines,
@@ -33,8 +34,12 @@ from .report_format import (
     fmt_pct,
     format_generated_at,
     format_generated_at_iso,
+    markdown_section,
     normalize_section_text,
     normalize_sections,
+    render_toc_html,
+    render_toc_markdown,
+    toc_id_map,
 )
 from .report_html import chart_grid_html, markdown_to_html, wrap_html_document
 
@@ -208,6 +213,16 @@ def section_digest(sections: dict[str, str], plan: dict[str, Any], *, max_chars:
     return digest
 
 
+def build_multi_toc_entries(
+    plan: dict[str, Any],
+    ordered_sections: list[tuple[str, str]],
+) -> list[dict[str, str]]:
+    titles = ["执行摘要", "核心指标速览"]
+    titles.extend(name for name, _ in ordered_sections)
+    titles.extend(["数据与工具说明", "免责声明"])
+    return build_report_toc(titles)
+
+
 def render_multi_markdown(
     *,
     summary: str,
@@ -221,7 +236,12 @@ def render_multi_markdown(
 ) -> str:
     """按固定模版渲染多智能体 Markdown（不含验证 Agent 复核段）。"""
     ordered_sections = _output_section_items(sections, plan, charts)
-    body = "\n\n".join(f"## {name}\n\n{content}" for name, content in ordered_sections)
+    toc_entries = build_multi_toc_entries(plan, ordered_sections)
+    anchors = toc_id_map(toc_entries)
+    body = "\n\n".join(
+        f'<a id="{anchors.get(name, name)}"></a>\n\n## {name}\n\n{content}'
+        for name, content in ordered_sections
+    )
     summary_text = normalize_section_text(summary, "执行摘要")
     quality = build_data_quality_summary(data)
     lines = [
@@ -231,31 +251,28 @@ def render_multi_markdown(
     banner = validation_publish_banner(validation)
     if banner:
         lines.extend([banner, ""])
-    lines.extend(
-        [
-            "## 执行摘要",
-            summary_text,
-            "",
-            "## 核心指标速览",
-            *_core_metric_table(data),
-            "",
-        ]
-    )
+    lines.extend(render_toc_markdown(toc_entries))
+    lines.extend(markdown_section("执行摘要", anchors["执行摘要"], summary_text))
+    lines.extend(markdown_section("核心指标速览", anchors["核心指标速览"], "\n".join(_core_metric_table(data))))
     lines.extend([body, ""])
     if not inline_charts and unused_charts is None:
         lines.extend(["## 可视化", *_format_chart_section(charts), ""])
     lines.extend(
-        [
-            "## 数据与工具说明",
-            f"- 数据区间：{data['start_date']} 至 {data['end_date']}",
-            f"- 计划使用的米筐函数：{', '.join(plan.get('tools') or [])}",
-            f"- 数据执行日志：`{data.get('data_log') or data.get('python_script', '')}`",
-            f"- 数据质量：{quality['summary_line']}",
-            f"- 生成时间：{format_generated_at()}",
-            "",
-            *disclaimer_lines(),
-        ]
+        markdown_section(
+            "数据与工具说明",
+            anchors["数据与工具说明"],
+            "\n".join(
+                [
+                    f"- 数据区间：{data['start_date']} 至 {data['end_date']}",
+                    f"- 计划使用的米筐函数：{', '.join(plan.get('tools') or [])}",
+                    f"- 数据执行日志：`{data.get('data_log') or data.get('python_script', '')}`",
+                    f"- 数据质量：{quality['summary_line']}",
+                    f"- 生成时间：{format_generated_at()}",
+                ]
+            ),
+        )
     )
+    lines.extend(markdown_section("免责声明", anchors["免责声明"], DISCLAIMER))
     markdown = "\n".join(lines)
     return _fix_legacy_chart_paths(markdown)
 
@@ -283,6 +300,8 @@ def render_multi_html(
 ) -> str:
     """与 render_multi_markdown 结构对称；图表用 HTML img，可直接浏览器打开。"""
     ordered_sections = _output_section_items(sections, plan, charts)
+    toc_entries = build_multi_toc_entries(plan, ordered_sections)
+    anchors = toc_id_map(toc_entries)
     summary_text = normalize_section_text(summary, "执行摘要")
     quality = build_data_quality_summary(data)
     title = f"{data['order_book_id']} 多智能体研究报告"
@@ -291,21 +310,24 @@ def render_multi_html(
     if banner:
         parts.append(f'<aside class="draft-banner">{markdown_to_html(banner, in_section=True)}</aside>')
 
-    parts.append("<h2>执行摘要</h2>")
+    parts.append(render_toc_html(toc_entries))
+
+    parts.append(f'<h2 id="{html.escape(anchors["执行摘要"])}">执行摘要</h2>')
     parts.append(f'<section class="section-body">{markdown_to_html(summary_text, in_section=True)}</section>')
 
-    parts.append("<h2>核心指标速览</h2>")
+    parts.append(f'<h2 id="{html.escape(anchors["核心指标速览"])}">核心指标速览</h2>')
     parts.append(_core_metric_table_html(data))
 
     for name, content in ordered_sections:
-        parts.append(f"<h2>{html.escape(name)}</h2>")
+        section_id = anchors.get(name) or html.escape(name)
+        parts.append(f'<h2 id="{html.escape(section_id)}">{html.escape(name)}</h2>')
         parts.append(f'<section class="section-body">{markdown_to_html(content, in_section=True)}</section>')
 
     if not inline_charts and unused_charts is None:
         parts.append("<h2>可视化</h2>")
         parts.extend(_format_chart_section_html(charts))
 
-    parts.append("<h2>数据与工具说明</h2>")
+    parts.append(f'<h2 id="{html.escape(anchors["数据与工具说明"])}">数据与工具说明</h2>')
     parts.append("<ul class=\"meta-list\">")
     parts.append(f"<li>数据区间：{html.escape(str(data['start_date']))} 至 {html.escape(str(data['end_date']))}</li>")
     parts.append(f"<li>计划使用的米筐函数：{html.escape(', '.join(plan.get('tools') or []))}</li>")
@@ -316,7 +338,10 @@ def render_multi_html(
     parts.append(f"<li>生成时间：{html.escape(format_generated_at())}</li>")
     parts.append("</ul>")
 
-    parts.append(f'<section class="disclaimer"><h2>免责声明</h2><p>{html.escape(DISCLAIMER)}</p></section>')
+    parts.append(
+        f'<section class="disclaimer" id="{html.escape(anchors["免责声明"])}">'
+        f"<h2>免责声明</h2><p>{html.escape(DISCLAIMER)}</p></section>"
+    )
     return wrap_html_document(title=title, body_html="\n".join(parts))
 
 
@@ -340,6 +365,7 @@ def build_multi_json_payload(
     """分层 JSON：报告可读结构 + 数据摘要，避免整包 time-series rows。"""
     normalized = _ordered_sections_dict(sections, plan)
     validation = validation or {}
+    toc_entries = build_multi_toc_entries(plan, list(normalized.items()))
     payload: dict[str, Any] = {
         "meta": {
             "report_type": "multi_analyze",
@@ -355,6 +381,7 @@ def build_multi_json_payload(
         },
         "summary": normalize_section_text(summary, "执行摘要"),
         "sections": normalized,
+        "table_of_contents": toc_entries,
         "charts": {name: _normalize_chart_path(path) for name, path in charts.items()},
         "validation": validation,
         "plan": {

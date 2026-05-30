@@ -38,16 +38,52 @@ def _output_dirs() -> list[Path]:
     return dirs
 
 
+def _normalize_output_relative_path(filename: str) -> str | None:
+    normalized = filename.replace("\\", "/").lstrip("/")
+    if not normalized or ".." in normalized.split("/"):
+        return None
+    for prefix in ("FinAgent/outputs/", "outputs/"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix) :]
+            break
+    return normalized
+
+
 def _find_output_file(filename: str) -> Path | None:
-    safe_name = Path(filename).name
-    for directory in _output_dirs():
-        candidate = (directory / safe_name).resolve()
+    relative = _normalize_output_relative_path(filename)
+    if not relative:
+        return None
+
+    def _allowed(candidate: Path, directory: Path) -> bool:
         try:
-            allowed = candidate.is_relative_to(directory.resolve())
+            return candidate.is_relative_to(directory.resolve())
         except AttributeError:
-            allowed = directory.resolve() in candidate.parents
-        if allowed and candidate.exists() and candidate.is_file():
+            return directory.resolve() in candidate.parents
+
+    for directory in _output_dirs():
+        candidate = (directory / relative).resolve()
+        if _allowed(candidate, directory) and candidate.exists() and candidate.is_file():
             return candidate
+
+    basename = Path(relative).name
+    if basename != relative:
+        for directory in _output_dirs():
+            charts_root = directory / "charts"
+            if not charts_root.is_dir():
+                continue
+            for candidate in charts_root.rglob(basename):
+                try:
+                    ok = candidate.is_relative_to(directory.resolve())
+                except AttributeError:
+                    ok = directory.resolve() in candidate.parents
+                if ok and candidate.is_file():
+                    return candidate
+
+    if basename == relative:
+        for directory in _output_dirs():
+            candidate = (directory / basename).resolve()
+            if _allowed(candidate, directory) and candidate.exists() and candidate.is_file():
+                return candidate
     return None
 
 
@@ -177,9 +213,28 @@ def _load_report(filename: str) -> dict[str, Any]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail=f"无法读取报告: {exc}") from exc
+    _ensure_report_toc(payload)
     payload["_ui"] = _report_summary(payload, safe_name)
     payload["_disclaimer"] = DISCLAIMER
     return payload
+
+
+def _ensure_report_toc(payload: dict[str, Any]) -> None:
+    if payload.get("table_of_contents"):
+        return
+    if payload.get("sections"):
+        from ..multi_report import build_multi_toc_entries
+
+        plan = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
+        sections = payload.get("sections") if isinstance(payload.get("sections"), dict) else {}
+        ordered = list(sections.items())
+        payload["table_of_contents"] = build_multi_toc_entries(plan, ordered)
+        return
+    from ..report import build_annual_toc_entries
+
+    signals = payload.get("signals") if isinstance(payload.get("signals"), dict) else {}
+    notes = signals.get("data_notes") if isinstance(signals.get("data_notes"), list) else []
+    payload["table_of_contents"] = build_annual_toc_entries(notes)
 
 
 def _set_task(task_id: str, **fields: Any) -> None:
@@ -429,13 +484,21 @@ def create_app() -> FastAPI:
 
     @app.get("/files/{file_path:path}")
     def get_output_file(file_path: str):
+        import mimetypes
+
         normalized = file_path.replace("\\", "/").lstrip("/")
         if ".." in normalized.split("/"):
             raise HTTPException(status_code=403, detail="禁止访问")
         target = _find_output_file(normalized)
         if target is None:
             raise HTTPException(status_code=404, detail="文件不存在")
-        return FileResponse(target)
+        media_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        return FileResponse(target, media_type=media_type)
+
+    @app.get("/charts/{chart_path:path}")
+    def get_chart_file(chart_path: str):
+        """兼容前端相对路径 charts/...（浏览器会请求 /charts/... 而非 /files/charts/...）。"""
+        return get_output_file(f"charts/{chart_path}")
 
     app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 

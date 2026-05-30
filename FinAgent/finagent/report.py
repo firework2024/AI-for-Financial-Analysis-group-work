@@ -7,6 +7,7 @@ from .fields import FIELD_MAP
 from .financial_analysis import consolidate_reviewed_signals
 from .report_format import (
     DISCLAIMER,
+    build_report_toc,
     dedupe_strings,
     disclaimer_lines,
     fmt_money,
@@ -14,7 +15,10 @@ from .report_format import (
     fmt_table_num,
     format_generated_at,
     format_generated_at_iso,
+    markdown_section,
     normalize_section_text,
+    render_toc_markdown,
+    toc_id_map,
     write_report,
 )
 
@@ -54,10 +58,11 @@ def render_markdown(result: dict[str, Any], *, order_book_id: str | None = None)
     display_signals = analysis.get("display_signals") or consolidate_reviewed_signals(analysis.get("reviewed_signals") or [])
     provenance = build_field_provenance(result.get("financial_data") or [])
 
-    lines = [
-        f"# {report.get('sec_name') or report['stock_code']} 年报智能体分析",
-        "",
-        "## 年报来源",
+    data_notes = dedupe_strings(analysis.get("data_notes") or [])
+    toc_entries = build_annual_toc_entries(data_notes)
+    anchors = toc_id_map(toc_entries)
+
+    source_lines = [
         f"- 股票代码：{report['stock_code']}",
         f"- 报告年份：{report.get('report_year', '—')}",
         *( [f"- 米筐代码：{order_book_id}"] if order_book_id else [] ),
@@ -66,16 +71,13 @@ def render_markdown(result: dict[str, Any], *, order_book_id: str | None = None)
         *( [f"- 本地 PDF：`{report['local_pdf']}`"] if report.get("local_pdf") else [] ),
         f"- MD&A 提取置信度：{mda.get('confidence', '—')}",
         f"- 生成时间：{format_generated_at()}",
-        "",
-        "## 执行摘要",
-        executive,
-        "",
-        "## 核心指标",
+    ]
+    metrics_table = [
         "| 年份 | 营收 | 归母净利润 | 经营现金流 | 毛利率 | 收现比 | 净现比 | 资产负债率 | ROE |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for metric in analysis.get("metrics") or []:
-        lines.append(
+        metrics_table.append(
             "| {year} | {revenue} | {np} | {ocf} | {gm} | {cr} | {cp} | {da} | {roe} |".format(
                 year=metric["year"],
                 revenue=fmt_money(metric.get("revenue")),
@@ -88,15 +90,40 @@ def render_markdown(result: dict[str, Any], *, order_book_id: str | None = None)
                 roe=fmt_pct(metric.get("roe"), style="ratio"),
             )
         )
-    lines.extend(["", "## 审核后重点信号", *_format_display_signals(display_signals), ""])
-    lines.extend(["## 投资总监分析", director, ""])
-    lines.extend(["## MD&A 摘要", _mda_brief_text(mda), ""])
-    data_notes = dedupe_strings(analysis.get("data_notes") or [])
+
+    lines = [
+        f"# {report.get('sec_name') or report['stock_code']} 年报智能体分析",
+        "",
+        *render_toc_markdown(toc_entries),
+        *markdown_section("年报来源", anchors["年报来源"], "\n".join(source_lines)),
+        *markdown_section("执行摘要", anchors["执行摘要"], executive),
+        *markdown_section("核心指标", anchors["核心指标"], "\n".join(metrics_table)),
+        *markdown_section("审核后重点信号", anchors["审核后重点信号"], "\n".join(_format_display_signals(display_signals))),
+        *markdown_section("投资总监分析", anchors["投资总监分析"], director),
+        *markdown_section("MD&A 摘要", anchors["MD&A 摘要"], _mda_brief_text(mda)),
+    ]
     if data_notes:
-        lines.extend(["## 数据说明", *[f"- {item}" for item in data_notes], ""])
-    lines.extend(["## 字段来源概览", *_format_provenance_lines(provenance), ""])
-    lines.extend(disclaimer_lines())
+        lines.extend(markdown_section("数据说明", anchors["数据说明"], "\n".join(f"- {item}" for item in data_notes)))
+    lines.extend(
+        markdown_section("字段来源概览", anchors["字段来源概览"], "\n".join(_format_provenance_lines(provenance)))
+    )
+    lines.extend(markdown_section("免责声明", anchors["免责声明"], DISCLAIMER))
     return "\n".join(lines) + "\n"
+
+
+def build_annual_toc_entries(data_notes: list[str] | None = None) -> list[dict[str, str]]:
+    titles = [
+        "年报来源",
+        "执行摘要",
+        "核心指标",
+        "审核后重点信号",
+        "投资总监分析",
+        "MD&A 摘要",
+    ]
+    if data_notes:
+        titles.append("数据说明")
+    titles.extend(["字段来源概览", "免责声明"])
+    return build_report_toc(titles)
 
 
 def build_annual_json_payload(
@@ -111,6 +138,7 @@ def build_annual_json_payload(
     analysis = result["financial_analysis"]
     mda = result.get("mda") or {}
     director = normalize_section_text(result.get("investment_director"), "投资总监分析")
+    data_notes = dedupe_strings(analysis.get("data_notes") or [])
     return {
         "meta": {
             "report_type": "annual_analyze",
@@ -138,6 +166,7 @@ def build_annual_json_payload(
         },
         "metrics": _slim_metrics(analysis.get("metrics") or []),
         "field_provenance": build_field_provenance(result.get("financial_data") or []),
+        "table_of_contents": build_annual_toc_entries(data_notes),
     }
 
 

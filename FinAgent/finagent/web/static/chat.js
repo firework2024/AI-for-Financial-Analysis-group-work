@@ -87,21 +87,42 @@ function renderChatMessages(session) {
   const messages = session?.messages || [];
   if (!messages.length) {
     chatEls.chatMessages.innerHTML = `
-      <div class="chat-welcome-msg">
+      <div class="chat-welcome-card">
+        <div class="chat-welcome-icon">F</div>
         <h3>开始研究对话</h3>
-        <p>拖 PDF 到页面、绑定左侧报告，或直接提问。需要最新数据时可以说「查一下最新融资/估值」。</p>
+        <p>拖入 PDF、绑定左侧报告，或直接提问。需要最新行情时可以说「查一下最新融资余额」。</p>
+        <div class="chat-suggestions">
+          <button class="chat-suggestion" type="button" data-prompt="这份报告的核心风险是什么？">解读报告风险</button>
+          <button class="chat-suggestion" type="button" data-prompt="最近估值水平如何？">估值水平</button>
+          <button class="chat-suggestion" type="button" data-prompt="查一下最新融资余额">最新融资数据</button>
+        </div>
       </div>`;
+    chatEls.chatMessages.querySelectorAll(".chat-suggestion").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!chatEls.chatInput) return;
+        chatEls.chatInput.value = btn.dataset.prompt || "";
+        chatEls.chatInput.dispatchEvent(new Event("input"));
+        chatEls.chatInput.focus();
+      });
+    });
     return;
   }
   chatEls.chatMessages.innerHTML = messages
     .map((msg) => {
       const role = msg.role === "user" ? "user" : "assistant";
+      const avatar = role === "user" ? "你" : "F";
       const body = escapeHtml(msg.content).replace(/\n/g, "<br>");
       const tools =
         Array.isArray(msg.tool_calls) && msg.tool_calls.length
           ? `<div class="chat-tools">${msg.tool_calls.map((t) => `<span>${escapeHtml(t.tool || "tool")}</span>`).join("")}</div>`
           : "";
-      return `<div class="chat-msg chat-msg-${role}"><div class="chat-bubble">${body}${tools}</div></div>`;
+      return `
+        <div class="chat-msg chat-msg-${role}">
+          <div class="chat-avatar" aria-hidden="true">${avatar}</div>
+          <div class="chat-bubble-wrap">
+            <div class="chat-bubble">${body}${tools}</div>
+          </div>
+        </div>`;
     })
     .join("");
   chatEls.chatMessages.scrollTop = chatEls.chatMessages.scrollHeight;
@@ -114,9 +135,13 @@ function updateChatHeader(session) {
   if (!chatEls.chatContextPill) return;
   const bits = [];
   if (session?.report_id) bits.push(`报告 ${session.report_id.split("_")[0]}`);
-  if (session?.pdf_name) bits.push(`PDF ${session.pdf_name}`);
-  if (session?.stock_code) bits.push(session.stock_code);
-  chatEls.chatContextPill.textContent = bits.length ? bits.join(" · ") : "拖 PDF 或绑定报告后开始提问";
+  if (session?.pdf_name) bits.push(`PDF · ${session.pdf_name}`);
+  if (session?.stock_code) bits.push(`代码 ${session.stock_code}`);
+  if (!bits.length) {
+    chatEls.chatContextPill.innerHTML = `<span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>`;
+    return;
+  }
+  chatEls.chatContextPill.innerHTML = bits.map((bit) => `<span class="context-pill">${escapeHtml(bit)}</span>`).join("");
 }
 
 async function openChatSession(sessionId) {
