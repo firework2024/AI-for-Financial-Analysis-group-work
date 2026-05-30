@@ -1,14 +1,20 @@
 const state = {
   reports: [],
+  filteredReports: [],
   activeReportId: null,
   activeReport: null,
   pollingTaskId: null,
   disclaimer: "",
+  searchQuery: "",
+  sidebar: "chat",
+  view: "chat",
 };
 
 const els = {
   serverStatus: document.getElementById("serverStatus"),
+  serverStatusText: document.getElementById("serverStatusText"),
   refreshBtn: document.getElementById("refreshBtn"),
+  sidebarSearch: document.getElementById("sidebarSearch"),
   analyzeForm: document.getElementById("analyzeForm"),
   submitBtn: document.getElementById("submitBtn"),
   taskBox: document.getElementById("taskBox"),
@@ -17,21 +23,62 @@ const els = {
   taskMeta: document.getElementById("taskMeta"),
   reportCount: document.getElementById("reportCount"),
   reportList: document.getElementById("reportList"),
+  reportsPanel: document.getElementById("reportsPanel"),
+  chatSessionsPanel: document.getElementById("chatSessionsPanel"),
   welcomeView: document.getElementById("welcomeView"),
-  welcomeDisclaimer: document.getElementById("welcomeDisclaimer"),
+  welcomeChatBtn: document.getElementById("welcomeChatBtn"),
+  welcomeReportsBtn: document.getElementById("welcomeReportsBtn"),
+  brandHome: document.getElementById("brandHome"),
   reportView: document.getElementById("reportView"),
+  reportEmptyView: document.getElementById("reportEmptyView"),
+  chatView: document.getElementById("chatView"),
   reportTags: document.getElementById("reportTags"),
   reportTitle: document.getElementById("reportTitle"),
   reportSubtitle: document.getElementById("reportSubtitle"),
   openHtmlBtn: document.getElementById("openHtmlBtn"),
+  askReportBtn: document.getElementById("askReportBtn"),
+  backToChatBtn: document.getElementById("backToChatBtn"),
+  chatAttachReportBtn: document.getElementById("chatAttachReportBtn"),
   summaryCard: document.getElementById("summaryCard"),
   summaryContent: document.getElementById("summaryContent"),
   annualSections: document.getElementById("annualSections"),
   multiSections: document.getElementById("multiSections"),
   reportDisclaimer: document.getElementById("reportDisclaimer"),
+  welcomeDisclaimer: document.getElementById("welcomeDisclaimer"),
+  toastHost: document.getElementById("toastHost"),
 };
 
 marked.setOptions({ breaks: true, gfm: true });
+
+function toast(message, type = "info") {
+  if (!els.toastHost) return;
+  const node = document.createElement("div");
+  node.className = `toast${type === "error" ? " error" : ""}`;
+  node.textContent = message;
+  els.toastHost.appendChild(node);
+  setTimeout(() => node.remove(), 4200);
+}
+
+function navigate(view) {
+  state.view = view;
+  els.welcomeView?.classList.toggle("hidden", view !== "welcome");
+  els.chatView?.classList.toggle("hidden", view !== "chat");
+  els.reportView?.classList.toggle("hidden", view !== "report");
+  els.reportEmptyView?.classList.toggle("hidden", view !== "report-empty");
+  if (view === "report" && !state.activeReport) {
+    els.reportView?.classList.add("hidden");
+    els.reportEmptyView?.classList.remove("hidden");
+  }
+}
+
+function setSidebarPanel(panel) {
+  state.sidebar = panel;
+  document.querySelectorAll("[data-sidebar]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.sidebar === panel);
+  });
+  els.chatSessionsPanel?.classList.toggle("hidden", panel !== "chat");
+  els.reportsPanel?.classList.toggle("hidden", panel !== "reports");
+}
 
 function normalizeFilePath(path) {
   return String(path || "")
@@ -123,30 +170,56 @@ function setTaskState(status, message, meta = "") {
   els.taskBox.classList.toggle("completed", status === "completed");
 }
 
+function filterReports(reports, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return reports;
+  return reports.filter((report) => {
+    const haystack = [
+      report.stock_code,
+      report.title,
+      report.subtitle,
+      report.filename,
+      reportTypeLabel(report.report_type),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+function filterSidebarItems(items, query, fields) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((item) =>
+    fields
+      .map((field) => String(item[field] || ""))
+      .join(" ")
+      .toLowerCase()
+      .includes(q)
+  );
+}
+
 function renderReportList() {
+  state.filteredReports = filterReports(state.reports, state.searchQuery);
   els.reportCount.textContent = String(state.reports.length);
-  if (!state.reports.length) {
-    els.reportList.innerHTML = '<div class="empty">暂无报告，请先运行分析</div>';
+  if (!els.reportList) return;
+  if (!state.filteredReports.length) {
+    els.reportList.innerHTML = `<div class="empty-state"><p>${state.reports.length ? "没有匹配的报告" : "暂无报告"}</p></div>`;
     return;
   }
-  els.reportList.innerHTML = state.reports
+  els.reportList.innerHTML = state.filteredReports
     .map((report) => {
       const active = report.id === state.activeReportId ? " active" : "";
       const typeClass = report.report_type === "multi_analyze" ? "multi" : "annual";
-      const score =
-        report.validation_score != null
-          ? `<span class="tag">验证 ${report.validation_score}</span>`
-          : "";
+      const code = report.stock_code || report.filename.split("_")[0] || "—";
       return `
-        <button class="report-item${active}" data-id="${report.id}" type="button">
-          <h3>${report.title}</h3>
-          <p>${report.subtitle || ""}${report.generated_at ? " · " + formatDate(report.generated_at) : ""}</p>
-          <div class="tags">
-            <span class="tag ${typeClass}">${reportTypeLabel(report.report_type)}</span>
-            ${score}
-          </div>
-        </button>
-      `;
+        <button class="rail-item${active}" data-id="${report.id}" type="button">
+          <span class="rail-item-code">${code}</span>
+          <span class="rail-item-title">${report.title}</span>
+          <span class="rail-item-meta">${report.subtitle || ""}${report.generated_at ? " · " + formatDate(report.generated_at) : ""}</span>
+          <span class="tag-row"><span class="tag ${typeClass}">${reportTypeLabel(report.report_type)}</span></span>
+        </button>`;
     })
     .join("");
 }
@@ -160,11 +233,19 @@ async function loadReports() {
 }
 
 async function loadReport(filename) {
-  const report = await api(`/api/reports/${encodeURIComponent(filename)}`);
-  state.activeReportId = filename;
-  state.activeReport = report;
-  renderReportList();
-  renderReportDetail(report);
+  try {
+    const report = await api(`/api/reports/${encodeURIComponent(filename)}`);
+    state.activeReportId = filename;
+    state.activeReport = report;
+    renderReportList();
+    renderReportDetail(report);
+    if (els.chatAttachReportBtn) els.chatAttachReportBtn.disabled = false;
+    setSidebarPanel("reports");
+    navigate("report");
+  } catch (error) {
+    toast(error.message || "无法打开报告", "error");
+    throw error;
+  }
 }
 
 function fmtMoney(value) {
@@ -200,7 +281,7 @@ function fmtNum(value) {
 }
 
 function cardSection(title, innerHtml) {
-  return `<section class="card"><h3>${title}</h3>${innerHtml}</section>`;
+  return `<section class="report-block"><h2>${title}</h2>${innerHtml}</section>`;
 }
 
 function renderAnnualMetricsTable(metrics) {
@@ -387,10 +468,10 @@ function renderAnnualReport(report) {
       "审核后重点信号",
       renderDisplaySignals(signals.display_signals || analysis.display_signals, signals.reviewed_signals || analysis.reviewed_signals)
     ),
-    cardSection("投资总监分析", `<div class="markdown">${renderMarkdown(directorText)}</div>`),
+    cardSection("投资总监分析", `<div class="prose">${renderMarkdown(directorText)}</div>`),
     cardSection(
       "MD&A 摘要",
-      `<div class="markdown">${renderMarkdown(mda.summary_brief || mda.summary || analysis.mda_summary || "")}</div>`
+      `<div class="prose">${renderMarkdown(mda.summary_brief || mda.summary || analysis.mda_summary || "")}</div>`
     ),
     dataNotes.length
       ? cardSection("数据说明", `<ul class="plain-list">${dataNotes.map((item) => `<li>${item}</li>`).join("")}</ul>`)
@@ -425,29 +506,26 @@ function renderMultiReport(report) {
     : `验证待完善 · 得分 ${meta.validation_score ?? validation.score ?? "—"}`;
 
   const sectionBlocks = sectionOrder
-    .map(
-      (name) =>
-        cardSection(
-          name,
-          `<div class="markdown">${renderMarkdown(sections[name] || "", charts)}</div>`
-        )
+    .map((name) =>
+      cardSection(name, `<div class="prose">${renderMarkdown(sections[name] || "", charts)}</div>`)
     )
     .join("");
 
   const chartCards = Object.entries(charts)
     .map(([name, path]) => {
       const url = fileUrl(path);
+      const label = name.replace(/_/g, " ");
       return `
         <figure class="chart-card">
-          <img src="${url}" alt="${name}" loading="lazy">
-          <figcaption>${name}</figcaption>
+          <img src="${url}" alt="${label}" loading="lazy">
+          <figcaption>${label}</figcaption>
         </figure>
       `;
     })
     .join("");
 
   els.multiSections.innerHTML = [
-    `<section class="card"><div class="validation-banner ${validationClass}">${validationText}</div></section>`,
+    `<div class="report-block"><div class="validation-banner ${validationClass}">${validationText}</div></div>`,
     cardSection("核心指标速览", renderMultiCoreMetrics(dataSummary)),
     sectionBlocks,
     cardSection("图表总览", `<div class="chart-grid">${chartCards || '<div class="empty">暂无图表</div>'}</div>`),
@@ -471,12 +549,9 @@ function renderReportDetail(report) {
   const ui = report._ui || {};
   const reportType = ui.report_type || (report.sections ? "multi_analyze" : "annual_analyze");
 
-  els.welcomeView.classList.add("hidden");
-  els.reportView.classList.remove("hidden");
-
   els.reportTags.innerHTML = `
     <span class="tag ${reportType === "multi_analyze" ? "multi" : "annual"}">${reportTypeLabel(reportType)}</span>
-    <span class="tag">${formatDate(ui.generated_at || report.meta?.generated_at)}</span>
+    <span class="tag">${formatDate(ui.generated_at || report.meta?.generated_at) || "—"}</span>
   `;
   els.reportTitle.textContent = ui.title || report.meta?.stock_code || "分析报告";
   els.reportDisclaimer.textContent = report._disclaimer || state.disclaimer;
@@ -486,7 +561,6 @@ function renderReportDetail(report) {
     report.executive_summary || (reportType === "annual_analyze" ? extractExecutiveSummary(directorText) : report.summary) || "";
   els.summaryContent.innerHTML = renderMarkdown(executiveSummary);
   els.summaryCard.classList.toggle("hidden", !executiveSummary);
-  els.summaryCard.querySelector("h3").textContent = "执行摘要";
 
   if (reportType === "multi_analyze") {
     renderMultiReport(report);
@@ -524,7 +598,7 @@ async function handleSubmit(event) {
   const formData = new FormData(els.analyzeForm);
   const stock = String(formData.get("stock") || "").trim();
   if (!/^\d{6}$/.test(stock)) {
-    alert("请输入 6 位 A 股代码");
+    toast("请输入 6 位 A 股代码", "error");
     return;
   }
 
@@ -556,30 +630,83 @@ async function handleSubmit(event) {
     await pollTask(response.task_id);
   } catch (error) {
     setTaskState("failed", error.message || "任务启动失败");
+    toast(error.message || "任务启动失败", "error");
     els.submitBtn.disabled = false;
   }
 }
 
 async function bootstrap() {
+  navigate("welcome");
+
   els.analyzeForm.addEventListener("submit", handleSubmit);
-  els.refreshBtn.addEventListener("click", loadReports);
-  els.reportList.addEventListener("click", (event) => {
+  els.refreshBtn.addEventListener("click", () => loadReports().catch((e) => toast(e.message, "error")));
+  els.sidebarSearch?.addEventListener("input", (event) => {
+    state.searchQuery = event.target.value;
+    renderReportList();
+    if (typeof window.filterChatSessions === "function") window.filterChatSessions(state.searchQuery);
+  });
+  document.querySelectorAll("[data-sidebar]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setSidebarPanel(btn.dataset.sidebar);
+      if (btn.dataset.sidebar === "reports" && !state.activeReportId) navigate("report-empty");
+      if (btn.dataset.sidebar === "chat") navigate("chat");
+    });
+  });
+  els.reportList?.addEventListener("click", (event) => {
     const item = event.target.closest("[data-id]");
     if (!item) return;
-    loadReport(item.dataset.id).catch((error) => alert(error.message));
+    loadReport(item.dataset.id).catch(() => {});
+  });
+  els.backToChatBtn?.addEventListener("click", () => navigate("welcome"));
+  els.brandHome?.addEventListener("click", () => navigate("welcome"));
+  els.brandHome?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      navigate("welcome");
+    }
+  });
+  els.welcomeChatBtn?.addEventListener("click", () => {
+    setSidebarPanel("chat");
+    navigate("chat");
+  });
+  els.welcomeReportsBtn?.addEventListener("click", () => {
+    setSidebarPanel("reports");
+    navigate(state.activeReportId ? "report" : "report-empty");
+  });
+  els.askReportBtn?.addEventListener("click", () => {
+    if (typeof window.openChatWithReport === "function") window.openChatWithReport();
   });
 
   const today = new Date().toISOString().slice(0, 10);
-  els.analyzeForm.elements.as_of.value = today;
+  if (els.analyzeForm?.elements.as_of) els.analyzeForm.elements.as_of.value = today;
 
   try {
     await api("/api/health");
-    els.serverStatus.classList.add("ok");
+    els.serverStatus?.classList.add("ok");
+    if (els.serverStatusText) els.serverStatusText.textContent = "在线";
     await loadReports();
+    if (typeof window.loadChatSessions === "function") {
+      await window.loadChatSessions();
+    }
   } catch (_error) {
-    els.serverStatus.classList.add("error");
-    els.reportList.innerHTML = '<div class="empty">无法连接后端，请先运行 python -m finagent serve</div>';
+    els.serverStatus?.classList.add("error");
+    if (els.serverStatusText) els.serverStatusText.textContent = "离线";
+    if (els.reportList) {
+      els.reportList.innerHTML = `<div class="empty-state"><p>无法连接后端</p><span>请运行 python -m finagent serve</span></div>`;
+    }
   }
 }
+
+window.App = {
+  state,
+  els,
+  api,
+  toast,
+  navigate,
+  setSidebarPanel,
+  loadReport,
+  pollTask,
+  setTaskState,
+};
 
 bootstrap();

@@ -1,4 +1,13 @@
+from finagent.multi_report import strip_data_limitation_blocks
 from finagent.report_format import clean_chart_prose
+
+
+def test_strip_data_limitation_blocks():
+    text = "### 分析\n\n正文内容。\n\n#### 数据局限\n\n- 缺少行业对比\n- 未采集资金流向\n\n### 其他"
+    cleaned, notes = strip_data_limitation_blocks(text)
+    assert "#### 数据局限" not in cleaned
+    assert "缺少行业对比" in notes
+    assert "正文内容" in cleaned
 
 
 def test_clean_chart_path_in_backticks():
