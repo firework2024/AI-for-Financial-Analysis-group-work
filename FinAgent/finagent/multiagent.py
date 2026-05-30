@@ -1,87 +1,20 @@
 from __future__ import annotations
 
 import json
-import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from .chart_dynamic import (
-    build_placement_from_chart_need,
-    dynamic_chart_pipeline,
-)
-from .chart_plots import chart_agent
-from .data_registry import DATA_KEY_TO_TOOL, benchmark_index_id
-from .technical import safe_float, technical_summary
-from .data_capabilities import (
-    build_data_capability_inventory,
-    build_data_gap_review,
-    normalize_executive_summary_gaps,
-    reconcile_validation_gaps,
-)
 from .cninfo import default_as_of, normalize_stock_code, to_order_book_id
 from .env import get_env, load_dotenv
-from .llm_settings import has_llm_api_key
 from .llm import llm_json, llm_text
-from .multi_report import (
-    CHART_CAPTIONS,
-    CHART_INTERPRETATION_SECTION,
-    DATA_LIMITATIONS_SECTION,
-    DEFERRED_SECTIONS,
-    MARKET_TECH_SECTION,
-    RISK_SECTION,
-    SYNTHESIS_SECTION,
-    analysis_section_names,
-    apply_chart_placement_fixes,
-    apply_chart_placements,
-    build_chart_catalog,
-    build_default_chart_placement,
-    build_multi_json_payload,
-    build_unified_data_limitations,
-    extract_section_structure,
-    fallback_chart_note,
-    fill_missing_section_placements,
-    finalize_inline_only_placement,
-    flatten_chart_placements,
-    local_chart_placement_review,
-    normalize_chart_placement,
-    normalize_section_text,
-    prune_charts_dict,
-    render_multi_html,
-    render_multi_markdown,
-    section_digest,
-    strip_all_section_limitations,
-    validation_passed,
-)
-from .report_format import write_report
-from .report_html import write_html_report
-from .rqdata_client import _init_rqdata, fetch_financials
+from .rqdata_client import _init_rqdata
 
-
-def _get_max_workers() -> int:
-    try:
-        return max(1, int(get_env("FINAGENT_MAX_WORKERS", "4")))
-    except (TypeError, ValueError):
-        return 4
-
-
-def _get_validation_max_rounds() -> int:
-    try:
-        return max(1, int(get_env("FINAGENT_VALIDATION_MAX_ROUNDS", "2")))
-    except (TypeError, ValueError):
-        return 2
-
-
-def _get_chart_placement_max_rounds() -> int:
-    try:
-        return max(1, int(get_env("FINAGENT_CHART_PLACEMENT_MAX_ROUNDS", "2")))
-    except (TypeError, ValueError):
-        return 2
-
+from .latex_exporter import export_latex
+import re
 
 TOOL_REGISTRY = {
     "get_price": "量价行情：open/high/low/close/volume/total_turnover",
@@ -92,9 +25,7 @@ TOOL_REGISTRY = {
     "get_securities_margin": "融资融券：margin_balance/buy_on_margin_value/short_balance/total_balance",
     "get_dividend": "分红方案：现金分红、除权除息日、支付日、报告期",
     "get_shares": "股本结构：total/circulation_a/free_circulation 等",
-    "get_instrument_industry": "中信一级/二级行业归属，用于限定可比口径和行业背景",
-    "get_block_trade": "大宗交易：成交价、成交量、成交额、买方/卖方营业部",
-    "get_benchmark_index": "基准指数收盘价（沪深300/创业板指/科创50 等），用于相对强弱对比",
+    "get_instrument_industry": "中信一级行业归属，用于限定可比口径和行业背景",
     "is_suspended": "停牌状态检查",
     "is_st_stock": "ST 状态检查",
     "get_interbank_offered_rate": "Shibor 同业拆借利率，用作宏观流动性背景",
@@ -103,25 +34,13 @@ TOOL_REGISTRY = {
 }
 
 DEFAULT_SECTIONS = [
-    {
-        "name": MARKET_TECH_SECTION,
-        "agent": "market_technical_writer",
-        "data": ["get_price", "get_price_change_rate", "get_turnover_rate", "get_benchmark_index"],
-    },
-    {
-        "name": "基本面与估值",
-        "agent": "fundamental_writer",
-        "data": ["get_factor", "get_pit_financials_ex", "get_dividend", "get_shares", "get_instrument_industry"],
-    },
-    {
-        "name": "资金与交易结构",
-        "agent": "capital_flow_writer",
-        "data": ["get_capital_flow", "get_securities_margin", "get_block_trade"],
-    },
+    {"name": "量价与趋势", "agent": "price_volume_writer", "data": ["get_price", "get_price_change_rate", "get_turnover_rate"]},
+    {"name": "基本面与估值", "agent": "fundamental_writer", "data": ["get_factor", "get_pit_financials_ex", "get_dividend", "get_shares"]},
+    {"name": "资金与交易结构", "agent": "capital_flow_writer", "data": ["get_capital_flow", "get_securities_margin"]},
+    {"name": "技术因素", "agent": "technical_writer", "data": ["get_price", "get_price_change_rate"]},
     {"name": "宏观利率背景", "agent": "macro_rate_writer", "data": ["get_interbank_offered_rate", "get_yield_curve"]},
-    {"name": SYNTHESIS_SECTION, "agent": "synthesis_judgment_writer", "data": ["section_summaries"]},
-    {"name": RISK_SECTION, "agent": "risk_synthesis_writer", "data": ["all_collected_data", "is_suspended", "is_st_stock"]},
-    {"name": DATA_LIMITATIONS_SECTION, "agent": "data_limitations_builder", "data": ["all_collected_data"]},
+    {"name": "图表解读", "agent": "chart_writer", "data": ["generated_charts"]},
+    {"name": "综合风险与数据局限", "agent": "risk_synthesis_writer", "data": ["all_collected_data", "is_suspended", "is_st_stock"]},
 ]
 
 
@@ -142,38 +61,22 @@ FACTOR_CANDIDATES = [
     "gross_profit_growth_ratio_ttm",
     "account_receivable_turnover_rate_ttm",
     "current_asset_turnover_ttm",
-    "roe_ttm",
-    "operating_revenue_growth_ratio_ttm",
-    "inventory_turnover_rate_ttm",
-    "total_asset_turnover_ttm",
 ]
 
 CHART_QUALITY_REQUIREMENTS = [
-    "每张图必须回答一个明确问题，不能为了凑数量画单一常数或重复口径。",
-    "同一信息只保留最有解释力的一张图，避免价格/收益/均线图之间无差别堆叠。",
-    "不同量纲不要直接放在同一柱状图里比较；市值、PE、PB、股息率等需拆分或只写入正文。",
-    "宏观利率图必须服务于估值折现率或流动性背景，不得泛泛而谈。",
-    "分红、股本、两融等事件型或结构型数据若变化很少，优先在正文表述，图表可删除。",
+    "每张图必须回答一个明确的分析问题，不画冗余或纯信息重复的图。",
+    "同一种分析视角只保留最有解释力的一张图（例如价格走势用均线图就够了，无需同时画价格+收益）。",
+    "优先使用能同时展示多个相关指标趋势的图表（如双轴图：股价 vs 资金流、PE vs 利润增速）。",
+    "对于财务指标，尽量展示 3~5 年历史趋势并标注 CAGR 或近两年变动幅度。",
+    "对于估值指标（PE/PB/PS），若数据充足应叠加历史百分位带（如 30%/70% 分位线），否则应在正文说明缺乏历史对比。",
+    "不同量纲的指标禁止堆在同一柱状图；如需对比，可拆分为子图或使用双轴（左轴市值/右轴比率）。",
+    "柱状图适用于离散事件（分红、股本变动）或少量分类对比；趋势数据优先用折线图。",
+    "宏观利率图（Shibor、国债收益率）必须与目标股票的估值逻辑挂钩（如 DCF 折现率、股息率利差），否则不单独成图。",
+    "自由现金流应搭配资本开支共同展示，以判断扩张效率。",
+    "ROE 允许用杜邦分解图（净利率×周转率×权益乘数）替代单柱。",
+    "两融余额图应同时展示融资余额与融券余额（双轴），突出杠杆结构。",
+    "行业对比图必须同时显示目标股票与行业中位数/均值，不能只画个股绝对值。"
 ]
-
-_SECTION_WRITING_STYLE = (
-    "全章统一采用「结论先行」叙事，写法对标《宏观利率背景》："
-    "（1）每个 ### 小标题用「主题：判断」格式（如「资金面与短端利率：融资成本边际变化」），标题本身给出方向；"
-    "（2）小节首段 1-2 句先写结论/格局，再展开；禁止以日度行情流水账或指标清单开篇；"
-    "（3）数字放在 bullet 里作证据，每条 bullet 尽量带一句含义，不要连续堆叠裸数字；"
-    "（4）每个主题块末尾用 **对 {order_book_id} 的影响**（或同等句式）点明对目标股票的含义；"
-    "（5）章末必须有 ### 综合判断，用 2-4 条收束全章主线。"
-    "禁止把章节写成数据清单、字段复述或「先列数字、后补一句总结」。"
-)
-
-_NARRATIVE_SECTIONS = frozenset(
-    {
-        MARKET_TECH_SECTION,
-        "基本面与估值",
-        "资金与交易结构",
-        RISK_SECTION,
-    }
-)
 
 
 @dataclass
@@ -195,120 +98,87 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
     order_book_id = to_order_book_id(stock_code)
 
     plan = planner_agent(stock_code=stock_code, order_book_id=order_book_id, as_of=as_of_date, lookback_days=options.lookback_days)
-    data = data_executor_agent(
-        order_book_id=order_book_id,
-        stock_code=stock_code,
-        as_of=as_of_date,
-        lookback_days=options.lookback_days,
-        output_dir=output_path.parent,
-    )
+    data = data_executor_agent(order_book_id=order_book_id, as_of=as_of_date, lookback_days=options.lookback_days, output_dir=output_path.parent)
     chart_output_dir = output_path.parent / "charts" / output_path.stem
-    sections = section_writer_agents(plan=plan, data=data, charts={})
-    data, sections, validation, chart_meta = run_validation_cycle(
+    chart_files = chart_agent(data=data, output_dir=chart_output_dir)
+    charts = {name: _markdown_path(path, output_path.parent) for name, path in chart_files.items()}
+    sections = section_writer_agents(plan=plan, data=data, charts=charts)
+    draft_markdown = final_synthesis_agent(plan=plan, data=data, charts=charts, sections=sections)
+    validation = validation_agent(plan=plan, data=data, charts=charts, sections=sections, draft_markdown=draft_markdown)
+    data, charts, validation = refinement_loop(
         plan=plan,
         data=data,
-        sections=sections,
+        charts=charts,
+        validation=validation,
         order_book_id=order_book_id,
-        stock_code=stock_code,
         as_of=as_of_date,
         lookback_days=options.lookback_days,
         output_dir=output_path.parent,
         chart_output_dir=chart_output_dir,
-        markdown_base=output_path.parent,
     )
-    charts = chart_meta.get("charts") or {}
-    chart_placement = chart_placement_with_validation(
-        plan=plan,
-        data=data,
-        charts=charts,
-        sections=sections,
-        validation=validation,
-        chart_need=chart_meta.get("need"),
-    )
-    figure_note_charts = _charts_needing_figure_notes(chart_placement, charts)
-    figure_notes = chart_figure_notes_agent(data=data, charts=charts, chart_names=figure_note_charts)
-    sections, omitted_charts = apply_chart_placements(
-        sections, charts, chart_placement, figure_notes=figure_notes, data=data
-    )
-    sections.pop(CHART_INTERPRETATION_SECTION, None)
-    charts = prune_charts_dict(charts, omitted_charts)
-    sections, limitation_notes = strip_all_section_limitations(sections)
-    sections[SYNTHESIS_SECTION] = synthesis_judgment_agent(
-        plan=plan, data=data, sections=sections, validation=validation
-    )
-    validation = reconcile_validation_gaps(validation, data, charts)
-    sections[DATA_LIMITATIONS_SECTION] = build_unified_data_limitations(
-        data, limitation_notes, validation, charts=charts
-    )
-    summary = normalize_executive_summary_gaps(
-        _executive_summary_agent(
-            plan=plan, data=data, sections=sections, validation=validation, charts=charts
-        )
-    )
-    final_markdown = render_multi_markdown(
-        summary=summary,
-        plan=plan,
-        data=data,
-        charts=charts,
-        sections=sections,
-        inline_charts=True,
-        unused_charts=[],
-        validation=validation,
-    )
-    html_path = output_path.with_suffix(".html")
-    final_html = render_multi_html(
-        summary=summary,
-        plan=plan,
-        data=data,
-        charts=charts,
-        sections=sections,
-        inline_charts=True,
-        unused_charts=[],
-        validation=validation,
-    )
-
+    sections = revise_sections_with_validation(plan=plan, data=data, charts=charts, sections=sections, validation=validation)
+    final_markdown = final_synthesis_agent(plan=plan, data=data, charts=charts, sections=sections, validation=validation)
+    if get_env("ENABLE_LAYOUT_OPTIMIZER", "true").lower() == "true":
+        final_markdown = layout_optimizer(final_markdown, charts)
+    output_path.write_text(final_markdown, encoding="utf-8")
     json_path = output_path.with_suffix(".json")
-    payload = build_multi_json_payload(
-        plan=plan,
-        data=data,
-        charts=charts,
-        sections=sections,
-        validation=validation,
-        summary=summary,
-        output_markdown=str(output_path),
-        output_json=str(json_path),
-        output_html=str(html_path),
-        chart_placement=chart_placement,
-        unused_charts=omitted_charts,
-        figure_notes=figure_notes,
-        chart_need=chart_meta.get("need"),
-        chart_pipeline=chart_meta,
-    )
-    write_report(final_markdown, output_path)
-    write_html_report(final_html, html_path)
+    payload = {
+        "plan": plan,
+        "data": data,
+        "charts": charts,
+        "sections": sections,
+        "validation": validation,
+        "output_markdown": str(output_path),
+        "output_json": str(json_path),
+    }
     json_path.write_text(json.dumps(_json_ready(payload), ensure_ascii=False, indent=2), encoding="utf-8")
     payload["output_markdown"] = str(output_path)
     payload["output_json"] = str(json_path)
-    payload["output_html"] = str(html_path)
+
+    if get_env("EXPORT_LATEX", "true").lower() == "true":
+        from .latex_exporter import export_latex
+        try:
+            tex_path = output_path.with_suffix(".tex")
+            compile_pdf = get_env("COMPILE_PDF", "false").lower() == "true"
+            export_latex(
+                markdown_text=final_markdown,
+                output_tex_path=tex_path,
+                title=f"{data['order_book_id']} 多智能体研究报告",
+                author="FinAgent",
+                compile_pdf=compile_pdf,
+            )
+            payload["output_tex"] = str(tex_path)
+            if compile_pdf:
+                payload["output_pdf"] = str(tex_path.with_suffix(".pdf"))
+        except Exception as e:
+            print(f"LaTeX 导出失败: {e}")
+
     return payload
 
 
 def planner_agent(*, stock_code: str, order_book_id: str, as_of: date, lookback_days: int) -> dict[str, Any]:
-    """规则化计划：章节与工具固定，避免额外 LLM 调用。"""
-    _ = (stock_code, order_book_id, as_of, lookback_days)
-    return {
-        "objective": "生成有主线的 A 股多智能体研究报告：分析章节 → 综合判断 → 风险 → 统一数据局限",
+    fallback = {
+        "objective": "生成覆盖量价、基本面、资金流、技术因素的 A 股多智能体研究报告",
         "tools": list(TOOL_REGISTRY),
         "sections": DEFAULT_SECTIONS,
-        "risk_controls": [
-            "仅基于可取得数据写结论",
-            "各分析章节采用结论先行结构，对标《宏观利率背景》",
-            "不输出买卖建议",
-            "说明缺失数据",
-            "只能引用本系统实际采集的米筐数据与本地计算指标",
-            "不得声称使用 Wind、行业调研、宏观数据、新闻或预测模型",
-        ],
+        "risk_controls": ["仅基于可取得数据写结论", "不输出买卖建议", "说明缺失数据"],
     }
+    if not get_env("OPENAI_API_KEY"):
+        return fallback
+    try:
+        plan = llm_json(
+            "你是金融研究系统的计划 Agent。只返回 JSON，不要写 Markdown。",
+            "请为 A 股研究报告制定多智能体执行计划。"
+            f"\n股票: {stock_code} / {order_book_id}"
+            f"\n截至日期: {as_of.isoformat()}，回看天数: {lookback_days}"
+            f"\n可用米筐函数: {json.dumps(TOOL_REGISTRY, ensure_ascii=False)}"
+            f"\n图表质量要求: {json.dumps(CHART_QUALITY_REQUIREMENTS, ensure_ascii=False)}"
+            "\n必须返回 objective/tools/sections/risk_controls。sections 每项包含 name/agent/data。"
+            "\n禁止规划宏观、行业、新闻、Wind、券商预测等未在可用函数中的数据。",
+        )
+        return _sanitize_plan(plan, fallback)
+    except Exception:
+        return fallback
 
 
 def _sanitize_plan(plan: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
@@ -326,14 +196,7 @@ def _sanitize_plan(plan: dict[str, Any], fallback: dict[str, Any]) -> dict[str, 
     return result
 
 
-def data_executor_agent(
-    *,
-    order_book_id: str,
-    stock_code: str,
-    as_of: date,
-    lookback_days: int,
-    output_dir: Path,
-) -> dict[str, Any]:
+def data_executor_agent(*, order_book_id: str, as_of: date, lookback_days: int, output_dir: Path) -> dict[str, Any]:
     import rqdatac
 
     _init_rqdata(rqdatac)
@@ -343,72 +206,27 @@ def data_executor_agent(
     macro_start = end_date - timedelta(days=120)
     available_factors = set(rqdatac.get_all_factor_names())
     factors = [name for name in FACTOR_CANDIDATES if name in available_factors]
-    benchmark_id, benchmark_label = benchmark_index_id(order_book_id)
 
-    # 所有 rqdatac 拉取互相独立，均为 IO 密集型网络请求，可并发执行。
-    tasks: dict[str, Any] = {
-        "price": lambda: rqdatac.get_price(
-            order_book_id,
-            start_date=start_date,
-            end_date=end_date,
-            frequency="1d",
-            fields=["open", "high", "low", "close", "volume", "total_turnover"],
-        ),
-        "turnover": lambda: rqdatac.get_turnover_rate(order_book_id, start_date=start_date, end_date=end_date),
-        "capital": lambda: rqdatac.get_capital_flow(order_book_id, start_date=start_date, end_date=end_date),
-        "price_change": lambda: rqdatac.get_price_change_rate(order_book_id, start_date=start_date, end_date=end_date),
-        "margin": lambda: rqdatac.get_securities_margin(order_book_id, start_date=start_date, end_date=end_date),
-        "dividend": lambda: rqdatac.get_dividend(order_book_id, start_date=fundamentals_start, end_date=end_date),
-        "shares": lambda: rqdatac.get_shares(order_book_id, start_date=fundamentals_start, end_date=end_date),
-        "suspended": lambda: rqdatac.is_suspended(order_book_id, start_date=start_date, end_date=end_date),
-        "st_stock": lambda: rqdatac.is_st_stock(order_book_id, start_date=start_date, end_date=end_date),
-        "industry": lambda: rqdatac.get_instrument_industry(order_book_id, source="citics_2019", level=1, date=end_date),
-        "industry_l2": lambda: rqdatac.get_instrument_industry(order_book_id, source="citics_2019", level=2, date=end_date),
-        "index_benchmark": lambda: rqdatac.get_price(
-            benchmark_id,
-            start_date=start_date,
-            end_date=end_date,
-            frequency="1d",
-            fields=["close"],
-        ),
-        "block_trade": lambda: rqdatac.get_block_trade(order_book_id, start_date=start_date, end_date=end_date),
-        "interbank_rate": lambda: rqdatac.get_interbank_offered_rate(start_date=macro_start, end_date=end_date),
-        "yield_curve": lambda: rqdatac.get_yield_curve(start_date=macro_start, end_date=end_date),
-        "factor": (lambda: rqdatac.get_factor(order_book_id, factors, start_date=end_date, end_date=end_date)) if factors else (lambda: pd.DataFrame()),
-        "factor_history": (lambda: rqdatac.get_factor(order_book_id, factors, start_date=start_date, end_date=end_date)) if factors else (lambda: pd.DataFrame()),
-    }
-    with ThreadPoolExecutor(max_workers=_get_max_workers()) as executor:
-        future_map = {key: executor.submit(_safe_rq_call, key, fn) for key, fn in tasks.items()}
-        fetched = {key: future.result() for key, future in future_map.items()}
-
-    report_year = end_date.year - 1
-    try:
-        fin_result = fetch_financials(stock_code, report_year=report_year, years=3)
-        pit_financials = {
-            "rows": _slim_pit_financials(fin_result.rows),
-            "row_count": len(fin_result.rows),
-            "quarters": fin_result.quarters,
-        }
-    except Exception as exc:
-        pit_financials = {"rows": [], "row_count": 0, "error": f"{type(exc).__name__}: {exc}"}
-
-    price = fetched["price"]
-    turnover = fetched["turnover"]
-    capital = fetched["capital"]
-    price_change = fetched["price_change"]
-    margin = fetched["margin"]
-    dividend = fetched["dividend"]
-    shares = fetched["shares"]
-    suspended = fetched["suspended"]
-    st_stock = fetched["st_stock"]
-    industry = fetched["industry"]
-    industry_l2 = fetched["industry_l2"]
-    index_benchmark = fetched["index_benchmark"]
-    block_trade = fetched["block_trade"]
-    interbank_rate = fetched["interbank_rate"]
-    yield_curve = fetched["yield_curve"]
-    factor = fetched["factor"]
-    factor_history = fetched["factor_history"]
+    price = rqdatac.get_price(
+        order_book_id,
+        start_date=start_date,
+        end_date=end_date,
+        frequency="1d",
+        fields=["open", "high", "low", "close", "volume", "total_turnover"],
+    )
+    turnover = rqdatac.get_turnover_rate(order_book_id, start_date=start_date, end_date=end_date)
+    capital = rqdatac.get_capital_flow(order_book_id, start_date=start_date, end_date=end_date)
+    price_change = _safe_rq_call("get_price_change_rate", lambda: rqdatac.get_price_change_rate(order_book_id, start_date=start_date, end_date=end_date))
+    margin = _safe_rq_call("get_securities_margin", lambda: rqdatac.get_securities_margin(order_book_id, start_date=start_date, end_date=end_date))
+    dividend = _safe_rq_call("get_dividend", lambda: rqdatac.get_dividend(order_book_id, start_date=fundamentals_start, end_date=end_date))
+    shares = _safe_rq_call("get_shares", lambda: rqdatac.get_shares(order_book_id, start_date=fundamentals_start, end_date=end_date))
+    suspended = _safe_rq_call("is_suspended", lambda: rqdatac.is_suspended(order_book_id, start_date=start_date, end_date=end_date))
+    st_stock = _safe_rq_call("is_st_stock", lambda: rqdatac.is_st_stock(order_book_id, start_date=start_date, end_date=end_date))
+    industry = _safe_rq_call("get_instrument_industry", lambda: rqdatac.get_instrument_industry(order_book_id, source="citics_2019", level=1, date=end_date))
+    interbank_rate = _safe_rq_call("get_interbank_offered_rate", lambda: rqdatac.get_interbank_offered_rate(start_date=macro_start, end_date=end_date))
+    yield_curve = _safe_rq_call("get_yield_curve", lambda: rqdatac.get_yield_curve(start_date=macro_start, end_date=end_date))
+    factor = rqdatac.get_factor(order_book_id, factors, start_date=end_date, end_date=end_date) if factors else pd.DataFrame()
+    factor_history = rqdatac.get_factor(order_book_id, factors, start_date=start_date, end_date=end_date) if factors else pd.DataFrame()
 
     frames = {
         "price": _flatten_frame(price),
@@ -421,25 +239,18 @@ def data_executor_agent(
         "suspended": _flatten_frame(suspended),
         "st_stock": _flatten_frame(st_stock),
         "industry": _flatten_frame(industry),
-        "industry_l2": _flatten_frame(industry_l2),
-        "index_benchmark": _flatten_frame(index_benchmark),
-        "block_trade": _flatten_frame(block_trade),
         "interbank_rate": _flatten_frame(interbank_rate),
         "yield_curve": _flatten_frame(yield_curve),
         "factor": _flatten_frame(factor),
-        "factor_history": _flatten_frame(factor_history),
     }
-    log_path = _write_data_log(
-        output_dir, order_book_id, start_date, end_date, factors, frames, pit_row_count=pit_financials.get("row_count", 0)
-    )
-    result = {
+    script_path = _write_data_script(output_dir, order_book_id, start_date, end_date, factors)
+    return {
         "order_book_id": order_book_id,
-        "benchmark_index": {"id": benchmark_id, "label": benchmark_label},
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "tool_registry": TOOL_REGISTRY,
         "chart_quality_requirements": CHART_QUALITY_REQUIREMENTS,
-        "data_log": str(log_path),
+        "python_script": str(script_path),
         "price": _frame_summary(frames["price"], tail=max(260, lookback_days)),
         "price_change_rate": _frame_summary(frames["price_change_rate"], tail=max(260, lookback_days)),
         "turnover": _frame_summary(frames["turnover"], tail=max(260, lookback_days)),
@@ -449,49 +260,341 @@ def data_executor_agent(
         "shares": _frame_summary(frames["shares"], tail=260),
         "suspended": _frame_summary(frames["suspended"], tail=30),
         "st_stock": _frame_summary(frames["st_stock"], tail=30),
-        "industry": _merge_industry_rows(frames["industry"], frames["industry_l2"]),
-        "industry_l2": _latest_row(frames["industry_l2"]),
-        "index_benchmark": _frame_summary(frames["index_benchmark"], tail=max(260, lookback_days)),
-        "block_trade": _frame_summary(frames["block_trade"], tail=40),
+        "industry": _latest_row(frames["industry"]),
         "interbank_rate": _frame_summary(frames["interbank_rate"], tail=120),
         "yield_curve": _frame_summary(frames["yield_curve"], tail=120),
         "factor": _latest_row(frames["factor"]),
-        "factor_history": _frame_summary(frames["factor_history"], tail=max(260, lookback_days)),
-        "pit_financials": pit_financials,
-        "technical": technical_summary(frames["price"], frames.get("price_change_rate")),
+        "factor_history": _frame_summary(_flatten_frame(factor_history), tail=max(260, lookback_days)),
+        "technical": _technical_summary(frames["price"]),
     }
-    try:
-        from .datastore import save_data_snapshot
 
-        snapshot_id = save_data_snapshot(
-            result,
-            stock_code=stock_code,
-            source="data_executor",
-            lookback_days=lookback_days,
-        )
-        result["data_snapshot_id"] = snapshot_id
-    except Exception:
-        pass
-    return result
+
+def chart_agent(*, data: dict[str, Any], output_dir: Path) -> dict[str, str]:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    price = pd.DataFrame(data["price"]["rows"])
+    turnover = pd.DataFrame(data["turnover"]["rows"])
+    capital = pd.DataFrame(data["capital_flow"]["rows"])
+    margin = pd.DataFrame(data.get("securities_margin", {}).get("rows", []))
+    dividend = pd.DataFrame(data.get("dividend", {}).get("rows", []))
+    shares = pd.DataFrame(data.get("shares", {}).get("rows", []))
+    interbank_rate = pd.DataFrame(data.get("interbank_rate", {}).get("rows", []))
+    yield_curve = pd.DataFrame(data.get("yield_curve", {}).get("rows", []))
+    factor_history = pd.DataFrame(data.get("factor_history", {}).get("rows", []))
+    factor_latest = data.get("factor") if isinstance(data.get("factor"), dict) else {}
+    charts: dict[str, str] = {}
+
+    if not price.empty:
+        price["date"] = pd.to_datetime(price["date"])
+        for col in ("open", "high", "low", "close", "volume", "total_turnover"):
+            if col in price.columns:
+                price[col] = pd.to_numeric(price[col], errors="coerce")
+        price["ma20"] = price["close"].rolling(20).mean()
+        price["ma60"] = price["close"].rolling(60).mean()
+        fig, ax1 = plt.subplots(figsize=(10, 4.8))
+        ax1.plot(price["date"], price["close"], label="close", color="#2563eb")
+        ax1.set_ylabel("close")
+        ax2 = ax1.twinx()
+        ax2.bar(price["date"], price["volume"], alpha=0.18, label="volume", color="#64748b")
+        ax2.set_ylabel("volume")
+        ax1.set_title(f"{data['order_book_id']} price and volume")
+        fig.tight_layout()
+        path = output_dir / "price_volume.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["price_volume"] = str(path)
+
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        ax.plot(price["date"], price["close"], label="close", color="#111827")
+        ax.plot(price["date"], price["ma20"], label="MA20", color="#2563eb")
+        ax.plot(price["date"], price["ma60"], label="MA60", color="#dc2626")
+        ax.set_title(f"{data['order_book_id']} close with moving averages")
+        ax.legend()
+        fig.tight_layout()
+        path = output_dir / "moving_averages.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["moving_averages"] = str(path)
+
+        price["return"] = price["close"].pct_change()
+        price["cum_return"] = (1 + price["return"].fillna(0)).cumprod() - 1
+        price["drawdown"] = price["close"] / price["close"].cummax() - 1
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        ax.plot(price["date"], price["cum_return"], color="#7c3aed")
+        ax.axhline(0, color="#94a3b8", linewidth=1)
+        ax.set_title(f"{data['order_book_id']} cumulative return")
+        ax.set_ylabel("return")
+        fig.tight_layout()
+        path = output_dir / "cumulative_return.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["cumulative_return"] = str(path)
+
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        ax.fill_between(price["date"], price["drawdown"], 0, color="#ef4444", alpha=0.35)
+        ax.set_title(f"{data['order_book_id']} drawdown")
+        ax.set_ylabel("drawdown")
+        fig.tight_layout()
+        path = output_dir / "drawdown.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["drawdown"] = str(path)
+
+        delta = price["close"].diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        price["rsi14"] = 100 - 100 / (1 + gain / loss)
+        ema12 = price["close"].ewm(span=12, adjust=False).mean()
+        ema26 = price["close"].ewm(span=26, adjust=False).mean()
+        price["macd"] = ema12 - ema26
+        price["macd_signal"] = price["macd"].ewm(span=9, adjust=False).mean()
+        price["macd_hist"] = price["macd"] - price["macd_signal"]
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6.2), sharex=True)
+        ax1.plot(price["date"], price["rsi14"], color="#0891b2")
+        ax1.axhline(70, color="#ef4444", linestyle="--", linewidth=1)
+        ax1.axhline(30, color="#16a34a", linestyle="--", linewidth=1)
+        ax1.set_title("RSI14")
+        ax2.bar(price["date"], price["macd_hist"], color="#64748b", alpha=0.55)
+        ax2.plot(price["date"], price["macd"], color="#2563eb", label="MACD")
+        ax2.plot(price["date"], price["macd_signal"], color="#dc2626", label="signal")
+        ax2.set_title("MACD")
+        ax2.legend()
+        fig.tight_layout()
+        path = output_dir / "technical_indicators.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["technical_indicators"] = str(path)
+
+    if not turnover.empty:
+        turnover["date"] = pd.to_datetime(turnover["date"])
+        for col in ("today", "week", "month", "year", "current_year"):
+            if col in turnover.columns:
+                turnover[col] = pd.to_numeric(turnover[col], errors="coerce")
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        ax.plot(turnover["date"], turnover["today"], label="today", color="#2563eb")
+        if "month" in turnover.columns:
+            ax.plot(turnover["date"], turnover["month"], label="month avg", color="#dc2626", alpha=0.8)
+        ax.set_title(f"{data['order_book_id']} turnover rate")
+        ax.set_ylabel("turnover rate")
+        ax.legend()
+        fig.tight_layout()
+        path = output_dir / "turnover_rate.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["turnover_rate"] = str(path)
+
+    if not capital.empty:
+        capital["date"] = pd.to_datetime(capital["date"])
+        for col in ("buy_volume", "buy_value", "sell_volume", "sell_value"):
+            if col in capital.columns:
+                capital[col] = pd.to_numeric(capital[col], errors="coerce")
+        capital["net_value"] = capital["buy_value"] - capital["sell_value"]
+        capital["cum_net_value"] = capital["net_value"].cumsum()
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        colors = ["#dc2626" if v >= 0 else "#16a34a" for v in capital["net_value"]]
+        ax.bar(capital["date"], capital["net_value"], color=colors, alpha=0.78)
+        ax.set_title(f"{data['order_book_id']} net capital flow")
+        ax.set_ylabel("buy_value - sell_value")
+        fig.tight_layout()
+        path = output_dir / "capital_flow.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["capital_flow"] = str(path)
+
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        ax.plot(capital["date"], capital["cum_net_value"], color="#7c3aed")
+        ax.axhline(0, color="#94a3b8", linewidth=1)
+        ax.set_title(f"{data['order_book_id']} cumulative net capital flow")
+        ax.set_ylabel("cumulative net value")
+        fig.tight_layout()
+        path = output_dir / "cumulative_capital_flow.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["cumulative_capital_flow"] = str(path)
+
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        ax.plot(capital["date"], capital["buy_value"], label="buy_value", color="#dc2626")
+        ax.plot(capital["date"], capital["sell_value"], label="sell_value", color="#16a34a")
+        ax.set_title(f"{data['order_book_id']} buy vs sell value")
+        ax.legend()
+        fig.tight_layout()
+        path = output_dir / "buy_sell_value.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["buy_sell_value"] = str(path)
+
+    if not factor_history.empty and "date" in factor_history.columns:
+        factor_history["date"] = pd.to_datetime(factor_history["date"])
+        for col in ("pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"):
+            if col in factor_history.columns:
+                factor_history[col] = pd.to_numeric(factor_history[col], errors="coerce")
+        window = min(252, len(factor_history))
+        for col in ("pe_ratio_ttm", "pb_ratio_ttm"):
+            if col in factor_history.columns:
+                factor_history[f"{col}_pct"] = factor_history[col].rolling(window).apply(
+                    lambda x: (x.iloc[-1] - x.min()) / (x.max() - x.min()) if x.max() != x.min() else 0.5
+                )
+        fig, ax1 = plt.subplots(figsize=(10, 4.8))
+        ax1.set_xlabel("date")
+        ax1.set_ylabel("ratio", color="#2563eb")
+        if "pe_ratio_ttm" in factor_history.columns:
+            ax1.plot(factor_history["date"], factor_history["pe_ratio_ttm"], label="PE", color="#2563eb")
+            if "pe_ratio_ttm_pct" in factor_history.columns and not factor_history["pe_ratio_ttm_pct"].isna().all():
+                last_pct = factor_history["pe_ratio_ttm_pct"].iloc[-1]
+                ax1.text(factor_history["date"].iloc[-1], factor_history["pe_ratio_ttm"].iloc[-1],
+                         f"PE {last_pct:.0%}", fontsize=8, color="#2563eb")
+        if "pb_ratio_ttm" in factor_history.columns:
+            ax2 = ax1.twinx()
+            ax2.set_ylabel("PB", color="#dc2626")
+            ax2.plot(factor_history["date"], factor_history["pb_ratio_ttm"], label="PB", color="#dc2626")
+            if "pb_ratio_ttm_pct" in factor_history.columns and not factor_history["pb_ratio_ttm_pct"].isna().all():
+                last_pct = factor_history["pb_ratio_ttm_pct"].iloc[-1]
+                ax2.text(factor_history["date"].iloc[-1], factor_history["pb_ratio_ttm"].iloc[-1],
+                         f"PB {last_pct:.0%}", fontsize=8, color="#dc2626")
+            ax2.legend(loc="upper right")
+        ax1.legend(loc="upper left")
+        ax1.set_title(f"{data['order_book_id']} PE/PB with historical percentile (rolling {window}d)")
+        fig.tight_layout()
+        path = output_dir / "valuation_percentile.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["valuation_percentile"] = str(path)
+
+    if not margin.empty and "date" in margin.columns:
+        margin["date"] = pd.to_datetime(margin["date"])
+        for col in ("margin_balance", "buy_on_margin_value", "margin_repayment", "short_balance"):
+            if col in margin.columns:
+                margin[col] = pd.to_numeric(margin[col], errors="coerce")
+        fig, ax1 = plt.subplots(figsize=(10, 4.8))
+        ax1.plot(margin["date"], margin["margin_balance"], label="margin balance", color="#2563eb")
+        ax1.set_ylabel("balance (融资余额)", color="#2563eb")
+        ax2 = ax1.twinx()
+        if "buy_on_margin_value" in margin.columns:
+            ax2.bar(margin["date"], margin["buy_on_margin_value"], alpha=0.5, label="融资买入", color="#16a34a")
+        if "margin_repayment" in margin.columns:
+            ax2.bar(margin["date"], -margin["margin_repayment"], alpha=0.5, label="融资偿还", color="#dc2626")
+        ax2.set_ylabel("daily flow (融资买入/偿还)", color="#111827")
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1+lines2, labels1+labels2, loc="upper left")
+        ax1.set_title(f"{data['order_book_id']} margin balance & daily flow")
+        fig.tight_layout()
+        path = output_dir / "margin_enhanced.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        charts["margin_enhanced"] = str(path)
+
+    if not shares.empty and "date" in shares.columns:
+        shares["date"] = pd.to_datetime(shares["date"])
+        for col in ("total", "circulation_a", "free_circulation"):
+            if col in shares.columns:
+                shares[col] = pd.to_numeric(shares[col], errors="coerce")
+        latest = shares.iloc[-1]
+        total = latest.get("total", 0)
+        circ_a = latest.get("circulation_a", 0)
+        free_circ = latest.get("free_circulation", 0)
+        non_free = circ_a - free_circ if circ_a and free_circ else 0
+        labels = ["自由流通股本", "限售流通股", "其他"]
+        sizes = [free_circ, non_free, total - circ_a] if total else []
+        if any(s > 0 for s in sizes):
+            fig, ax = plt.subplots(figsize=(6, 4.8))
+            ax.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=90)
+            ax.set_title(f"{data['order_book_id']} share structure (latest)")
+            fig.tight_layout()
+            path = output_dir / "share_structure_pie.png"
+            fig.savefig(path, dpi=160)
+            plt.close(fig)
+            charts["share_structure_pie"] = str(path)
+
+    if factor_latest and "dividend_yield_ttm" in factor_latest and not yield_curve.empty:
+        latest_dividend = factor_latest.get("dividend_yield_ttm")
+        if latest_dividend is not None:
+            yield_curve["date"] = pd.to_datetime(yield_curve["date"])
+            yc_1y = yield_curve.dropna(subset=["1Y"]).tail(1)
+            if not yc_1y.empty:
+                risk_free = float(yc_1y["1Y"].iloc[0])
+                spread = latest_dividend - risk_free
+                fig, ax = plt.subplots(figsize=(6, 4))
+                ax.bar(["股息率", "1Y国债收益率", "利差"], [latest_dividend, risk_free, spread],
+                       color=["#10b981", "#f59e0b", "#8b5cf6"])
+                ax.set_title(f"{data['order_book_id']} dividend vs risk-free spread")
+                ax.set_ylabel("rate / spread")
+                fig.tight_layout()
+                path = output_dir / "dividend_spread.png"
+                fig.savefig(path, dpi=160)
+                plt.close(fig)
+                charts["dividend_spread"] = str(path)
+
+    if not interbank_rate.empty and "date" in interbank_rate.columns:
+        interbank_rate["date"] = pd.to_datetime(interbank_rate["date"])
+        for col in ("ON", "1W", "1M", "3M", "1Y"):
+            if col in interbank_rate.columns:
+                interbank_rate[col] = pd.to_numeric(interbank_rate[col], errors="coerce")
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        plotted = False
+        for col, color in (("ON", "#64748b"), ("1M", "#2563eb"), ("3M", "#dc2626"), ("1Y", "#7c3aed")):
+            if col in interbank_rate.columns and interbank_rate[col].notna().any():
+                ax.plot(interbank_rate["date"], interbank_rate[col], label=f"Shibor {col}", color=color)
+                plotted = True
+        if plotted:
+            ax.set_title("Shibor term rates")
+            ax.legend()
+            fig.tight_layout()
+            path = output_dir / "shibor_rates.png"
+            fig.savefig(path, dpi=160)
+            charts["shibor_rates"] = str(path)
+        plt.close(fig)
+
+    if not yield_curve.empty and "date" in yield_curve.columns:
+        yield_curve["date"] = pd.to_datetime(yield_curve["date"])
+        tenor_cols = [col for col in ("1Y", "3Y", "5Y", "10Y", "30Y") if col in yield_curve.columns]
+        for col in tenor_cols:
+            yield_curve[col] = pd.to_numeric(yield_curve[col], errors="coerce")
+        latest_curve = yield_curve.dropna(subset=tenor_cols, how="all").tail(1)
+        if tenor_cols and not latest_curve.empty:
+            fig, ax = plt.subplots(figsize=(10, 4.8))
+            values = [latest_curve[col].iloc[0] for col in tenor_cols]
+            ax.plot(tenor_cols, values, marker="o", color="#2563eb")
+            ax.set_title(f"China yield curve snapshot {latest_curve['date'].dt.date.iloc[0]}")
+            ax.set_ylabel("yield")
+            fig.tight_layout()
+            path = output_dir / "yield_curve_snapshot.png"
+            fig.savefig(path, dpi=160)
+            plt.close(fig)
+            charts["yield_curve_snapshot"] = str(path)
+
+    if factor_latest:
+        quality_keys = ["gross_profit_margin_ttm", "net_profit_margin_ttm", "debt_to_asset_ratio", "current_ratio", "quick_ratio"]
+        rows = [(key, _float(factor_latest.get(key))) for key in quality_keys]
+        rows = [(key, value) for key, value in rows if value is not None]
+        if rows:
+            fig, ax = plt.subplots(figsize=(9, 4.8))
+            labels = [key for key, _ in rows]
+            values = [value for _, value in rows]
+            ax.bar(labels, values, color="#2563eb", alpha=0.78)
+            ax.set_title("latest quality snapshot")
+            ax.tick_params(axis="x", rotation=20)
+            fig.tight_layout()
+            path = output_dir / "latest_quality_snapshot.png"
+            fig.savefig(path, dpi=160)
+            plt.close(fig)
+            charts["latest_quality_snapshot"] = str(path)
+
+    return charts
 
 
 def section_writer_agents(*, plan: dict[str, Any], data: dict[str, Any], charts: dict[str, str]) -> dict[str, str]:
+    sections = {}
     specs = plan.get("sections") if isinstance(plan.get("sections"), list) else []
-    specs = [spec for spec in specs if str(spec.get("name") or "") not in DEFERRED_SECTIONS]
-    ordered_names = [str(spec.get("name") or "分析章节") for spec in specs]
-    results: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=_get_max_workers()) as executor:
-        future_map = {}
-        for spec in specs:
-            name = str(spec.get("name") or "分析章节")
-            agent = str(spec.get("agent") or "section_writer")
-            prompt_data = _compact_data_for_prompt(data, charts, name)
-            future = executor.submit(_write_section, agent=agent, section_name=name, data=prompt_data)
-            future_map[future] = name
-        for future in as_completed(future_map):
-            results[future_map[future]] = future.result()
-    # 按 plan.sections 原始顺序重组，保证报告章节顺序稳定。
-    return {name: results[name] for name in ordered_names if name in results}
+    for spec in specs:
+        name = str(spec.get("name") or "分析章节")
+        agent = str(spec.get("agent") or "section_writer")
+        prompt_data = _compact_data_for_prompt(data, charts, name)
+        sections[name] = _write_section(agent=agent, section_name=name, data=prompt_data)
+    return sections
 
 
 def validation_agent(
@@ -503,21 +606,32 @@ def validation_agent(
     draft_markdown: str,
 ) -> dict[str, Any]:
     fallback = _local_validation(data=data, charts=charts, sections=sections, draft_markdown=draft_markdown)
-    capability = build_data_capability_inventory(data, charts)
-    if not has_llm_api_key():
-        return reconcile_validation_gaps(fallback, data, charts)
+    if not get_env("OPENAI_API_KEY"):
+        return fallback
     try:
         validation = llm_json(
-            "你是研报验证 Agent。只返回 JSON，不写 Markdown。"
-            "你的任务是检查报告是否忠于已采集数据、是否遗漏应内嵌的重要图表、是否有应补充或应收敛的结论。"
-            "你必须逐章节检查是否和目标股票直接相关；泛泛讲宏观、行业、市场或方法论但没有落到目标股票的数据、图表或结论的部分，必须要求改写。"
-            "分析章节（量价与技术面、基本面与估值、资金与交易结构、综合风险）须采用结论先行结构："
-            "小标题含判断、段首先结论、数字作证据、块末点明对目标股票的影响、章末有综合判断；"
-            "若以日期/指标堆叠为主、缺少判断性表述，须在 section_feedback 中要求按《宏观利率背景》改写。"
-            "禁止要求补充 Wind、新闻、券商预测、管理层指引等本系统未采集数据。"
-            "务必阅读 data_capability_inventory：MACD/回撤/RSI 若已在 computed 中 available，不得写「未采集」；"
-            "pit_financials 仅年报 q4，不得要求季度环比；capital_flow row_count=0 时可建议 refresh_data 重拉一次。",
-            json.dumps(
+            system=(
+                "你是研报验证 Agent。只返回 JSON，不写 Markdown。\n"
+                "你的任务是检查报告是否忠于已采集数据、是否遗漏重要图表解读、是否有应补充或应收敛的结论。\n"
+                "你必须逐章节检查是否和目标股票直接相关；泛泛讲宏观、行业、市场或方法论但没有落到目标股票的数据、图表或结论的部分，必须要求改写。\n"
+                "禁止要求补充 Wind、新闻、券商预测、管理层指引等本系统未采集数据。\n\n"
+                "## 图表质量标准（必须逐条核对每张图）\n"
+                + "\n".join(f"{i+1}. {rule}" for i, rule in enumerate(CHART_QUALITY_REQUIREMENTS))
+                + "\n\n对每张图判断是否满足上述标准。\n"
+                "不满足的，在 `chart_quality_review.delete` 或 `chart_quality_review.redraw` 中具体说明原因和修改方向。\n"
+                "对于信息量可显著提升的图（如单指标折线图可改为双轴对比图、缺少历史分位的估值图），应放在 `redraw` 中，并给出具体建议（例如：'将 PE 和利润增速画在双轴图上'）。\n"
+                "如果图表数量不足 8 张或存在大量低质量图，应在 `refinement_requests` 中将 `refresh_charts` 设为 true，并说明原因。\n\n"
+                "## 整体报告质量要求\n"
+                "除了逐图审核外，你还需要从整体视角评估报告的可读性和逻辑连贯性：\n"
+                "1. **图文布局**：图表不应全部挤在「可视化」章节，应尽量分散到对应分析段落附近（例如在量价分析段插入价格图，在资金流段插入资金图）。\n"
+                "2. **章节衔接**：相邻章节之间是否有过渡句或逻辑联系？例如「基本面与估值」之后是否自然引出「资金与交易结构」。\n"
+                "3. **段落冗长**：是否有大段纯文字堆砌，缺乏小标题、列表或图表支撑？建议拆分为更易读的子段落。\n"
+                "4. **结论先行**：每个章节开头应有小结或关键结论，避免让读者在段落中寻找要点。\n"
+                "5. **图表引用**：正文中是否明确引用了图表（如“如图1所示”）？如果图表与正文脱节，应在 `action_items` 中要求补充引用。\n"
+                "请在输出 JSON 中增加一个字段 `structural_feedback`，它是一个数组，每个元素包含 `section`（章节名）、`issue`（问题类型，如 `layout`、`cohesion`、`verbosity`）、`suggestion`（具体修改建议）。\n"
+                "同时，如果多个章节内容重叠或可以合并，请在 `structural_feedback` 中建议合并，并给出合并后的标题。"
+            ),
+            user=json.dumps(
                 {
                     "plan": plan,
                     "target_stock": {
@@ -525,12 +639,9 @@ def validation_agent(
                         "industry": data.get("industry"),
                     },
                     "data_inventory": _data_inventory(data),
-                    "data_capability_inventory": capability,
                     "chart_quality_requirements": CHART_QUALITY_REQUIREMENTS,
                     "local_chart_review": _chart_quality_review(data=data, charts=charts),
                     "local_stock_relevance_review": _stock_relevance_review(data=data, sections=sections),
-                    "local_narrative_review": _section_narrative_review(sections=sections),
-                    "section_writing_style": _SECTION_WRITING_STYLE,
                     "charts": charts,
                     "sections": sections,
                     "draft_markdown": draft_markdown[:14000],
@@ -538,20 +649,16 @@ def validation_agent(
                 },
                 ensure_ascii=False,
             )[:22000]
-            + "\n你可以通过 refinement_requests / agent_rerun_requests 要求系统循环重做其他 Agent。"
-            "\nagent_rerun_requests 字段：refresh_data/refresh_charts/replan_charts_only/rerun_section_writers/rewrite_sections/sections_to_rewrite/lookback_days/reason。"
-            "\n- refresh_data：仅当 data_capability_inventory 中某 collectable 数据源 empty 且可能重试时使用；"
-            "refresh_charts：重跑 chart_need + 出图；replan_charts_only：正文变更后仅重算要不要图。"
+            + "\n你可以通过 refinement_requests 要求系统再次调用 data_agent 或 chart_agent。"
             "\n如果图表低信息量、重复、量纲混乱或无法支撑正文结论，请在 chart_quality_review.delete/redraw 中列出，并把 refresh_charts 设为 true。"
-            + "\n必须返回 score/action_items/section_feedback/unsupported_claims/missing_data_notes/data_gap_review/"
-            "chart_quality_review/stock_relevance_review/refinement_requests/agent_rerun_requests/final_decision。"
-            "\nscore 为 0-100；missing_data_notes 只列真实缺口，勿重复 computed 已 available 的指标。",
+            "\n如果需要更长回看期或补充已支持的数据源，请把 refresh_data 设为 true，并给出 lookback_days。"
+            + "\n必须返回 score/action_items/section_feedback/unsupported_claims/missing_data_notes/chart_quality_review/stock_relevance_review/refinement_requests/final_decision/structural_feedback。"
+            "\nscore 为 0-100；section_feedback 是对象，key 是章节名，value 是修改建议列表。",
         )
-        sanitized = _sanitize_validation(validation, fallback)
-        return reconcile_validation_gaps(sanitized, data, charts)
+        return _sanitize_validation(validation, fallback)
     except Exception as exc:
         fallback["validator_error"] = f"{type(exc).__name__}: {exc}"
-        return reconcile_validation_gaps(fallback, data, charts)
+        return fallback
 
 
 def revise_sections_with_validation(
@@ -561,66 +668,43 @@ def revise_sections_with_validation(
     charts: dict[str, str],
     sections: dict[str, str],
     validation: dict[str, Any],
-    only_sections: list[str] | None = None,
 ) -> dict[str, str]:
     feedback = validation.get("section_feedback") if isinstance(validation.get("section_feedback"), dict) else {}
     action_items = validation.get("action_items") if isinstance(validation.get("action_items"), list) else []
     relevance = validation.get("stock_relevance_review") if isinstance(validation.get("stock_relevance_review"), dict) else {}
-    narrative = validation.get("narrative_review") if isinstance(validation.get("narrative_review"), dict) else {}
     has_relevance_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in relevance.values())
-    has_narrative_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in narrative.values())
-    if not has_llm_api_key() or not (feedback or action_items or has_relevance_rewrite or has_narrative_rewrite):
+    if not get_env("OPENAI_API_KEY") or not (feedback or action_items or has_relevance_rewrite):
         return sections
     revised = dict(sections)
-    allowed = {str(name) for name in only_sections} if only_sections else None
-
-    def _revise_one(name: str, content: str) -> str:
-        if allowed is not None and name not in allowed:
-            return content
+    for name, content in sections.items():
         section_notes = _string_list(feedback.get(name))
         section_relevance = relevance.get(name) if isinstance(relevance.get(name), dict) else {}
         if section_relevance.get("decision") == "rewrite":
             section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
-        section_narrative = narrative.get(name) if isinstance(narrative.get(name), dict) else {}
-        if section_narrative.get("decision") == "rewrite":
-            section_notes.append(str(section_narrative.get("reason") or "本节需要改为结论先行结构。"))
         if not section_notes and not action_items:
-            return content
+            continue
         prompt_data = _compact_data_for_prompt(data, charts, name)
         try:
-            text = llm_text(
+            revised[name] = llm_text(
                 f"你是 revise_agent。请根据验证 Agent 的意见，重写《{name}》章节。"
-                f"{_SECTION_WRITING_STYLE}"
                 "只能使用 JSON 中已有数据；不要新增未采集来源；不要给买卖建议。"
-                "需要更可追溯的数字表述；不要在正文写图表解读或 charts/ 路径，图表与图注由系统统一编排。"
-                "不要写「数据局限」小节（报告末尾有《数据覆盖与局限》专章统一收录）。"
-                "每一段都必须回到目标股票本身：引用目标股票代码、目标股票的米筐数据字段或目标股票对应行业归属。"
-                "如果原文有泛泛讲宏观、行业、市场或方法论但没有连接目标股票的句子，请删除或改写。"
-                "如果原文以数字/日期堆叠为主，请改为结论先行：先判断、后证据、块末影响、章末综合判断。"
-                "直接输出 Markdown 正文，不要开场白、不要复述验证意见、不要写「好的，这是…」。"
-                "不要写 charts/ 路径、不要写「请参考图表」或正文内嵌图注。"
-                "分段落、用小标题或 bullet 组织，不要一大段连在一起。",
+                "需要补充图表解读、数据局限和更可追溯的数字表述。"
+                "每一段都必须回到目标股票本身：引用目标股票代码、目标股票的米筐数据字段、目标股票图表或目标股票对应行业归属。"
+                "如果原文有泛泛讲宏观、行业、市场或方法论但没有连接目标股票的句子，请删除或改写。",
                 json.dumps(
                     {
                         "section_name": name,
                         "original_section": content,
                         "section_feedback": section_notes,
                         "stock_relevance_feedback": section_relevance,
-                        "narrative_feedback": section_narrative,
                         "global_action_items": action_items,
                         "data": prompt_data,
                     },
                     ensure_ascii=False,
                 )[:18000],
             )
-            return normalize_section_text(text, name)
         except Exception:
-            return content
-
-    with ThreadPoolExecutor(max_workers=_get_max_workers()) as executor:
-        future_map = {executor.submit(_revise_one, name, content): name for name, content in sections.items()}
-        for future in as_completed(future_map):
-            revised[future_map[future]] = future.result()
+            revised[name] = content
     return revised
 
 
@@ -629,44 +713,26 @@ def refinement_loop(
     plan: dict[str, Any],
     data: dict[str, Any],
     charts: dict[str, str],
-    sections: dict[str, str],
     validation: dict[str, Any],
     order_book_id: str,
-    stock_code: str,
     as_of: date,
     lookback_days: int,
     output_dir: Path,
     chart_output_dir: Path,
-    markdown_base: Path,
-    chart_meta: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], dict[str, str], dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
     """Allow one bounded data/chart retry after the validator sees the draft."""
-    chart_meta = chart_meta or {}
     requests = _refinement_requests(validation)
     if not requests:
         chart_review = _chart_quality_review(data=data, charts=charts)
         charts = _prune_charts(charts, chart_review)
         validation["chart_quality_review"] = chart_review
-        return data, charts, validation, chart_meta
+        return data, charts, validation
     next_lookback = max(lookback_days, int(requests.get("lookback_days") or lookback_days))
     if requests.get("refresh_data"):
-        data = data_executor_agent(
-            order_book_id=order_book_id,
-            stock_code=stock_code,
-            as_of=as_of,
-            lookback_days=next_lookback,
-            output_dir=output_dir,
-        )
+        data = data_executor_agent(order_book_id=order_book_id, as_of=as_of, lookback_days=next_lookback, output_dir=output_dir)
     if requests.get("refresh_charts"):
-        charts, chart_meta = dynamic_chart_pipeline(
-            data=data,
-            sections=sections,
-            output_dir=chart_output_dir,
-            plan=plan,
-            markdown_base=markdown_base,
-            validation=validation,
-            chart_agent_fn=chart_agent,
-        )
+        chart_files = chart_agent(data=data, output_dir=chart_output_dir)
+        charts = {name: _markdown_path(path, output_dir) for name, path in chart_files.items()}
     chart_review = _chart_quality_review(data=data, charts=charts)
     charts = _prune_charts(charts, chart_review)
     validation["chart_quality_review"] = chart_review
@@ -677,559 +743,7 @@ def refinement_loop(
         "reason": requests.get("reason"),
     }
     _finalize_validation_after_refinement(validation, charts)
-    return data, charts, validation, chart_meta
-
-
-def run_validation_cycle(
-    *,
-    plan: dict[str, Any],
-    data: dict[str, Any],
-    sections: dict[str, str],
-    order_book_id: str,
-    stock_code: str,
-    as_of: date,
-    lookback_days: int,
-    output_dir: Path,
-    chart_output_dir: Path,
-    markdown_base: Path,
-) -> tuple[dict[str, Any], dict[str, str], dict[str, Any], dict[str, Any]]:
-    """验证 Agent 驱动多轮循环；出图在章节写作之后按需执行。"""
-    max_rounds = _get_validation_max_rounds()
-    validation_history: list[dict[str, Any]] = []
-    validation: dict[str, Any] = {}
-    chart_meta: dict[str, Any] = {}
-
-    for round_idx in range(max_rounds):
-        draft_summary = _local_executive_summary(plan=plan, data=data, sections=sections)
-        draft_markdown = render_multi_markdown(
-            summary=draft_summary,
-            plan=plan,
-            data=data,
-            charts=chart_meta.get("charts") or {},
-            sections=sections,
-            inline_charts=False,
-        )
-        validation = validation_agent(
-            plan=plan,
-            data=data,
-            charts=chart_meta.get("charts") or {},
-            sections=sections,
-            draft_markdown=draft_markdown,
-        )
-        validation["round"] = round_idx + 1
-        validation_history.append(
-            {
-                "round": round_idx + 1,
-                "score": validation.get("score"),
-                "final_decision": validation.get("final_decision"),
-                "action_items": _string_list(validation.get("action_items"))[:6],
-            }
-        )
-
-        if validation_passed(validation):
-            break
-
-        actions = _agent_rerun_requests(validation)
-        if not actions:
-            break
-
-        performed: dict[str, Any] = {"round": round_idx + 1, "reason": actions.get("reason")}
-        next_lookback = max(lookback_days, int(actions.get("lookback_days") or lookback_days))
-        sections_changed = False
-
-        if actions.get("refresh_data") or actions.get("refresh_charts"):
-            validation = _merge_rerun_into_validation(validation, actions)
-            data, charts, validation, chart_meta = refinement_loop(
-                plan=plan,
-                data=data,
-                charts=chart_meta.get("charts") or {},
-                sections=sections,
-                validation=validation,
-                order_book_id=order_book_id,
-                stock_code=stock_code,
-                as_of=as_of,
-                lookback_days=next_lookback,
-                output_dir=output_dir,
-                chart_output_dir=chart_output_dir,
-                markdown_base=markdown_base,
-                chart_meta=chart_meta,
-            )
-            chart_meta["charts"] = charts
-            performed["refresh_data"] = bool(actions.get("refresh_data"))
-            performed["refresh_charts"] = bool(actions.get("refresh_charts"))
-
-        if actions.get("rerun_section_writers"):
-            sections = section_writer_agents(plan=plan, data=data, charts={})
-            performed["rerun_section_writers"] = True
-            sections_changed = True
-        elif actions.get("rewrite_sections"):
-            target_sections = actions.get("sections_to_rewrite")
-            sections = revise_sections_with_validation(
-                plan=plan,
-                data=data,
-                charts=chart_meta.get("charts") or {},
-                sections=sections,
-                validation=validation,
-                only_sections=target_sections,
-            )
-            performed["rewrite_sections"] = True
-            performed["sections_to_rewrite"] = target_sections
-            sections_changed = True
-        elif _should_revise(validation):
-            sections = revise_sections_with_validation(
-                plan=plan,
-                data=data,
-                charts=chart_meta.get("charts") or {},
-                sections=sections,
-                validation=validation,
-            )
-            performed["rewrite_sections"] = True
-            sections_changed = True
-
-        if sections_changed and (actions.get("replan_charts_only") or not actions.get("refresh_charts")):
-            charts, replan_meta = dynamic_chart_pipeline(
-                data=data,
-                sections=sections,
-                output_dir=chart_output_dir,
-                plan=plan,
-                markdown_base=markdown_base,
-                validation=validation,
-                chart_agent_fn=chart_agent,
-                prior_need=chart_meta.get("need"),
-                replan_only=bool(actions.get("replan_charts_only")),
-            )
-            chart_meta.update(replan_meta)
-            chart_meta["charts"] = charts
-            performed["replan_charts_only"] = bool(actions.get("replan_charts_only"))
-
-        validation.setdefault("iteration_history", []).append(performed)
-        lookback_days = next_lookback
-
-        if round_idx + 1 >= max_rounds:
-            break
-
-    if not chart_meta.get("charts"):
-        charts, chart_meta = dynamic_chart_pipeline(
-            data=data,
-            sections=sections,
-            output_dir=chart_output_dir,
-            plan=plan,
-            markdown_base=markdown_base,
-            validation=validation,
-            chart_agent_fn=chart_agent,
-        )
-        chart_meta["charts"] = charts
-
-    validation["validation_history"] = validation_history
-    validation["chart_need"] = chart_meta.get("need")
-    validation = reconcile_validation_gaps(validation, data, chart_meta.get("charts") or {})
-    sections = {name: normalize_section_text(content, name) for name, content in sections.items()}
-    return data, sections, validation, chart_meta
-
-
-def chart_placement_with_validation(
-    *,
-    plan: dict[str, Any],
-    data: dict[str, Any],
-    charts: dict[str, str],
-    sections: dict[str, str],
-    validation: dict[str, Any] | None = None,
-    chart_need: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """图表编排 + 多轮验证：重点匹配正文内容与图标题含义。"""
-    validation = validation or {}
-    chart_review = validation.get("chart_quality_review") if isinstance(validation.get("chart_quality_review"), dict) else {}
-    delete = chart_review.get("delete") if isinstance(chart_review.get("delete"), dict) else {}
-    blocked = {str(name) for name in delete}
-
-    need_seed = build_placement_from_chart_need(chart_need, charts) if chart_need else None
-    if need_seed and need_seed.get("placements"):
-        placement = fill_missing_section_placements(
-            need_seed, charts=charts, sections=sections, blocked=blocked
-        )
-        placement = flatten_chart_placements(placement)
-    else:
-        placement = chart_placement_agent(
-            plan=plan, data=data, charts=charts, sections=sections, validation=validation, blocked=blocked
-        )
-    review_history: list[dict[str, Any]] = []
-    max_rounds = _get_chart_placement_max_rounds()
-
-    for round_idx in range(max_rounds):
-        review = chart_placement_validation_agent(
-            placement=placement,
-            sections=sections,
-            charts=charts,
-            plan=plan,
-            data=data,
-        )
-        review["round"] = round_idx + 1
-        review_history.append(review)
-        if review.get("passed") or review.get("final_decision") == "pass":
-            break
-        previous = json.dumps(placement.get("placements") or [], ensure_ascii=False, sort_keys=True)
-        placement = apply_chart_placement_fixes(
-            placement, review, sections=sections, charts=charts, blocked=blocked
-        )
-        placement = fill_missing_section_placements(
-            placement, charts=charts, sections=sections, blocked=blocked
-        )
-        placement = flatten_chart_placements(placement)
-        if json.dumps(placement.get("placements") or [], ensure_ascii=False, sort_keys=True) == previous:
-            break
-        if round_idx + 1 < max_rounds and has_llm_api_key():
-            placement = chart_placement_agent(
-                plan=plan,
-                data=data,
-                charts=charts,
-                sections=sections,
-                validation=validation,
-                blocked=blocked,
-                prior_review=review,
-            )
-
-    placement["placement_validation_history"] = review_history
-    placement["placement_validation_passed"] = bool(review_history and review_history[-1].get("passed"))
-    chart_review = validation.get("chart_quality_review") if isinstance(validation.get("chart_quality_review"), dict) else {}
-    delete = chart_review.get("delete") if isinstance(chart_review.get("delete"), dict) else {}
-    blocked = {str(name) for name in delete}
-    return finalize_inline_only_placement(
-        placement, charts=charts, sections=sections, blocked=blocked
-    )
-
-
-def chart_placement_agent(
-    *,
-    plan: dict[str, Any],
-    data: dict[str, Any],
-    charts: dict[str, str],
-    sections: dict[str, str],
-    validation: dict[str, Any] | None = None,
-    blocked: set[str] | None = None,
-    prior_review: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    validation = validation or {}
-    if blocked is None:
-        chart_review = validation.get("chart_quality_review") if isinstance(validation.get("chart_quality_review"), dict) else {}
-        delete = chart_review.get("delete") if isinstance(chart_review.get("delete"), dict) else {}
-        blocked = {str(name) for name in delete}
-
-    fallback = build_default_chart_placement(charts=charts, sections=sections, blocked=blocked)
-    fallback = fill_missing_section_placements(fallback, charts=charts, sections=sections, blocked=blocked)
-    fallback = flatten_chart_placements(fallback)
-
-    if not has_llm_api_key():
-        return fallback
-
-    section_structure = extract_section_structure(sections)
-    chart_catalog = build_chart_catalog(charts, blocked)
-    if not chart_catalog:
-        return fallback
-
-    try:
-        result = llm_json(
-            "你是研报图表编排 Agent。只返回 JSON，不写 Markdown。"
-            "任务：为每张可用图表选择最匹配的章节与小节，使图标题含义与正文内容一致。"
-            "每张图单独一条 placement；charts 数组只能含 1 个 chart_name。"
-            "anchor 必须是该章节正文中真实出现的 #### 小节标题关键词或正文短语，用于精确定位插入位置。"
-            "优先匹配：图标题/keywords 与 #### 小节标题或相邻段落主题一致；不要把回撤图放在价格走势段、不要把均线图放在宏观利率段。"
-            "blocked_charts 禁止使用；每张图必须嵌入正文章节，无法匹配正文的图应列入 omitted，禁止附录或独立图表章节。",
-            json.dumps(
-                {
-                    "plan_sections": [item.get("name") for item in plan.get("sections") or [] if isinstance(item, dict)],
-                    "section_structure": section_structure,
-                    "chart_catalog": chart_catalog,
-                    "prior_review": prior_review,
-                    "blocked_charts": sorted(blocked),
-                    "target_stock": data.get("order_book_id"),
-                },
-                ensure_ascii=False,
-            )[:20000]
-            + '\n返回：{"placements":[{"section":"章节名","charts":["单张图key"],"anchor":"小节标题或正文关键词","note":null}],'
-            + '"omitted":["刻意不嵌入的chart_key"]}',
-        )
-        normalized = normalize_chart_placement(result, charts=charts, sections=sections, blocked=blocked)
-        normalized = flatten_chart_placements(normalized)
-        if not normalized.get("placements"):
-            return fallback
-        return fill_missing_section_placements(
-            normalized, charts=charts, sections=sections, blocked=blocked
-        )
-    except Exception as exc:
-        fallback["placement_error"] = f"{type(exc).__name__}: {exc}"
-        return fallback
-
-
-def chart_placement_validation_agent(
-    *,
-    placement: dict[str, Any],
-    sections: dict[str, str],
-    charts: dict[str, str],
-    plan: dict[str, Any],
-    data: dict[str, Any],
-) -> dict[str, Any]:
-    fallback = local_chart_placement_review(placement, sections=sections, charts=charts)
-    if not has_llm_api_key():
-        return fallback
-
-    structure = extract_section_structure(sections)
-    placements_brief = []
-    for item in placement.get("placements") or []:
-        if not isinstance(item, dict):
-            continue
-        for chart_name in item.get("charts") or []:
-            placements_brief.append(
-                {
-                    "chart": chart_name,
-                    "caption": CHART_CAPTIONS.get(str(chart_name), str(chart_name)),
-                    "section": item.get("section"),
-                    "anchor": item.get("anchor"),
-                }
-            )
-
-    try:
-        review = llm_json(
-            "你是图表编排验证 Agent。只返回 JSON。"
-            "逐张检查：图标题/含义是否与目标章节及 anchor 所指正文段落一致。"
-            "不匹配时给出 suggested_section（必须是已有章节名）与 suggested_anchor（须能在该章节正文找到）。"
-            "passed=true 仅当全部 placement 语义匹配；final_decision 为 pass 或 revise。",
-            json.dumps(
-                {
-                    "order_book_id": data.get("order_book_id"),
-                    "section_structure": structure,
-                    "placements": placements_brief,
-                    "local_review": fallback,
-                },
-                ensure_ascii=False,
-            )[:18000]
-            + '\n返回：{"passed":bool,"score":0-100,"final_decision":"pass|revise",'
-            + '"issues":[{"chart":"key","caption":"标题","section":"章节","anchor":"原anchor",'
-            + '"problem":"原因","suggested_section":"章节","suggested_anchor":"关键词"}]}',
-        )
-        merged = dict(fallback)
-        if isinstance(review, dict):
-            llm_issues = review.get("issues") if isinstance(review.get("issues"), list) else []
-            local_issues = fallback.get("issues") if isinstance(fallback.get("issues"), list) else []
-            merged["issues"] = _merge_chart_placement_issues(local_issues, llm_issues)
-            merged["score"] = int(safe_float(review.get("score")) or fallback.get("score") or 0)
-            merged["passed"] = not merged["issues"] and bool(review.get("passed", fallback.get("passed")))
-            merged["final_decision"] = "pass" if merged["passed"] else "revise"
-        return merged
-    except Exception as exc:
-        fallback["validator_error"] = f"{type(exc).__name__}: {exc}"
-        return fallback
-
-
-def _charts_needing_figure_notes(placement: dict[str, Any], charts: dict[str, str]) -> list[str]:
-    names: list[str] = []
-    omitted = set(placement.get("omitted") or [])
-    for item in placement.get("placements") or []:
-        if not isinstance(item, dict):
-            continue
-        for name in item.get("charts") or []:
-            if name in charts and name not in names and name not in omitted:
-                names.append(str(name))
-    return names
-
-
-def chart_figure_notes_agent(
-    *,
-    data: dict[str, Any],
-    charts: dict[str, str],
-    chart_names: list[str] | None = None,
-) -> dict[str, str]:
-    """为每张图生成形态图注（规则提取，不依赖多模态）。"""
-    from .chart_pattern import build_chart_pattern, chart_pattern_note
-
-    names = [name for name in (chart_names or list(charts.keys())) if name in charts]
-    if not names:
-        return {}
-
-    if not has_llm_api_key():
-        return {name: chart_pattern_note(name, data) for name in names}
-
-    chart_items = [
-        {
-            "chart_name": name,
-            "caption": CHART_CAPTIONS.get(name, name.replace("_", " ")),
-            "pattern": build_chart_pattern(name, data),
-            "fallback_note": chart_pattern_note(name, data),
-        }
-        for name in names
-    ]
-    try:
-        result = llm_json(
-            "你是 chart_interpreter agent，为研报图表撰写图注。"
-            "要求：只描述曲线/柱状/快照的形态与走势（如上行、下行、震荡、背离、强于基准、曲线陡峭等）；"
-            "禁止出现具体数值、百分比、价格、倍数；每条 1 句；学术研报口吻；"
-            "必须基于 JSON 中 pattern.shape 与 fallback_note，不得臆造与形态矛盾的方向；"
-            "禁止写文件路径、禁止「请参考/见上图」等空泛引用；"
-            "输出 JSON：{\"notes\": {\"chart_name\": \"图注正文\"}}，chart_name 必须与输入一致。",
-            json.dumps({"order_book_id": data.get("order_book_id"), "charts": chart_items}, ensure_ascii=False)[
-                :14000
-            ],
-        )
-        raw_notes = result.get("notes") if isinstance(result.get("notes"), dict) else result
-        notes: dict[str, str] = {}
-        if isinstance(raw_notes, dict):
-            for name in names:
-                value = raw_notes.get(name)
-                if value:
-                    notes[name] = str(value).strip()
-        for name in names:
-            notes.setdefault(name, chart_pattern_note(name, data))
-        return notes
-    except Exception:
-        return {name: chart_pattern_note(name, data) for name in names}
-
-
-def synthesis_judgment_agent(
-    *,
-    plan: dict[str, Any],
-    data: dict[str, Any],
-    sections: dict[str, str],
-    validation: dict[str, Any] | None = None,
-) -> str:
-    if not has_llm_api_key():
-        return _local_synthesis_judgment(plan=plan, data=data, sections=sections)
-    try:
-        text = llm_text(
-            "你是 synthesis_judgment_writer。请写《综合判断》章节，将各分析维度交叉印证，形成一条主线叙事。"
-            "禁止重复各章节的日度价格流水账；禁止写数据局限（另有《数据覆盖与局限》专章）；禁止买卖建议；禁止外部来源。"
-            "结构固定：### 总体判断（2-3句）→ ### 跨维度对照（3-5条 bullet，格式 **维度A vs 维度B**：结论）"
-            "→ ### 主要不确定性（2-3条）。只能使用 section_digest 与 JSON 中已有数据。",
-            json.dumps(
-                {
-                    "order_book_id": data.get("order_book_id"),
-                    "technical": data.get("technical"),
-                    "factor": data.get("factor"),
-                    "industry": data.get("industry"),
-                    "section_digest": section_digest(sections, plan),
-                    "validation": validation,
-                },
-                ensure_ascii=False,
-            )[:18000],
-        )
-        return normalize_section_text(text, SYNTHESIS_SECTION)
-    except Exception:
-        return _local_synthesis_judgment(plan=plan, data=data, sections=sections)
-
-
-def _local_synthesis_judgment(
-    *,
-    plan: dict[str, Any],
-    data: dict[str, Any],
-    sections: dict[str, str],
-) -> str:
-    technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
-    factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
-    target = data.get("order_book_id", "目标标的")
-    r20 = technical.get("return_20d")
-    pe = factor.get("pe_ratio_ttm")
-    growth = factor.get("net_profit_growth_ratio_ttm")
-    lines = [
-        "### 总体判断",
-        "",
-        f"{target} 在技术面（20 日收益 {r20 if r20 is not None else '—'}）与基本面（PE(TTM) {pe if pe is not None else '—'}、"
-        f"净利润增速 {growth if growth is not None else '—'}）之间需对照阅读；以下对照基于各章已写结论的本地汇总。",
-        "",
-        "### 跨维度对照",
-    ]
-    for item in section_digest(sections, plan)[:4]:
-        first = item["excerpt"].split("\n")[0].strip()[:80]
-        if first:
-            lines.append(f"- **{item['section']}**：{first}")
-    lines.extend(
-        [
-            "",
-            "### 主要不确定性",
-            "- 缺少行业可比与历史估值分位，跨公司/跨周期判断需降级。",
-            "- 部分数据源缺失时，相关维度结论仅作单点描述。",
-        ]
-    )
-    return normalize_section_text("\n".join(lines), SYNTHESIS_SECTION)
-
-
-def _executive_summary_agent(
-    *,
-    plan: dict[str, Any],
-    data: dict[str, Any],
-    sections: dict[str, str],
-    validation: dict[str, Any] | None = None,
-    charts: dict[str, str] | None = None,
-) -> str:
-    if not has_llm_api_key():
-        return normalize_executive_summary_gaps(
-            _local_executive_summary(plan=plan, data=data, sections=sections, charts=charts)
-        )
-    try:
-        text = llm_text(
-            "你是最终汇总 Agent。只能基于输入 JSON、各分段结论及《综合判断》写执行摘要，不给买卖建议。"
-            "禁止添加宏观、行业、新闻、Wind、券商预测、管理层指引等输入中不存在的信息。"
-            "数据缺口：最多 3 条简述，每条只写缺口本身，不要在每条末尾写「详见《数据覆盖与局限》」；"
-            "若本节有缺口，全部 bullet 写完后单独一行「详情见《数据覆盖与局限》」。"
-            "输出格式：1 句核心结论；### 关键支撑（3-4 条 bullet）；### 主要风险（2-3 条 bullet）；"
-            "### 数据缺口（0-3 条，与 data_capability_inventory 一致，勿把已计算的 MACD/回撤误报为未采集）。"
-            "只输出 Markdown，不要 JSON、代码块或键值对。",
-            json.dumps(
-                {
-                    "plan": plan,
-                    "technical": data.get("technical"),
-                    "factor": data.get("factor"),
-                    "industry": data.get("industry"),
-                    "validation": validation,
-                    "sections": sections,
-                    "data_capability_inventory": build_data_capability_inventory(data, charts or {}),
-                },
-                ensure_ascii=False,
-            )[:18000],
-        )
-        return normalize_executive_summary_gaps(normalize_section_text(text, "执行摘要"))
-    except Exception:
-        return normalize_executive_summary_gaps(
-            _local_executive_summary(plan=plan, data=data, sections=sections, charts=charts)
-        )
-
-
-def _local_executive_summary(
-    *,
-    plan: dict[str, Any],
-    data: dict[str, Any],
-    sections: dict[str, str],
-    charts: dict[str, str] | None = None,
-) -> str:
-    technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
-    factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
-    lines = [
-        f"{data.get('order_book_id', '目标标的')} 多智能体研究已完成。",
-        "",
-        f"最新收盘价 {technical.get('latest_close', '—')}，20 日收益率 {technical.get('return_20d', '—')}；"
-        f"PE(TTM) {factor.get('pe_ratio_ttm', '—')}。",
-        "",
-        "### 关键支撑",
-    ]
-    synthesis = normalize_section_text(sections.get(SYNTHESIS_SECTION, ""), SYNTHESIS_SECTION)
-    if synthesis and synthesis != "_本节暂无可用内容。_":
-        for line in synthesis.splitlines():
-            if line.strip().startswith("- "):
-                lines.append(line.strip())
-                if sum(1 for x in lines if x.startswith("- ")) >= 3:
-                    break
-    else:
-        for name in analysis_section_names(plan)[:3]:
-            excerpt = normalize_section_text(sections.get(name, ""), name)
-            if excerpt == "_本节暂无可用内容。_":
-                continue
-            first = excerpt.split("\n")[0].strip()[:60]
-            if first:
-                lines.append(f"- {name}：{first}")
-    gap_review = build_data_gap_review(data, charts or {})
-    gap_notes = [str(g.get("note") or "").strip() for g in gap_review.get("gaps", []) if g.get("note")]
-    lines.extend(["", "### 数据缺口"])
-    if gap_notes:
-        for note in gap_notes[:3]:
-            lines.append(f"- {note}")
-    return "\n".join(lines)
+    return data, charts, validation
 
 
 def final_synthesis_agent(
@@ -1240,96 +754,163 @@ def final_synthesis_agent(
     sections: dict[str, str],
     validation: dict[str, Any] | None = None,
 ) -> str:
-    """兼容旧调用：生成执行摘要并渲染 Markdown。"""
-    chart_placement = chart_placement_with_validation(
-        plan=plan, data=data, charts=charts, sections=sections, validation=validation
-    )
-    chart_placement = finalize_inline_only_placement(
-        chart_placement, charts=charts, sections=sections, blocked=set()
-    )
-    figure_note_charts = _charts_needing_figure_notes(chart_placement, charts)
-    figure_notes = chart_figure_notes_agent(data=data, charts=charts, chart_names=figure_note_charts)
-    sections, omitted_charts = apply_chart_placements(
-        sections, charts, chart_placement, figure_notes=figure_notes, data=data
-    )
-    sections.pop(CHART_INTERPRETATION_SECTION, None)
-    charts = prune_charts_dict(charts, omitted_charts)
-    sections, limitation_notes = strip_all_section_limitations(sections)
-    sections[SYNTHESIS_SECTION] = synthesis_judgment_agent(
-        plan=plan, data=data, sections=sections, validation=validation
-    )
-    validation = reconcile_validation_gaps(validation, data, charts)
-    sections[DATA_LIMITATIONS_SECTION] = build_unified_data_limitations(
-        data, limitation_notes, validation, charts=charts
-    )
-    summary = normalize_executive_summary_gaps(
-        _executive_summary_agent(
-            plan=plan, data=data, sections=sections, validation=validation, charts=charts
-        )
-    )
-    return render_multi_markdown(
-        summary=summary,
-        plan=plan,
-        data=data,
-        charts=charts,
-        sections=sections,
-        inline_charts=True,
-        unused_charts=[],
-        validation=validation,
+    chart_lines = [f"![{name}]({path})" for name, path in charts.items()]
+    cleaned_sections = {}
+    for name, content in sections.items():
+        cleaned = _extract_section_content(content, section_name=name)
+        if cleaned.strip() in ("", f"## {name}", name):
+            continue
+        cleaned_sections[name] = cleaned
+    body = "\n\n".join(f"## {name}\n{cleaned_sections[name]}" for name in cleaned_sections)
+
+    if not get_env("OPENAI_API_KEY"):
+        summary = "本报告由本地多智能体流程生成：计划、数据执行、分段写作、图表生成和汇总均已完成。"
+    else:
+        try:
+            summary = llm_text(
+                "你是最终汇总 Agent。只能基于输入 JSON 和各分段结论写执行摘要，不给买卖建议。"
+                "禁止添加宏观、行业、新闻、Wind、券商预测、管理层指引等输入中不存在的信息。"
+                "如果某类信息没有采集，就明确写为数据局限。",
+                json.dumps(
+                    {
+                        "plan": plan,
+                        "technical": data.get("technical"),
+                        "factor": data.get("factor"),
+                        "industry": data.get("industry"),
+                        "validation": validation,
+                        "sections": cleaned_sections,
+                    },
+                    ensure_ascii=False,
+                )[:18000],
+            )
+        except Exception:
+            summary = "多维数据已汇总，详见各分段分析。"
+    validation_lines = _validation_markdown(validation)
+
+    include_visualization = get_env("ENABLE_LAYOUT_OPTIMIZER", "true").lower() != "true"
+    viz_section = []
+    if include_visualization and chart_lines:
+        viz_section = ["## 可视化", *(chart_lines or ["本次未生成图表。"])]
+
+    return "\n".join(
+        [
+            f"# {data['order_book_id']} 多智能体研究报告",
+            "",
+            "## 执行摘要",
+            summary,
+            "",
+            *viz_section,
+            "",
+            body,
+            "",
+            "## 验证 Agent 复核",
+            *validation_lines,
+            "",
+            "## 数据与工具说明",
+            f"- 数据区间：{data['start_date']} 至 {data['end_date']}",
+            f"- 计划使用的米筐函数：{', '.join(plan.get('tools') or list(TOOL_REGISTRY))}",
+            f"- 数据执行脚本：`{data['python_script']}`",
+            "- 本报告仅供课程研究与信息展示，不构成投资建议。",
+            "",
+        ]
     )
 
+def layout_optimizer(markdown_text: str, charts: dict[str, str]) -> str:
+    import re
+    from pathlib import Path
 
-def _should_revise(validation: dict[str, Any]) -> bool:
-    if not has_llm_api_key():
-        return False
-    if validation_passed(validation):
-        return False
-    feedback = validation.get("section_feedback") if isinstance(validation.get("section_feedback"), dict) else {}
-    action_items = _string_list(validation.get("action_items"))
-    relevance = validation.get("stock_relevance_review") if isinstance(validation.get("stock_relevance_review"), dict) else {}
-    has_relevance_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in relevance.values())
-    has_feedback = any(_string_list(value) for value in feedback.values())
-    return bool(has_feedback or action_items or has_relevance_rewrite)
+    lines = markdown_text.splitlines(keepends=True)
 
+    viz_start = None
+    viz_end = None
+    for i, line in enumerate(lines):
+        if line.strip().startswith("## 可视化"):
+            viz_start = i
+        elif viz_start is not None and line.strip().startswith("## ") and i > viz_start:
+            viz_end = i
+            break
+    if viz_start is None:
+        return markdown_text
+    if viz_end is None:
+        viz_end = len(lines)
 
-_NO_DATA_LIMITATION_HINT = (
-    "禁止在正文中写「数据局限」或 #### 数据局限 小节（统一收录于报告末尾《数据覆盖与局限》）。"
-    "仅当某数据源 row_count=0 时可一句带过「该口径本次未采集」；"
-    "technical 中已有 macd/macd_signal/latest_drawdown/max_drawdown/rsi14 时必须引用，勿写未采集。"
-)
+    new_lines = lines[:viz_start] + lines[viz_end:]
+
+    viz_chunk = lines[viz_start:viz_end]
+    chart_refs = []
+    for idx, cline in enumerate(viz_chunk):
+        stripped = cline.strip()
+        if stripped.startswith("![") and "](" in stripped:
+            match = re.search(r'!\[.*?\]\((.*?)\)', stripped)
+            if match:
+                full_path = match.group(1)
+                filename = Path(full_path).name
+                chart_refs.append((filename, cline, idx))
+
+    if not chart_refs:
+        return "".join(new_lines)
+
+    section_keywords = {
+        "量价与趋势": ["price_volume", "moving_averages", "cumulative_return", "drawdown", "turnover_rate"],
+        "技术因素": ["technical_indicators"],
+        "资金与交易结构": ["capital_flow", "cumulative_capital_flow", "buy_sell_value", "margin_enhanced"],
+        "基本面与估值": ["valuation_percentile", "latest_quality_snapshot", "share_structure_pie", "dividend_spread"],
+        "宏观利率背景": ["shibor_rates", "yield_curve_snapshot"],
+    }
+
+    chart_target = {}
+    for filename, cline, _ in chart_refs:
+        target = None
+        for section, keywords in section_keywords.items():
+            if any(kw in filename for kw in keywords):
+                target = section
+                break
+        chart_target[filename] = target
+
+    section_ranges = {}
+    current_section = None
+    start_idx = None
+    for i, line in enumerate(new_lines):
+        if line.strip().startswith("## "):
+            if current_section is not None:
+                section_ranges[current_section] = (start_idx, i)
+            current_section = line.strip().lstrip("#").strip()
+            start_idx = i
+    if current_section is not None:
+        section_ranges[current_section] = (start_idx, len(new_lines))
+
+    insert_plan = {section: [] for section in section_keywords}
+    for filename, cline, _ in chart_refs:
+        target = chart_target[filename]
+        if target and target in insert_plan:
+            if cline not in insert_plan[target]:
+                insert_plan[target].append(cline)
+
+    output_parts = []
+    first_section_start = min((start for start, _ in section_ranges.values()), default=0)
+    output_parts.extend(new_lines[:first_section_start])
+
+    for section_name, (start, end) in sorted(section_ranges.items(), key=lambda x: x[1][0]):
+        output_parts.extend(new_lines[start:end])
+        if section_name in insert_plan and insert_plan[section_name]:
+            output_parts.append("\n")
+            output_parts.extend(insert_plan[section_name])
+            output_parts.append("\n")
+
+    return "".join(output_parts)
 
 def _write_section(*, agent: str, section_name: str, data: dict[str, Any]) -> str:
-    if section_name in DEFERRED_SECTIONS:
-        return normalize_section_text("_本节由报告汇总阶段自动生成。_", section_name)
-    if not has_llm_api_key():
-        return normalize_section_text(
-            f"{agent} 本地摘要：{section_name} 已基于可用数据完成。",
-            section_name,
-        )
+    if not get_env("OPENAI_API_KEY"):
+        return f"{agent} 本地摘要：{section_name} 已基于可用数据完成。"
     try:
-        hint = SECTION_WRITER_HINTS.get(section_name, "")
-        prompt = (
+        return llm_text(
             f"你是 {agent}。请写研报中的《{section_name}》章节。"
-            f"{_SECTION_WRITING_STYLE}"
-            f"{hint}{_NO_DATA_LIMITATION_HINT}"
             "只能使用用户提供的 JSON 数据，不得补充外部来源、宏观、行业、新闻、Wind、券商预测或未采集信息。"
-            "所有数值结论必须能从 JSON 中追溯。不要给买卖建议。"
-            "输出 Markdown 正文：分段落、用小标题或 bullet 组织，不要一大段连在一起；"
-            "优先用自然语言写结论与数值，避免「根据 xxx 数据」「xxx 字段」等元数据句式；"
-            "确需引用米筐字段名时用反引号标注英文字段名即可，不要重复 quarter/2025q4 等口径说明。"
-            "不要写 charts/ 路径、不要写「请参考图表」或正文图表解读（图表与图注由系统编排）。"
-            "不要输出 JSON 或代码块。"
-        )
-        text = llm_text(
-            prompt,
+            "所有数值结论必须能从 JSON 中追溯；没有数据就写数据局限。不要给买卖建议。",
             json.dumps(data, ensure_ascii=False)[:16000],
         )
-        return normalize_section_text(text, section_name)
     except Exception as exc:
-        return normalize_section_text(
-            f"{agent} 章节生成失败，已保留数据摘要。错误：{exc}",
-            section_name,
-        )
+        return f"{agent} 章节生成失败，已保留数据摘要。错误：{exc}"
 
 
 def _previous_trading_date(rqdatac: Any, value: date) -> date:
@@ -1376,15 +957,26 @@ def _latest_row(df: pd.DataFrame) -> dict[str, Any]:
     return _records(df.tail(1))[0]
 
 
-def _merge_industry_rows(l1: pd.DataFrame, l2: pd.DataFrame) -> dict[str, Any]:
-    merged: dict[str, Any] = {}
-    if not l1.empty:
-        merged.update(_latest_row(l1))
-    if not l2.empty:
-        row = _latest_row(l2)
-        merged["second_industry_code"] = row.get("second_industry_code") or row.get("industry_code")
-        merged["second_industry_name"] = row.get("second_industry_name") or row.get("industry_name")
-    return merged
+def _technical_summary(df: pd.DataFrame) -> dict[str, Any]:
+    if df.empty or "close" not in df.columns:
+        return {}
+    close = pd.to_numeric(df["close"], errors="coerce")
+    volume = pd.to_numeric(df["volume"], errors="coerce") if "volume" in df.columns else pd.Series(dtype=float)
+    ma20 = close.rolling(20).mean()
+    ma60 = close.rolling(60).mean()
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rsi = 100 - 100 / (1 + gain / loss)
+    return {
+        "latest_close": _float(close.iloc[-1]),
+        "return_20d": _float(close.iloc[-1] / close.iloc[-20] - 1) if len(close) >= 20 else None,
+        "return_60d": _float(close.iloc[-1] / close.iloc[-60] - 1) if len(close) >= 60 else None,
+        "ma20": _float(ma20.iloc[-1]),
+        "ma60": _float(ma60.iloc[-1]),
+        "rsi14": _float(rsi.iloc[-1]),
+        "avg_volume_20d": _float(volume.tail(20).mean()) if not volume.empty else None,
+    }
 
 
 def _data_inventory(data: dict[str, Any]) -> dict[str, Any]:
@@ -1401,8 +993,6 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
     action_items = []
     chart_review = _chart_quality_review(data=data, charts=charts)
     relevance_review = _stock_relevance_review(data=data, sections=sections)
-    narrative_review = _section_narrative_review(sections=sections)
-    gap_review = build_data_gap_review(data, charts)
     if len(charts) < 8:
         action_items.append(f"图表数量只有 {len(charts)} 张，建议补充到至少 8 张。")
     for name, reason in chart_review.get("delete", {}).items():
@@ -1410,67 +1000,35 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
     for name, review in relevance_review.items():
         if isinstance(review, dict) and review.get("decision") == "rewrite":
             action_items.append(f"章节 {name} 与目标股票关联不足，需要改写：{review.get('reason')}")
-    for name, review in narrative_review.items():
-        if isinstance(review, dict) and review.get("decision") == "rewrite":
-            action_items.append(f"章节 {name} 叙事结构需改写：{review.get('reason')}")
-    missing_data_notes = [
-        str(g.get("note") or "").strip()
-        for g in gap_review.get("gaps", [])
-        if g.get("note") and g.get("status") != "false_alarm"
-    ]
+    for key in ("price", "factor_history", "capital_flow", "securities_margin", "dividend", "shares", "interbank_rate", "yield_curve"):
+        value = data.get(key)
+        if isinstance(value, dict) and int(value.get("row_count") or 0) == 0:
+            action_items.append(f"{key} 没有返回可用行，需要在报告中说明数据局限。")
     unsupported = []
     for token in ("Wind", "券商预测", "新闻", "管理层指引"):
         if token in draft_markdown:
             unsupported.append(token)
-    refresh_data = bool(gap_review.get("refresh_data_recommended"))
     return {
         "score": 80 if not unsupported and len(charts) >= 8 else 65,
-        "action_items": action_items + missing_data_notes,
+        "action_items": action_items,
         "section_feedback": {},
         "unsupported_claims": unsupported,
-        "missing_data_notes": missing_data_notes,
-        "data_gap_review": gap_review,
+        "missing_data_notes": action_items,
         "chart_quality_review": chart_review,
         "stock_relevance_review": relevance_review,
-        "narrative_review": narrative_review,
-        "final_decision": "revise" if action_items or unsupported or missing_data_notes else "pass",
+        "final_decision": "revise" if action_items or unsupported else "pass",
         "refinement_requests": {
-            "refresh_data": refresh_data,
+            "refresh_data": False,
             "refresh_charts": len(charts) < 8 or bool(chart_review.get("redraw")),
             "lookback_days": None,
-            "reason": (
-                "存在可重试的空数据源：" + ", ".join(gap_review.get("refresh_keys") or [])
-                if refresh_data
-                else ("图表数量不足或存在低质量图" if len(charts) < 8 or chart_review.get("redraw") else None)
-            ),
-        },
-        "agent_rerun_requests": {
-            "refresh_data": refresh_data,
-            "refresh_charts": len(charts) < 8 or bool(chart_review.get("redraw")),
-            "replan_charts_only": False,
-            "rerun_section_writers": False,
-            "rewrite_sections": bool(action_items),
-            "sections_to_rewrite": sorted(
-                {
-                    name
-                    for name, review in relevance_review.items()
-                    if isinstance(review, dict) and review.get("decision") == "rewrite"
-                }
-                | {
-                    name
-                    for name, review in narrative_review.items()
-                    if isinstance(review, dict) and review.get("decision") == "rewrite"
-                }
-            ),
-            "lookback_days": None,
-            "reason": "本地规则检测到需返工项" if action_items or missing_data_notes else None,
+            "reason": "图表数量不足或存在低质量图" if len(charts) < 8 or chart_review.get("redraw") else None,
         },
     }
 
 
 def _sanitize_validation(validation: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     result = dict(validation) if isinstance(validation, dict) else {}
-    result["score"] = int(safe_float(result.get("score")) or fallback["score"])
+    result["score"] = int(_float(result.get("score")) or fallback["score"])
     result["action_items"] = _string_list(result.get("action_items")) or fallback["action_items"]
     result["unsupported_claims"] = _string_list(result.get("unsupported_claims"))
     result["missing_data_notes"] = _string_list(result.get("missing_data_notes"))
@@ -1478,98 +1036,15 @@ def _sanitize_validation(validation: dict[str, Any], fallback: dict[str, Any]) -
     result["chart_quality_review"] = chart_review if isinstance(chart_review, dict) else fallback.get("chart_quality_review", {})
     relevance_review = result.get("stock_relevance_review")
     result["stock_relevance_review"] = relevance_review if isinstance(relevance_review, dict) else fallback.get("stock_relevance_review", {})
-    narrative_review = result.get("narrative_review")
-    result["narrative_review"] = narrative_review if isinstance(narrative_review, dict) else fallback.get("narrative_review", {})
     feedback = result.get("section_feedback")
     result["section_feedback"] = feedback if isinstance(feedback, dict) else {}
     decision = str(result.get("final_decision") or fallback["final_decision"]).lower()
     result["final_decision"] = decision if decision in {"pass", "revise", "block"} else "revise"
     requests = result.get("refinement_requests")
     result["refinement_requests"] = requests if isinstance(requests, dict) else fallback.get("refinement_requests", {})
-    rerun = result.get("agent_rerun_requests")
-    result["agent_rerun_requests"] = rerun if isinstance(rerun, dict) else fallback.get("agent_rerun_requests", {})
+    structural = result.get("structural_feedback")
+    result["structural_feedback"] = structural if isinstance(structural, list) else []
     return result
-
-
-def _agent_rerun_requests(validation: dict[str, Any]) -> dict[str, Any]:
-    """解析验证 Agent 触发的下游 Agent 重做指令。"""
-    rerun = validation.get("agent_rerun_requests") if isinstance(validation.get("agent_rerun_requests"), dict) else {}
-    refine = validation.get("refinement_requests") if isinstance(validation.get("refinement_requests"), dict) else {}
-    action_text = " ".join(_string_list(validation.get("action_items")))
-
-    refresh_data = bool(rerun.get("refresh_data") or refine.get("refresh_data"))
-    refresh_charts = bool(rerun.get("refresh_charts") or refine.get("refresh_charts")) or "图表" in action_text
-    replan_charts_only = bool(rerun.get("replan_charts_only"))
-    rerun_section_writers = bool(rerun.get("rerun_section_writers"))
-    rewrite_sections = bool(rerun.get("rewrite_sections"))
-
-    sections_to_rewrite = _string_list(rerun.get("sections_to_rewrite"))
-    if not sections_to_rewrite:
-        feedback = validation.get("section_feedback") if isinstance(validation.get("section_feedback"), dict) else {}
-        sections_to_rewrite = [name for name, notes in feedback.items() if _string_list(notes)]
-
-    if not rewrite_sections and not rerun_section_writers and _should_revise(validation):
-        rewrite_sections = True
-
-    lookback_days = rerun.get("lookback_days") or refine.get("lookback_days")
-    reason = str(rerun.get("reason") or refine.get("reason") or action_text[:160] or "").strip() or None
-
-    if not any((refresh_data, refresh_charts, replan_charts_only, rerun_section_writers, rewrite_sections)):
-        return {}
-
-    return {
-        "refresh_data": refresh_data,
-        "refresh_charts": refresh_charts,
-        "replan_charts_only": replan_charts_only,
-        "rerun_section_writers": rerun_section_writers,
-        "rewrite_sections": rewrite_sections,
-        "sections_to_rewrite": sections_to_rewrite or None,
-        "lookback_days": lookback_days,
-        "reason": reason,
-    }
-
-
-def _merge_rerun_into_validation(validation: dict[str, Any], actions: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(validation)
-    requests = dict(merged.get("refinement_requests") or {})
-    requests["refresh_data"] = bool(actions.get("refresh_data"))
-    requests["refresh_charts"] = bool(actions.get("refresh_charts"))
-    requests["lookback_days"] = actions.get("lookback_days")
-    requests["reason"] = actions.get("reason")
-    merged["refinement_requests"] = requests
-    rerun = dict(merged.get("agent_rerun_requests") or {})
-    rerun.update(
-        {
-            k: actions.get(k)
-            for k in (
-                "refresh_data",
-                "refresh_charts",
-                "replan_charts_only",
-                "rerun_section_writers",
-                "rewrite_sections",
-                "lookback_days",
-                "reason",
-            )
-        }
-    )
-    if actions.get("sections_to_rewrite"):
-        rerun["sections_to_rewrite"] = actions.get("sections_to_rewrite")
-    merged["agent_rerun_requests"] = rerun
-    return merged
-
-
-def _merge_chart_placement_issues(local_issues: list[Any], llm_issues: list[Any]) -> list[dict[str, Any]]:
-    merged: dict[str, dict[str, Any]] = {}
-    for item in [*local_issues, *llm_issues]:
-        if not isinstance(item, dict):
-            continue
-        chart = str(item.get("chart") or "").strip()
-        if not chart:
-            continue
-        current = merged.get(chart, {})
-        current.update({k: v for k, v in item.items() if v not in (None, "")})
-        merged[chart] = current
-    return list(merged.values())
 
 
 def _refinement_requests(validation: dict[str, Any]) -> dict[str, Any]:
@@ -1625,47 +1100,7 @@ def _finalize_validation_after_refinement(validation: dict[str, Any], charts: di
     unsupported = _string_list(validation.get("unsupported_claims"))
     if len(charts) >= 8 and not has_relevance_rewrite and not remaining_redraw and not unsupported:
         validation["final_decision"] = "pass_after_revision"
-        validation["score"] = max(int(safe_float(validation.get("score")) or 0), 85)
-
-
-def _section_narrative_review(*, sections: dict[str, str]) -> dict[str, Any]:
-    """检测分析章节是否符合结论先行结构（对标《宏观利率背景》）。"""
-    judgment_re = re.compile(
-        r"构成|显示|表明|支撑|压力|偏弱|偏强|走弱|走强|分化|格局|意味着|反映|暗示|"
-        r"总体|综合判断|结论|边际|提供|抬升|下行|上行|背离|修复|承压|净流入|净流出"
-    )
-    impact_re = re.compile(r"\*\*对[^*]{0,48}影响\*\*|###\s*综合判断")
-    colon_heading_re = re.compile(r"^###\s*.+：.+", re.MULTILINE)
-    date_re = re.compile(r"\d{4}年\d{1,2}月\d{1,2}日|\d{4}-\d{2}-\d{2}")
-    review: dict[str, Any] = {}
-    for name, content in sections.items():
-        if name not in _NARRATIVE_SECTIONS:
-            continue
-        text = str(content or "").strip()
-        if len(text) < 120:
-            continue
-        judgments = len(judgment_re.findall(text))
-        impacts = len(impact_re.findall(text))
-        dates = len(date_re.findall(text))
-        colon_headings = len(colon_heading_re.findall(text))
-        has_synthesis = "### 综合判断" in text
-        issues: list[str] = []
-        if judgments < 2:
-            issues.append("判断性表述不足")
-        if impacts < 1 and not has_synthesis:
-            issues.append("缺少「对目标股票的影响」或章末综合判断")
-        if dates >= 4 and judgments < max(3, dates // 2):
-            issues.append("日期/数字堆叠过多，结论先行不足")
-        if colon_headings < 1 and name != RISK_SECTION:
-            issues.append("小标题未采用「主题：判断」格式")
-        if issues:
-            review[name] = {
-                "decision": "rewrite",
-                "reason": "；".join(issues) + "。请参照《宏观利率背景》采用结论先行结构。",
-            }
-        else:
-            review[name] = {"decision": "pass", "reason": "叙事结构符合结论先行要求。"}
-    return review
+        validation["score"] = max(int(_float(validation.get("score")) or 0), 85)
 
 
 def _stock_relevance_review(*, data: dict[str, Any], sections: dict[str, str]) -> dict[str, Any]:
@@ -1729,10 +1164,6 @@ def _validation_markdown(validation: dict[str, Any] | None) -> list[str]:
     for name, review in list(relevance.items())[:8]:
         if isinstance(review, dict) and review.get("decision") == "rewrite":
             lines.append(f"- 目标股票相关性：{name} 需要改写，原因：{review.get('reason')}")
-    narrative = validation.get("narrative_review") if isinstance(validation.get("narrative_review"), dict) else {}
-    for name, review in list(narrative.items())[:8]:
-        if isinstance(review, dict) and review.get("decision") == "rewrite":
-            lines.append(f"- 叙事结构：{name} 需要改写，原因：{review.get('reason')}")
     for item in _string_list(validation.get("unsupported_claims"))[:5]:
         lines.append(f"- 疑似未支撑表述：{item}")
     if len(lines) == 2:
@@ -1748,89 +1179,19 @@ def _string_list(value: Any) -> list[str]:
     return []
 
 
-SECTION_PROMPT_KEYS: dict[str, tuple[str, ...]] = {
-    MARKET_TECH_SECTION: ("technical", "price_recent", "price_change_rate_recent", "turnover_recent", "index_benchmark_recent", "charts"),
-    "基本面与估值": ("factor", "industry", "pit_financials", "dividend_recent", "shares_recent", "charts"),
-    "资金与交易结构": ("capital_flow", "securities_margin_recent", "block_trade_recent", "charts"),
-    "宏观利率背景": ("macro_rate_recent", "charts"),
-    RISK_SECTION: ("status_checks", "technical", "factor", "industry", "pit_financials", "charts"),
-}
-
-SECTION_WRITER_HINTS: dict[str, str] = {
-    MARKET_TECH_SECTION: (
-        "本章合并量价与技术，须按固定小节组织，禁止重复描述同一走势或同一指标。"
-        "每节遵循结论先行："
-        "（1）### 近期价格与量价：主题句概括短期走势（如震荡下行后反弹、量价是否配合），"
-        "再用 2-4 条 bullet 列关键价位/量/换手，禁止逐日流水账；"
-        "（2）### 均线与区间收益：先判断多空格局（如价在 MA20 下、MA60 上），再列 MA 与 return_20d/return_60d；"
-        "（3）### 动量与风险指标：先给动能总判断（偏弱/修复/背离），再列 technical 中的 rsi14、macd、macd_signal、latest_drawdown、max_drawdown；"
-        "禁止写「MACD/回撤未采集」。章末 ### 综合判断 收束短中长期含义。"
-    ),
-    "基本面与估值": (
-        "按 ### 估值倍数、### 盈利与增长、### 财务健康 组织。"
-        "每节首句给出总判断（如估值中等、盈利高增、现金流覆盖良好），再用 bullet 列关键倍数/增速；"
-        "禁止罗列全部年份流水账，只保留最有说明力的 2-3 个对比点；"
-        "每个主题块末尾点明对目标股票估值或信用含义。章末 ### 综合判断。"
-    ),
-    "资金与交易结构": (
-        "按 ### 两融资金、### 大宗交易 组织；若 capital_flow row_count=0，单独 ### 资金流向 一句说明未采集即可。"
-        "每节首句给出结论（如杠杆净流入、机构分歧、大单减持），bullet 仅作证据；"
-        "禁止先列逐笔交易再总结。章末 ### 综合判断 概括资金面对价格含义。"
-    ),
-    "宏观利率背景": (
-        "本章为结论先行范本：小标题含判断、段首先结论、数字作证据、块末 **对目标股票的影响**、章末 ### 综合判断。"
-        "必须说明利率/收益率变动如何作用于目标股票的融资成本或估值折现率，禁止脱离标的的宏观教科书式叙述。"
-    ),
-    RISK_SECTION: (
-        "开篇 1-2 句给出总体风险画像，再按 ### 小标题分类（如交易状态、估值、盈利波动、技术面）；"
-        "每条风险用「判断 + 关键数字」表述，禁止逐指标复述 technical 或 pit_financials 清单；"
-        "禁止重复《综合判断》的跨维度对照。章末可 ### 综合判断 列出最需关注的 2-3 个风险。"
-    ),
-}
-
-_PIT_FINANCIAL_KEYS = (
-    "year",
-    "quarter",
-    "revenue",
-    "operating_revenue",
-    "net_profit_parent_company",
-    "cash_flow_from_operating_activities",
-    "total_assets",
-    "total_liabilities",
-    "equity_parent_company",
-)
-
-
-def _slim_pit_financials(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    slim_rows: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        slim = {key: row.get(key) for key in _PIT_FINANCIAL_KEYS if row.get(key) not in (None, "")}
-        if "year" not in slim and row.get("quarter"):
-            slim["year"] = int(str(row["quarter"])[:4])
-        if slim:
-            slim_rows.append(_json_ready(slim))
-    return slim_rows
-
-
 def _compact_data_for_prompt(data: dict[str, Any], charts: dict[str, str], section_name: str) -> dict[str, Any]:
-    full = {
+    return {
         "section_name": section_name,
         "order_book_id": data.get("order_book_id"),
         "date_range": [data.get("start_date"), data.get("end_date")],
         "technical": data.get("technical"),
         "factor": data.get("factor"),
         "industry": data.get("industry"),
-        "pit_financials": data.get("pit_financials"),
-        "capital_flow": {k: v for k, v in data.get("capital_flow", {}).items() if k != "rows"}
-        | {"recent_rows": data.get("capital_flow", {}).get("rows", [])[-8:]},
+        "capital_flow": {k: v for k, v in data.get("capital_flow", {}).items() if k != "rows"} | {"recent_rows": data.get("capital_flow", {}).get("rows", [])[-8:]},
         "price_recent": data.get("price", {}).get("rows", [])[-12:],
         "price_change_rate_recent": data.get("price_change_rate", {}).get("rows", [])[-12:],
         "turnover_recent": data.get("turnover", {}).get("rows", [])[-12:],
-        "index_benchmark_recent": data.get("index_benchmark", {}).get("rows", [])[-12:],
         "securities_margin_recent": data.get("securities_margin", {}).get("rows", [])[-12:],
-        "block_trade_recent": data.get("block_trade", {}).get("rows", [])[-8:],
         "dividend_recent": data.get("dividend", {}).get("rows", [])[-8:],
         "shares_recent": data.get("shares", {}).get("rows", [])[-8:],
         "macro_rate_recent": {
@@ -1843,63 +1204,49 @@ def _compact_data_for_prompt(data: dict[str, Any], charts: dict[str, str], secti
         },
         "charts": charts,
     }
-    keys = SECTION_PROMPT_KEYS.get(section_name)
-    if not keys:
-        return full
-    picked = {key: full[key] for key in keys if key in full}
-    picked["section_name"] = section_name
-    picked["order_book_id"] = full["order_book_id"]
-    picked["date_range"] = full["date_range"]
-    return picked
 
 
-def _write_data_log(
-    output_dir: Path,
-    order_book_id: str,
-    start_date: date,
-    end_date: date,
-    factors: list[str],
-    frames: dict[str, pd.DataFrame],
-    *,
-    pit_row_count: int = 0,
-) -> Path:
+def _write_data_script(output_dir: Path, order_book_id: str, start_date: date, end_date: date, factors: list[str]) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{order_book_id.replace('.', '_')}_data_agent.log"
-    key_to_tool = {**DATA_KEY_TO_TOOL, "pit_financials": "get_pit_financials_ex"}
-    lines = [
-        f"[{datetime.now().isoformat(timespec='seconds')}] FinAgent data_executor_agent",
-        f"order_book_id={order_book_id}",
-        f"start_date={start_date.isoformat()}",
-        f"end_date={end_date.isoformat()}",
-        f"factors={factors}",
-        "",
-        "[data_fetch_summary]",
-    ]
-    for key, tool in key_to_tool.items():
-        if key == "pit_financials":
-            if pit_row_count > 0:
-                lines.append(f"- {tool}: OK row_count={pit_row_count}")
-            else:
-                lines.append(f"- {tool}: EMPTY row_count=0")
-            continue
-        frame = frames.get(key)
-        if frame is None or frame.empty:
-            lines.append(f"- {tool}: EMPTY row_count=0")
-            continue
-        cols = ", ".join(str(col) for col in frame.columns[:12])
-        if len(frame.columns) > 12:
-            cols += ", ..."
-        lines.append(f"- {tool}: OK row_count={len(frame)} columns=[{cols}]")
-    lines.extend(
-        [
-            "",
-            "[note]",
-            "本日志记录 multi-analyze 数据执行阶段的米筐拉取结果，便于追溯与排查。",
-            "如需复现数据，请使用 FinAgent multi-analyze 命令并参考上述参数。",
-            "",
-        ]
-    )
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path = output_dir / f"{order_book_id.replace('.', '_')}_data_agent.py"
+    text = f'''from finagent.env import load_dotenv
+from finagent.rqdata_client import _init_rqdata
+import rqdatac
+
+load_dotenv()
+_init_rqdata(rqdatac)
+order_book_id = {order_book_id!r}
+start_date = {start_date.isoformat()!r}
+end_date = {end_date.isoformat()!r}
+factors = {factors!r}
+
+price = rqdatac.get_price(order_book_id, start_date=start_date, end_date=end_date, frequency="1d", fields=["open", "high", "low", "close", "volume", "total_turnover"])
+price_change_rate = rqdatac.get_price_change_rate(order_book_id, start_date=start_date, end_date=end_date)
+turnover = rqdatac.get_turnover_rate(order_book_id, start_date=start_date, end_date=end_date)
+capital_flow = rqdatac.get_capital_flow(order_book_id, start_date=start_date, end_date=end_date)
+factor = rqdatac.get_factor(order_book_id, factors, start_date=end_date, end_date=end_date)
+factor_history = rqdatac.get_factor(order_book_id, factors, start_date=start_date, end_date=end_date)
+securities_margin = rqdatac.get_securities_margin(order_book_id, start_date=start_date, end_date=end_date)
+dividend = rqdatac.get_dividend(order_book_id, start_date="2024-01-01", end_date=end_date)
+shares = rqdatac.get_shares(order_book_id, start_date="2024-01-01", end_date=end_date)
+industry = rqdatac.get_instrument_industry(order_book_id, source="citics_2019", level=1, date=end_date)
+interbank_rate = rqdatac.get_interbank_offered_rate(start_date=start_date, end_date=end_date)
+yield_curve = rqdatac.get_yield_curve(start_date=start_date, end_date=end_date)
+
+print(price.tail())
+print(price_change_rate.tail())
+print(turnover.tail())
+print(capital_flow.tail())
+print(factor.tail())
+print(factor_history.tail())
+print(securities_margin.tail())
+print(dividend.tail())
+print(shares.tail())
+print(industry)
+print(interbank_rate.tail())
+print(yield_curve.tail())
+'''
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -1913,6 +1260,15 @@ def _markdown_path(path: str, base_dir: Path) -> str:
 
 def _records(df: pd.DataFrame) -> list[dict[str, Any]]:
     return [_json_ready(row) for row in df.to_dict(orient="records")]
+
+
+def _float(value: Any) -> float | None:
+    try:
+        if pd.isna(value):
+            return None
+        return float(value)
+    except Exception:
+        return None
 
 
 def _json_ready(value: Any) -> Any:
@@ -1930,3 +1286,31 @@ def _json_ready(value: Any) -> Any:
         except Exception:
             pass
     return value
+
+def _extract_section_content(content: str, section_name: str = "") -> str:
+    if not isinstance(content, str):
+        return str(content)
+    stripped = content.strip()
+    if stripped.startswith('{') and stripped.endswith('}'):
+        try:
+            data = json.loads(stripped)
+            if isinstance(data, dict):
+                if "revised_section" in data and isinstance(data["revised_section"], str):
+                    content = data["revised_section"]
+                elif "content" in data and isinstance(data["content"], str):
+                    content = data["content"]
+                elif "section_name" in data and isinstance(data["section_name"], str):
+                    content = data["section_name"]
+        except json.JSONDecodeError:
+            pass
+    cleaned = re.sub(r'\\\{\}n', '', content)
+    cleaned = re.sub(r'\\\{\}', '', cleaned)
+    cleaned = re.sub(r'n\s*n', ' ', cleaned)
+    if section_name:
+        pattern = rf'^##\s*{re.escape(section_name)}\s*\n\s*{re.escape(section_name)}'
+        cleaned = re.sub(pattern, f'## {section_name}', cleaned, flags=re.MULTILINE)
+    lines = cleaned.splitlines()
+    if len(lines) >= 2 and lines[0].strip() == f"## {section_name}" and lines[1].strip() == section_name:
+        lines.pop(1)
+        cleaned = "\n".join(lines)
+    return cleaned.strip()
