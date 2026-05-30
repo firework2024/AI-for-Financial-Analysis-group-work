@@ -5,7 +5,20 @@ import re
 from typing import Any
 
 from .env import get_env
+from .llm_settings import has_llm_api_key, llm_api_key, llm_base_url, llm_model
 from .report_format import normalize_section_text
+
+
+def _openai_client(*, timeout: float | None = None):
+    from openai import OpenAI
+
+    kwargs: dict[str, Any] = {
+        "api_key": llm_api_key(),
+        "base_url": llm_base_url() or None,
+    }
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    return OpenAI(**kwargs)
 
 
 def financial_signal_review_agent(
@@ -14,16 +27,11 @@ def financial_signal_review_agent(
     framework_text: str,
     company_context: dict[str, Any],
 ) -> dict[str, Any]:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         raise RuntimeError("OPENAI_API_KEY is required for the LLM financial analysis path.")
 
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=get_env("OPENAI_API_KEY"),
-        base_url=get_env("OPENAI_BASE_URL") or None,
-    )
-    model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
+    client = _openai_client()
+    model = llm_model()
     prompt = _build_financial_prompt(framework_text, evidence, company_context)
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
@@ -63,16 +71,11 @@ def financial_analysis_agent(
 
 
 def investment_director_analysis(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return _local_summary(mda_text, financial_analysis, company_context)
 
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=get_env("OPENAI_API_KEY"),
-        base_url=get_env("OPENAI_BASE_URL") or None,
-    )
-    model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
+    client = _openai_client()
+    model = llm_model()
     prompt = _build_prompt(mda_text, financial_analysis, company_context)
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
@@ -87,7 +90,7 @@ def investment_director_analysis(mda_text: str, financial_analysis: dict[str, An
 
 
 def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return normalize_section_text(_local_mda_summary(mda_text), "MD&A 摘要")
     try:
         name = company_context.get("sec_name") or company_context.get("stock_code") or "目标公司"
@@ -107,16 +110,10 @@ def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
 
 
 def llm_text(system: str, user: str) -> str:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         raise RuntimeError("OPENAI_API_KEY is required for LLM text generation.")
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=get_env("OPENAI_API_KEY"),
-        base_url=get_env("OPENAI_BASE_URL") or None,
-        timeout=float(get_env("OPENAI_TIMEOUT", "1800")),
-    )
-    model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
+    client = _openai_client(timeout=float(get_env("OPENAI_TIMEOUT", "1800")))
+    model = llm_model()
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
@@ -130,16 +127,10 @@ def llm_text(system: str, user: str) -> str:
 
 
 def llm_json(system: str, user: str) -> dict[str, Any]:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         raise RuntimeError("OPENAI_API_KEY is required for LLM JSON generation.")
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=get_env("OPENAI_API_KEY"),
-        base_url=get_env("OPENAI_BASE_URL") or None,
-        timeout=float(get_env("OPENAI_TIMEOUT", "1800")),
-    )
-    model = get_env("OPENAI_MODEL", "gpt-4.1-mini")
+    client = _openai_client(timeout=float(get_env("OPENAI_TIMEOUT", "1800")))
+    model = llm_model()
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
@@ -161,7 +152,7 @@ def _chat_completion_kwargs(*, model: str, messages: list[dict[str, str]], respo
         "temperature": 0.2,
         "max_tokens": int(get_env("OPENAI_MAX_TOKENS", "2600")),
     }
-    base_url = (get_env("OPENAI_BASE_URL") or "").lower()
+    base_url = (llm_base_url() or "").lower()
     if "moonshot" in base_url or "kimi" in model.lower():
         kwargs["temperature"] = 1
     if response_format is not None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .env import get_env
+from .llm_settings import has_llm_api_key
 from .fields import FIELD_MAP
 from .framework import load_financial_framework_excerpt
 from .llm import financial_signal_review_agent
@@ -23,7 +23,7 @@ def analyze_financials(
     signal_pack = _build_signal_pack(rows, metrics)
     evidence = _build_llm_evidence(rows, metrics, signal_pack, company_context or {})
 
-    if get_env("OPENAI_API_KEY"):
+    if has_llm_api_key():
         try:
             analysis = financial_signal_review_agent(
                 evidence=evidence,

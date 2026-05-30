@@ -10,6 +10,7 @@ const state = {
   view: "chat",
   reportOutlineOpen: true,
   tocObserver: null,
+  railCollapsed: localStorage.getItem("finagent_rail_collapsed") === "1",
 };
 
 const els = {
@@ -55,6 +56,15 @@ const els = {
   reportDisclaimer: document.getElementById("reportDisclaimer"),
   welcomeDisclaimer: document.getElementById("welcomeDisclaimer"),
   toastHost: document.getElementById("toastHost"),
+  shell: document.querySelector(".shell"),
+  mobileBar: document.getElementById("mobileBar"),
+  mobileMenuBtn: document.getElementById("mobileMenuBtn"),
+  mobileNewChatBtn: document.getElementById("mobileNewChatBtn"),
+  mobileBarTitle: document.getElementById("mobileBarTitle"),
+  mobileBarSub: document.getElementById("mobileBarSub"),
+  railOverlay: document.getElementById("railOverlay"),
+  railCollapseBtn: document.getElementById("railCollapseBtn"),
+  railExpandBtn: document.getElementById("railExpandBtn"),
 };
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -68,6 +78,77 @@ function toast(message, type = "info") {
   setTimeout(() => node.remove(), 4200);
 }
 
+function isMobileLayout() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function openMobileRail() {
+  if (!isMobileLayout()) return;
+  els.shell?.classList.add("rail-open");
+  document.body.classList.add("rail-open");
+  els.railOverlay?.setAttribute("aria-hidden", "false");
+}
+
+function closeMobileRail() {
+  els.shell?.classList.remove("rail-open");
+  document.body.classList.remove("rail-open");
+  els.railOverlay?.setAttribute("aria-hidden", "true");
+}
+
+function toggleMobileRail() {
+  if (els.shell?.classList.contains("rail-open")) closeMobileRail();
+  else openMobileRail();
+}
+
+function syncRailCollapseUi() {
+  const collapsed = state.railCollapsed && !isMobileLayout();
+  els.shell?.classList.toggle("rail-collapsed", collapsed);
+  els.railExpandBtn?.classList.toggle("hidden", !collapsed);
+}
+
+function setRailCollapsed(collapsed) {
+  state.railCollapsed = collapsed;
+  localStorage.setItem("finagent_rail_collapsed", collapsed ? "1" : "0");
+  syncRailCollapseUi();
+}
+
+function syncMobileBar(title, sub = "") {
+  if (els.mobileBarTitle) els.mobileBarTitle.textContent = title || "FinAgent";
+  if (els.mobileBarSub) {
+    els.mobileBarSub.textContent = sub || "";
+    els.mobileBarSub.style.display = isMobileLayout() ? "none" : sub ? "block" : "none";
+  }
+}
+
+function syncMobileUi() {
+  const chatInput = document.getElementById("chatInput");
+  if (chatInput) {
+    chatInput.placeholder = isMobileLayout() ? "发消息…" : "输入问题，Shift+Enter 换行…";
+  }
+}
+
+function updateMobileBarForView(view) {
+  if (!isMobileLayout()) return;
+  if (view === "welcome") {
+    syncMobileBar("FinAgent", "A 股智能研究平台");
+    return;
+  }
+  if (view === "report-empty") {
+    syncMobileBar("历史报告", "选择一份报告查看");
+    return;
+  }
+  if (view === "report" && state.activeReport) {
+    const ui = state.activeReport._ui || {};
+    syncMobileBar(ui.title || state.activeReport.meta?.stock_code || "分析报告", ui.subtitle || "");
+    return;
+  }
+  if (view === "chat") {
+    const chatState = chatStateRef();
+    const session = chatState?.activeSession;
+    syncMobileBar(session?.title || "新对话");
+  }
+}
+
 function navigate(view) {
   state.view = view;
   els.welcomeView?.classList.toggle("hidden", view !== "welcome");
@@ -78,6 +159,8 @@ function navigate(view) {
     els.reportView?.classList.add("hidden");
     els.reportEmptyView?.classList.remove("hidden");
   }
+  updateMobileBarForView(view === "report" && !state.activeReport ? "report-empty" : view);
+  if (view !== "welcome" && isMobileLayout()) closeMobileRail();
 }
 
 function setSidebarPanel(panel) {
@@ -213,10 +296,18 @@ function fixImagePaths(html) {
 }
 
 async function api(path, options = {}) {
+  const headers = typeof window.Auth?.authHeaders === "function"
+    ? window.Auth.authHeaders(options.body instanceof FormData ? {} : { "Content-Type": "application/json" })
+    : { "Content-Type": "application/json" };
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    credentials: "same-origin",
+    headers: { ...headers, ...(options.headers || {}) },
     ...options,
   });
+  if (response.status === 401) {
+    window.Auth?.logout?.();
+    throw new Error("请先登录");
+  }
   if (!response.ok) {
     let detail = `请求失败 (${response.status})`;
     try {
@@ -367,6 +458,7 @@ async function loadReport(filename, options = {}) {
       if (scrollEl) scrollEl.scrollTop = 0;
       setSidebarPanel("reports");
       navigate("report");
+      closeMobileRail();
     }
     return report;
   } catch (error) {
@@ -903,6 +995,24 @@ async function handleSubmit(event) {
   }
 }
 
+async function bootstrapAppData() {
+  try {
+    await api("/api/health");
+    els.serverStatus?.classList.add("ok");
+    if (els.serverStatusText) els.serverStatusText.textContent = "在线";
+    await loadReports();
+    if (typeof window.loadChatSessions === "function") {
+      await window.loadChatSessions();
+    }
+  } catch (_error) {
+    els.serverStatus?.classList.add("error");
+    if (els.serverStatusText) els.serverStatusText.textContent = "离线";
+    if (els.reportList) {
+      els.reportList.innerHTML = `<div class="empty-state"><p>无法连接后端</p><span>请运行 python -m finagent serve</span></div>`;
+    }
+  }
+}
+
 async function bootstrap() {
   navigate("welcome");
 
@@ -938,6 +1048,7 @@ async function bootstrap() {
     const item = event.target.closest("[data-id]");
     if (!item) return;
     loadReport(item.dataset.id).catch(() => {});
+    closeMobileRail();
   });
   els.backToChatBtn?.addEventListener("click", () => navigate("welcome"));
   els.brandHome?.addEventListener("click", () => navigate("welcome"));
@@ -958,25 +1069,35 @@ async function bootstrap() {
   els.askReportBtn?.addEventListener("click", () => {
     if (typeof window.openChatWithReport === "function") window.openChatWithReport();
   });
+  els.mobileMenuBtn?.addEventListener("click", toggleMobileRail);
+  els.railCollapseBtn?.addEventListener("click", () => setRailCollapsed(true));
+  els.railExpandBtn?.addEventListener("click", () => setRailCollapsed(false));
+  els.railOverlay?.addEventListener("click", closeMobileRail);
+  els.mobileNewChatBtn?.addEventListener("click", () => {
+    if (typeof window.createChatSessionQuick === "function") {
+      window.createChatSessionQuick();
+    }
+    closeMobileRail();
+  });
+  window.addEventListener("resize", () => {
+    if (!isMobileLayout()) closeMobileRail();
+    syncRailCollapseUi();
+    syncMobileUi();
+    if (isMobileLayout()) updateMobileBarForView(state.view);
+  });
+  syncRailCollapseUi();
+  syncMobileUi();
   bindReportOutlineEvents();
 
   const today = new Date().toISOString().slice(0, 10);
   if (els.analyzeForm?.elements.as_of) els.analyzeForm.elements.as_of.value = today;
 
-  try {
-    await api("/api/health");
-    els.serverStatus?.classList.add("ok");
-    if (els.serverStatusText) els.serverStatusText.textContent = "在线";
-    await loadReports();
-    if (typeof window.loadChatSessions === "function") {
-      await window.loadChatSessions();
-    }
-  } catch (_error) {
-    els.serverStatus?.classList.add("error");
-    if (els.serverStatusText) els.serverStatusText.textContent = "离线";
-    if (els.reportList) {
-      els.reportList.innerHTML = `<div class="empty-state"><p>无法连接后端</p><span>请运行 python -m finagent serve</span></div>`;
-    }
+  if (typeof window.Auth?.ensureAuth === "function") {
+    window.onAuthReady = () => bootstrapAppData().catch(() => {});
+    const user = await window.Auth.ensureAuth();
+    if (user) await bootstrapAppData();
+  } else {
+    await bootstrapAppData();
   }
 }
 
@@ -996,6 +1117,13 @@ window.App = {
   setTaskState,
   reportTypeLabel,
   formatDate,
+  renderMarkdown,
+  openMobileRail,
+  closeMobileRail,
+  syncMobileBar,
+  updateMobileBarForView,
+  isMobileLayout,
+  setRailCollapsed,
 };
 
 bootstrap();

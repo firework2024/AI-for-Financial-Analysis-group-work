@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from .cninfo import to_order_book_id
+from .env import prepare_rqdata_env
 from .fields import FIELD_NAMES
 
 METRIC_FACTOR_MAP = {
@@ -58,7 +59,14 @@ def fetch_financials(stock_code: str, report_year: int, years: int = 3) -> Finan
     for quarter in wanted:
         row = by_quarter.get(quarter, {"quarter": quarter, "year": int(quarter[:4])})
         completed.append(row)
-    return FinancialFetchResult(completed, order_book_id, wanted)
+    result = FinancialFetchResult(completed, order_book_id, wanted)
+    try:
+        from .datastore import save_pit_financials
+
+        save_pit_financials(result, stock_code=stock_code, report_year=report_year, years=years)
+    except Exception:
+        pass
+    return result
 
 
 def fetch_factor_fallbacks(order_book_id: str, report_year: int, years: int, as_of: date) -> dict[int, dict[str, float]]:
@@ -141,6 +149,7 @@ def _factor_date(rqdatac_module: Any, as_of: date) -> date:
 
 
 def _init_rqdata(rqdatac_module: Any) -> None:
+    prepare_rqdata_env()
     user = os.getenv("RQ_USER")
     password = os.getenv("RQ_PASSWORD")
     host = os.getenv("RQ_HOST")

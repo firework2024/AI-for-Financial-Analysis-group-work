@@ -25,6 +25,7 @@ from .data_capabilities import (
 )
 from .cninfo import default_as_of, normalize_stock_code, to_order_book_id
 from .env import get_env, load_dotenv
+from .llm_settings import has_llm_api_key
 from .llm import llm_json, llm_text
 from .multi_report import (
     CHART_CAPTIONS,
@@ -431,7 +432,7 @@ def data_executor_agent(
     log_path = _write_data_log(
         output_dir, order_book_id, start_date, end_date, factors, frames, pit_row_count=pit_financials.get("row_count", 0)
     )
-    return {
+    result = {
         "order_book_id": order_book_id,
         "benchmark_index": {"id": benchmark_id, "label": benchmark_label},
         "start_date": start_date.isoformat(),
@@ -459,6 +460,19 @@ def data_executor_agent(
         "pit_financials": pit_financials,
         "technical": technical_summary(frames["price"], frames.get("price_change_rate")),
     }
+    try:
+        from .datastore import save_data_snapshot
+
+        snapshot_id = save_data_snapshot(
+            result,
+            stock_code=stock_code,
+            source="data_executor",
+            lookback_days=lookback_days,
+        )
+        result["data_snapshot_id"] = snapshot_id
+    except Exception:
+        pass
+    return result
 
 
 def section_writer_agents(*, plan: dict[str, Any], data: dict[str, Any], charts: dict[str, str]) -> dict[str, str]:
@@ -490,7 +504,7 @@ def validation_agent(
 ) -> dict[str, Any]:
     fallback = _local_validation(data=data, charts=charts, sections=sections, draft_markdown=draft_markdown)
     capability = build_data_capability_inventory(data, charts)
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return reconcile_validation_gaps(fallback, data, charts)
     try:
         validation = llm_json(
@@ -555,7 +569,7 @@ def revise_sections_with_validation(
     narrative = validation.get("narrative_review") if isinstance(validation.get("narrative_review"), dict) else {}
     has_relevance_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in relevance.values())
     has_narrative_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in narrative.values())
-    if not get_env("OPENAI_API_KEY") or not (feedback or action_items or has_relevance_rewrite or has_narrative_rewrite):
+    if not has_llm_api_key() or not (feedback or action_items or has_relevance_rewrite or has_narrative_rewrite):
         return sections
     revised = dict(sections)
     allowed = {str(name) for name in only_sections} if only_sections else None
@@ -863,7 +877,7 @@ def chart_placement_with_validation(
         placement = flatten_chart_placements(placement)
         if json.dumps(placement.get("placements") or [], ensure_ascii=False, sort_keys=True) == previous:
             break
-        if round_idx + 1 < max_rounds and get_env("OPENAI_API_KEY"):
+        if round_idx + 1 < max_rounds and has_llm_api_key():
             placement = chart_placement_agent(
                 plan=plan,
                 data=data,
@@ -904,7 +918,7 @@ def chart_placement_agent(
     fallback = fill_missing_section_placements(fallback, charts=charts, sections=sections, blocked=blocked)
     fallback = flatten_chart_placements(fallback)
 
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return fallback
 
     section_structure = extract_section_structure(sections)
@@ -955,7 +969,7 @@ def chart_placement_validation_agent(
     data: dict[str, Any],
 ) -> dict[str, Any]:
     fallback = local_chart_placement_review(placement, sections=sections, charts=charts)
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return fallback
 
     structure = extract_section_structure(sections)
@@ -1031,7 +1045,7 @@ def chart_figure_notes_agent(
     if not names:
         return {}
 
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return {name: chart_pattern_note(name, data) for name in names}
 
     chart_items = [
@@ -1076,7 +1090,7 @@ def synthesis_judgment_agent(
     sections: dict[str, str],
     validation: dict[str, Any] | None = None,
 ) -> str:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return _local_synthesis_judgment(plan=plan, data=data, sections=sections)
     try:
         text = llm_text(
@@ -1144,7 +1158,7 @@ def _executive_summary_agent(
     validation: dict[str, Any] | None = None,
     charts: dict[str, str] | None = None,
 ) -> str:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return normalize_executive_summary_gaps(
             _local_executive_summary(plan=plan, data=data, sections=sections, charts=charts)
         )
@@ -1266,7 +1280,7 @@ def final_synthesis_agent(
 
 
 def _should_revise(validation: dict[str, Any]) -> bool:
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return False
     if validation_passed(validation):
         return False
@@ -1287,7 +1301,7 @@ _NO_DATA_LIMITATION_HINT = (
 def _write_section(*, agent: str, section_name: str, data: dict[str, Any]) -> str:
     if section_name in DEFERRED_SECTIONS:
         return normalize_section_text("_本节由报告汇总阶段自动生成。_", section_name)
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return normalize_section_text(
             f"{agent} 本地摘要：{section_name} 已基于可用数据完成。",
             section_name,

@@ -77,4 +77,26 @@ def run(options: WorkflowOptions) -> dict[str, Any]:
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result["output_markdown"] = str(output_path)
     result["output_json"] = str(json_path)
+    try:
+        from .datastore import save_annual_report_record
+        from .datastore.annual_text import mda_storage_payload, merge_mda_meta
+
+        mda_payload = mda_storage_payload(mda)
+        save_annual_report_record(
+            stock_code=report.stock_code,
+            report_year=report.report_year,
+            order_book_id=fetched.order_book_id,
+            sec_name=report.sec_name,
+            title=report.title,
+            pdf_path=str(pdf_path),
+            meta=report.to_dict(),
+            financial_data=financial_data,
+            mda_text=mda_payload["mda_text"],
+            mda_meta=merge_mda_meta(
+                mda_payload["mda_meta"],
+                {"summary": mda_brief},
+            ),
+        )
+    except Exception:
+        pass
     return result

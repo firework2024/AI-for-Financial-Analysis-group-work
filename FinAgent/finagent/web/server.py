@@ -7,16 +7,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from ..auth.deps import AuthUser, resolve_auth_user
+from ..auth.owners import ReportOwnerStore
+from ..auth.tokens import TOKEN_TTL_SECONDS, create_access_token
+from ..auth.user_settings import UserSettingsStore
+from ..auth.users import UserStore
 from ..chat.agent import chat_turn, index_pdf, index_report
 from ..chat.store import SessionStore
+from ..llm import llm_text
+from ..llm_settings import activate_llm_settings, has_llm_api_key, reset_llm_settings, use_llm_settings
 
-from ..env import load_dotenv
+from ..env import load_dotenv, prepare_rqdata_env, rqdata_configured
+from ..chat.tools import query_data_api
+from ..chat.web_search import search_web, web_search_configured, web_search_enabled
 from ..multiagent import MultiAgentOptions, run_multi_agent
 from ..report_format import DISCLAIMER
 from ..workflow import WorkflowOptions, run
@@ -28,6 +37,7 @@ PARENT_OUTPUTS_DIR = FINAGENT_ROOT.parent / "outputs"
 CHAT_DIR = FINAGENT_ROOT / "chat_data"
 CHAT_UPLOADS_DIR = CHAT_DIR / "uploads"
 CHAT_SESSIONS_DIR = CHAT_DIR / "sessions"
+USER_SETTINGS_DIR = CHAT_DIR / "user_settings"
 
 
 def _output_dirs() -> list[Path]:
@@ -129,6 +139,54 @@ class ChatAnalyzeRequest(BaseModel):
     as_of: str | None = None
     lookback_days: int = Field(default=260, ge=30, le=520)
     years: int = Field(default=3, ge=1, le=10)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=32)
+    password: str = Field(..., min_length=6, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=32)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class SettingsUpdateRequest(BaseModel):
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
+    openai_model: str | None = None
+    clear_api_key: bool = False
+
+
+def _list_reports_for_user(user_id: str, report_owners: ReportOwnerStore) -> list[dict[str, Any]]:
+    return report_owners.filter_reports(user_id, _list_reports())
+
+
+def _report_id_for_file(relative: str) -> str | None:
+    normalized = relative.replace("\\", "/").lstrip("/")
+    if normalized.endswith("_report.json"):
+        return Path(normalized).name
+    parts = normalized.split("/")
+    if len(parts) >= 2 and parts[0] == "charts":
+        return f"{parts[1]}.json"
+    return None
+
+
+def _ensure_report_access(user_id: str, filename: str, report_owners: ReportOwnerStore) -> None:
+    safe_name = Path(filename).name
+    if not report_owners.user_can_access(user_id, safe_name):
+        raise HTTPException(status_code=403, detail="无权访问该报告")
+
+
+def _ensure_file_access(user_id: str, relative: str, report_owners: ReportOwnerStore) -> None:
+    report_id = _report_id_for_file(relative)
+    if report_id:
+        _ensure_report_access(user_id, report_id, report_owners)
+
+
+def _load_report_for_user(filename: str, user_id: str, report_owners: ReportOwnerStore) -> dict[str, Any]:
+    _ensure_report_access(user_id, filename, report_owners)
+    return _load_report(filename)
 
 
 def _report_type(payload: dict[str, Any]) -> str:
@@ -243,7 +301,12 @@ def _set_task(task_id: str, **fields: Any) -> None:
         task.update(fields)
 
 
-def _run_analyze_task(task_id: str, request: AnalyzeRequest) -> None:
+def _run_analyze_task(task_id: str, request: AnalyzeRequest, user_id: str, report_owners: ReportOwnerStore, user_settings: UserSettingsStore) -> None:
+    with use_llm_settings(user_settings.to_llm_settings(user_id)):
+        _run_analyze_task_inner(task_id, request, user_id, report_owners)
+
+
+def _run_analyze_task_inner(task_id: str, request: AnalyzeRequest, user_id: str, report_owners: ReportOwnerStore) -> None:
     _set_task(task_id, status="running", message="正在分析年报…", started_at=datetime.now().isoformat(timespec="seconds"))
     try:
         result = run(
@@ -256,6 +319,7 @@ def _run_analyze_task(task_id: str, request: AnalyzeRequest) -> None:
             )
         )
         json_path = Path(result["output_json"])
+        report_owners.set_owner(json_path.name, user_id)
         payload = _load_report(json_path.name)
         _set_task(
             task_id,
@@ -278,7 +342,12 @@ def _run_analyze_task(task_id: str, request: AnalyzeRequest) -> None:
         )
 
 
-def _run_multi_task(task_id: str, request: MultiAnalyzeRequest) -> None:
+def _run_multi_task(task_id: str, request: MultiAnalyzeRequest, user_id: str, report_owners: ReportOwnerStore, user_settings: UserSettingsStore) -> None:
+    with use_llm_settings(user_settings.to_llm_settings(user_id)):
+        _run_multi_task_inner(task_id, request, user_id, report_owners)
+
+
+def _run_multi_task_inner(task_id: str, request: MultiAnalyzeRequest, user_id: str, report_owners: ReportOwnerStore) -> None:
     _set_task(task_id, status="running", message="正在运行多智能体分析（可能需要数分钟）…", started_at=datetime.now().isoformat(timespec="seconds"))
     try:
         result = run_multi_agent(
@@ -290,6 +359,7 @@ def _run_multi_task(task_id: str, request: MultiAnalyzeRequest) -> None:
             )
         )
         json_path = Path(str(result.get("output_json", "")))
+        report_owners.set_owner(json_path.name, user_id)
         payload = _load_report(json_path.name)
         _set_task(
             task_id,
@@ -315,8 +385,12 @@ def _run_multi_task(task_id: str, request: MultiAnalyzeRequest) -> None:
 
 def create_app() -> FastAPI:
     load_dotenv()
+    prepare_rqdata_env()
     CHAT_DIR.mkdir(parents=True, exist_ok=True)
     CHAT_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    user_store = UserStore(CHAT_DIR / "users.json")
+    report_owners = ReportOwnerStore(CHAT_DIR / "report_owners.json")
+    user_settings_store = UserSettingsStore(USER_SETTINGS_DIR)
     session_store = SessionStore(CHAT_SESSIONS_DIR)
     app = FastAPI(title="FinAgent", description="A 股财务分析 Web UI", version="0.1.0")
     app.add_middleware(
@@ -326,91 +400,218 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def attach_user_llm_settings(request: Request, call_next):
+        path = request.url.path
+        if not path.startswith("/api/") or path.startswith("/api/auth/") or path == "/api/health":
+            return await call_next(request)
+        authorization = request.headers.get("authorization")
+        cookie = request.cookies.get("finagent_token")
+        user = resolve_auth_user(authorization, cookie, user_store)
+        if not user:
+            return await call_next(request)
+        token = activate_llm_settings(user_settings_store.to_llm_settings(user.id))
+        try:
+            return await call_next(request)
+        finally:
+            reset_llm_settings(token)
+
+    def current_user(
+        authorization: str | None = Header(default=None),
+        finagent_token: str | None = Cookie(default=None),
+    ) -> AuthUser:
+        user = resolve_auth_user(authorization, finagent_token, user_store)
+        if not user:
+            raise HTTPException(status_code=401, detail="请先登录")
+        return user
+
+    def _set_auth_cookie(response: Response, token: str) -> None:
+        response.set_cookie(
+            key="finagent_token",
+            value=token,
+            httponly=True,
+            samesite="lax",
+            max_age=TOKEN_TTL_SECONDS,
+            path="/",
+        )
+
+    def _clear_auth_cookie(response: Response) -> None:
+        response.delete_cookie(key="finagent_token", path="/")
+
+    def _get_session(user: AuthUser, session_id: str):
+        session = session_store.get(user.id, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="对话不存在")
+        return session
+
     @app.get("/api/health")
     def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "rqdata": "configured" if rqdata_configured() else "missing",
+            "web_search": "enabled" if web_search_configured() else "disabled",
+        }
+
+    @app.get("/api/data/stocks/{stock_code}")
+    def query_stock_data(stock_code: str, q: str = "", user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        _ = user
+        payload = query_data_api(stock_code, q or stock_code)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="暂无该股票数据")
+        return payload
+
+    @app.get("/api/data/search")
+    def query_web_search(q: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        _ = user
+        if not web_search_enabled():
+            raise HTTPException(status_code=503, detail="网页搜索已关闭，请设置 FINAGENT_ENABLE_WEB_SEARCH=true")
+        text = str(q or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="q 不能为空")
+        return search_web(text)
+
+    @app.post("/api/auth/register")
+    def register(request: RegisterRequest, response: Response) -> dict[str, Any]:
+        try:
+            user = user_store.register(request.username, request.password)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        token = create_access_token(user_id=user.id, username=user.username)
+        _set_auth_cookie(response, token)
+        return {"token": token, "user": user.to_public()}
+
+    @app.post("/api/auth/login")
+    def login(request: LoginRequest, response: Response) -> dict[str, Any]:
+        user = user_store.authenticate(request.username, request.password)
+        if not user:
+            raise HTTPException(status_code=401, detail="用户名或密码错误")
+        token = create_access_token(user_id=user.id, username=user.username)
+        _set_auth_cookie(response, token)
+        return {"token": token, "user": user.to_public()}
+
+    @app.post("/api/auth/logout")
+    def logout(response: Response, user: AuthUser = Depends(current_user)) -> dict[str, bool]:
+        _clear_auth_cookie(response)
+        return {"ok": True}
+
+    @app.get("/api/auth/me")
+    def auth_me(user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        record = user_store.get_by_id(user.id)
+        if not record:
+            raise HTTPException(status_code=401, detail="用户不存在")
+        return {"user": record.to_public(), "settings": user_settings_store.to_public(user.id)}
+
+    @app.get("/api/settings")
+    def get_settings(user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        return {"settings": user_settings_store.to_public(user.id)}
+
+    @app.put("/api/settings")
+    def update_settings(request: SettingsUpdateRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        user_settings_store.update(
+            user.id,
+            openai_api_key=request.openai_api_key,
+            update_api_key=request.openai_api_key is not None,
+            clear_api_key=request.clear_api_key,
+            openai_base_url=request.openai_base_url,
+            openai_model=request.openai_model,
+        )
+        return {"settings": user_settings_store.to_public(user.id)}
+
+    @app.post("/api/settings/test")
+    def test_settings(user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        if not has_llm_api_key():
+            raise HTTPException(status_code=400, detail="请先配置 API Key（个人设置或服务器 .env）")
+        try:
+            reply = llm_text("你是助手。", "请只回复：连接成功")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"API 测试失败：{exc}") from exc
+        return {"ok": True, "message": reply[:120]}
 
     @app.get("/api/reports")
-    def list_reports() -> dict[str, Any]:
-        return {"reports": _list_reports(), "disclaimer": DISCLAIMER}
+    def list_reports(user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        return {"reports": _list_reports_for_user(user.id, report_owners), "disclaimer": DISCLAIMER}
 
     @app.get("/api/reports/{filename}")
-    def get_report(filename: str) -> dict[str, Any]:
-        return _load_report(filename)
+    def get_report(filename: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        return _load_report_for_user(filename, user.id, report_owners)
 
     @app.post("/api/analyze")
-    def start_analyze(request: AnalyzeRequest) -> dict[str, str]:
+    def start_analyze(request: AnalyzeRequest, user: AuthUser = Depends(current_user)) -> dict[str, str]:
         task_id = uuid.uuid4().hex
-        _set_task(task_id, status="queued", message="任务已排队", report_type="annual_analyze", stock=request.stock)
-        threading.Thread(target=_run_analyze_task, args=(task_id, request), daemon=True).start()
+        _set_task(task_id, status="queued", message="任务已排队", report_type="annual_analyze", stock=request.stock, user_id=user.id)
+        threading.Thread(
+            target=_run_analyze_task,
+            args=(task_id, request, user.id, report_owners, user_settings_store),
+            daemon=True,
+        ).start()
         return {"task_id": task_id}
 
     @app.post("/api/multi-analyze")
-    def start_multi_analyze(request: MultiAnalyzeRequest) -> dict[str, str]:
+    def start_multi_analyze(request: MultiAnalyzeRequest, user: AuthUser = Depends(current_user)) -> dict[str, str]:
         task_id = uuid.uuid4().hex
-        _set_task(task_id, status="queued", message="任务已排队", report_type="multi_analyze", stock=request.stock)
-        threading.Thread(target=_run_multi_task, args=(task_id, request), daemon=True).start()
+        _set_task(task_id, status="queued", message="任务已排队", report_type="multi_analyze", stock=request.stock, user_id=user.id)
+        threading.Thread(
+            target=_run_multi_task,
+            args=(task_id, request, user.id, report_owners, user_settings_store),
+            daemon=True,
+        ).start()
         return {"task_id": task_id}
 
     @app.get("/api/tasks/{task_id}")
-    def get_task(task_id: str) -> dict[str, Any]:
+    def get_task(task_id: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
         with _tasks_lock:
             task = _tasks.get(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
+        owner_id = task.get("user_id")
+        if owner_id and owner_id != user.id:
+            raise HTTPException(status_code=403, detail="无权访问该任务")
         return task
 
     @app.get("/api/chat/sessions")
-    def list_chat_sessions() -> dict[str, Any]:
-        return {"sessions": session_store.list_sessions()}
+    def list_chat_sessions(user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        return {"sessions": session_store.list_sessions(user.id)}
 
     @app.post("/api/chat/sessions")
-    def create_chat_session(request: ChatCreateRequest) -> dict[str, Any]:
-        session = session_store.create(title=request.title or "新对话", stock_code=request.stock_code)
+    def create_chat_session(request: ChatCreateRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        session = session_store.create(title=request.title or "新对话", stock_code=request.stock_code, user_id=user.id)
         return session.to_dict()
 
     @app.get("/api/chat/sessions/{session_id}")
-    def get_chat_session(session_id: str) -> dict[str, Any]:
-        session = session_store.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="对话不存在")
-        return session.to_dict()
+    def get_chat_session(session_id: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        return _get_session(user, session_id).to_dict()
 
     @app.delete("/api/chat/sessions/{session_id}")
-    def delete_chat_session(session_id: str) -> dict[str, bool]:
-        ok = session_store.delete(session_id)
+    def delete_chat_session(session_id: str, user: AuthUser = Depends(current_user)) -> dict[str, bool]:
+        ok = session_store.delete(user.id, session_id)
         if not ok:
             raise HTTPException(status_code=404, detail="对话不存在")
         return {"ok": True}
 
     @app.post("/api/chat/sessions/{session_id}/messages")
-    def post_chat_message(session_id: str, request: ChatMessageRequest) -> dict[str, Any]:
-        session = session_store.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="对话不存在")
+    def post_chat_message(session_id: str, request: ChatMessageRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        session = _get_session(user, session_id)
         reply = chat_turn(session, request.message)
         session_store.save(session)
         return {"reply": reply.to_dict(), "session": session.to_dict()}
 
     @app.post("/api/chat/sessions/{session_id}/attach-report")
-    def attach_report_to_chat(session_id: str, request: AttachReportRequest) -> dict[str, Any]:
-        session = session_store.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="对话不存在")
-        report = _load_report(request.report_id)
+    def attach_report_to_chat(session_id: str, request: AttachReportRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        session = _get_session(user, session_id)
+        report = _load_report_for_user(request.report_id, user.id, report_owners)
         index_report(session, report, report_id=Path(request.report_id).name)
         session_store.save(session)
         return session.to_dict()
 
     @app.post("/api/chat/sessions/{session_id}/upload")
-    async def upload_pdf_to_chat(session_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
-        session = session_store.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="对话不存在")
+    async def upload_pdf_to_chat(session_id: str, file: UploadFile = File(...), user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        session = _get_session(user, session_id)
         if not file.filename or not file.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="请上传 PDF 文件")
         safe_name = Path(file.filename).name
-        target = CHAT_UPLOADS_DIR / f"{session_id}_{safe_name}"
+        user_upload_dir = CHAT_UPLOADS_DIR / user.id
+        user_upload_dir.mkdir(parents=True, exist_ok=True)
+        target = user_upload_dir / f"{session_id}_{safe_name}"
         content = await file.read()
         if len(content) > 40 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="PDF 过大（上限 40MB）")
@@ -419,10 +620,14 @@ def create_app() -> FastAPI:
         session_store.save(session)
         return {"session": session.to_dict(), "pdf": meta}
 
-    def _run_chat_analyze(task_id: str, session_id: str, request: ChatAnalyzeRequest) -> None:
+    def _run_chat_analyze(task_id: str, session_id: str, user_id: str, request: ChatAnalyzeRequest) -> None:
+        with use_llm_settings(user_settings_store.to_llm_settings(user_id)):
+            _run_chat_analyze_inner(task_id, session_id, user_id, request)
+
+    def _run_chat_analyze_inner(task_id: str, session_id: str, user_id: str, request: ChatAnalyzeRequest) -> None:
         from ..chat.store import ChatMessage
 
-        _set_task(task_id, status="running", message="正在生成报告并写入对话上下文…")
+        _set_task(task_id, status="running", message="正在生成报告并写入对话上下文…", user_id=user_id)
         try:
             if request.mode == "annual":
                 result = run(
@@ -443,8 +648,9 @@ def create_app() -> FastAPI:
                     )
                 )
             json_path = Path(str(result.get("output_json", "")))
+            report_owners.set_owner(json_path.name, user_id)
             report = _load_report(json_path.name)
-            session = session_store.get(session_id)
+            session = session_store.get(user_id, session_id)
             if session:
                 index_report(session, report, report_id=json_path.name)
                 session.messages.append(
@@ -462,6 +668,7 @@ def create_app() -> FastAPI:
                 message="报告已生成并加入对话",
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 result={"report_id": json_path.name, "session_id": session_id},
+                user_id=user_id,
             )
         except Exception as exc:
             _set_task(
@@ -470,35 +677,38 @@ def create_app() -> FastAPI:
                 message=str(exc),
                 finished_at=datetime.now().isoformat(timespec="seconds"),
                 error=str(exc),
+                user_id=user_id,
             )
 
     @app.post("/api/chat/sessions/{session_id}/analyze")
-    def analyze_in_chat(session_id: str, request: ChatAnalyzeRequest) -> dict[str, str]:
-        session = session_store.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="对话不存在")
+    def analyze_in_chat(session_id: str, request: ChatAnalyzeRequest, user: AuthUser = Depends(current_user)) -> dict[str, str]:
+        _get_session(user, session_id)
         task_id = uuid.uuid4().hex
-        _set_task(task_id, status="queued", message="报告任务已排队", session_id=session_id, stock=request.stock)
-        threading.Thread(target=_run_chat_analyze, args=(task_id, session_id, request), daemon=True).start()
+        _set_task(task_id, status="queued", message="报告任务已排队", session_id=session_id, stock=request.stock, user_id=user.id)
+        threading.Thread(target=_run_chat_analyze, args=(task_id, session_id, user.id, request), daemon=True).start()
         return {"task_id": task_id}
 
-    @app.get("/files/{file_path:path}")
-    def get_output_file(file_path: str):
+    def _serve_output_file(file_path: str, user: AuthUser):
         import mimetypes
 
         normalized = file_path.replace("\\", "/").lstrip("/")
         if ".." in normalized.split("/"):
             raise HTTPException(status_code=403, detail="禁止访问")
+        _ensure_file_access(user.id, normalized, report_owners)
         target = _find_output_file(normalized)
         if target is None:
             raise HTTPException(status_code=404, detail="文件不存在")
         media_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
         return FileResponse(target, media_type=media_type)
 
+    @app.get("/files/{file_path:path}")
+    def get_output_file_route(file_path: str, user: AuthUser = Depends(current_user)):
+        return _serve_output_file(file_path, user)
+
     @app.get("/charts/{chart_path:path}")
-    def get_chart_file(chart_path: str):
+    def get_chart_file(chart_path: str, user: AuthUser = Depends(current_user)):
         """兼容前端相对路径 charts/...（浏览器会请求 /charts/... 而非 /files/charts/...）。"""
-        return get_output_file(f"charts/{chart_path}")
+        return _serve_output_file(f"charts/{chart_path}", user)
 
     app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 

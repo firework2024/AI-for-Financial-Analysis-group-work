@@ -19,6 +19,7 @@ function initChatElements() {
     chatInput: document.getElementById("chatInput"),
     chatSendBtn: document.getElementById("chatSendBtn"),
     chatNewBtn: document.getElementById("chatNewBtn"),
+    chatDeleteBtn: document.getElementById("chatDeleteBtn"),
     chatDropZone: document.getElementById("chatDropZone"),
     chatPdfInput: document.getElementById("chatPdfInput"),
     chatAttachReportBtn: document.getElementById("chatAttachReportBtn"),
@@ -77,12 +78,26 @@ function renderChatSessions() {
         .slice(0, 2)
         .join(" · ");
       return `
-        <button class="chat-session-item${active}" type="button" data-chat-id="${session.id}">
-          <strong>${escapeHtml(session.title || "新对话")}</strong>
-          <span>${escapeHtml(meta || "无附件")}</span>
-        </button>`;
+        <div class="chat-session-row${active}">
+          <button class="chat-session-item${active}" type="button" data-chat-id="${session.id}">
+            <strong>${escapeHtml(session.title || "新对话")}</strong>
+            <span>${escapeHtml(meta || "无附件")}</span>
+          </button>
+          <button class="chat-session-delete" type="button" data-delete-id="${session.id}" aria-label="删除对话" title="删除对话">×</button>
+        </div>`;
     })
     .join("");
+}
+
+function formatChatMessageBody(msg) {
+  const text = String(msg.content || "");
+  if (msg.role === "user") {
+    return escapeHtml(text).replace(/\n/g, "<br>");
+  }
+  if (typeof window.App?.renderMarkdown === "function") {
+    return window.App.renderMarkdown(text);
+  }
+  return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
 function renderChatMessages(session) {
@@ -92,12 +107,12 @@ function renderChatMessages(session) {
     chatEls.chatMessages.innerHTML = `
       <div class="chat-welcome-card">
         <div class="chat-welcome-icon">F</div>
-        <h3>开始研究对话</h3>
-        <p>拖入 PDF、绑定左侧报告，或直接提问。需要最新行情时可以说「查一下最新融资余额」。</p>
+        <h3>有什么可以帮你？</h3>
+        <p>上传 PDF、绑定报告，或直接提问。也可以试试下面的快捷问题。</p>
         <div class="chat-suggestions">
-          <button class="chat-suggestion" type="button" data-prompt="这份报告的核心风险是什么？">解读报告风险</button>
-          <button class="chat-suggestion" type="button" data-prompt="最近估值水平如何？">估值水平</button>
-          <button class="chat-suggestion" type="button" data-prompt="查一下最新融资余额">最新融资数据</button>
+          <button class="chat-suggestion" type="button" data-prompt="这份报告的核心风险是什么？">解读报告核心风险</button>
+          <button class="chat-suggestion" type="button" data-prompt="最近估值水平如何？">分析当前估值水平</button>
+          <button class="chat-suggestion" type="button" data-prompt="查一下最新融资余额">查询最新融资数据</button>
         </div>
       </div>`;
     chatEls.chatMessages.querySelectorAll(".chat-suggestion").forEach((btn) => {
@@ -114,7 +129,8 @@ function renderChatMessages(session) {
     .map((msg) => {
       const role = msg.role === "user" ? "user" : "assistant";
       const avatar = role === "user" ? "你" : "F";
-      const body = escapeHtml(msg.content).replace(/\n/g, "<br>");
+      const body = formatChatMessageBody(msg);
+      const bubbleClass = role === "assistant" ? "chat-bubble prose chat-prose" : "chat-bubble";
       const tools =
         Array.isArray(msg.tool_calls) && msg.tool_calls.length
           ? `<div class="chat-tools">${msg.tool_calls.map((t) => `<span>${escapeHtml(t.tool || "tool")}</span>`).join("")}</div>`
@@ -123,7 +139,7 @@ function renderChatMessages(session) {
         <div class="chat-msg chat-msg-${role}">
           <div class="chat-avatar" aria-hidden="true">${avatar}</div>
           <div class="chat-bubble-wrap">
-            <div class="chat-bubble">${body}${tools}</div>
+            <div class="${bubbleClass}">${body}${tools}</div>
           </div>
         </div>`;
     })
@@ -142,9 +158,15 @@ function updateChatHeader(session) {
   if (session?.stock_code) bits.push(`代码 ${session.stock_code}`);
   if (!bits.length) {
     chatEls.chatContextPill.innerHTML = `<span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>`;
-    return;
+  } else {
+    chatEls.chatContextPill.innerHTML = bits.map((bit) => `<span class="context-pill">${escapeHtml(bit)}</span>`).join("");
   }
-  chatEls.chatContextPill.innerHTML = bits.map((bit) => `<span class="context-pill">${escapeHtml(bit)}</span>`).join("");
+  if (chatEls.chatDeleteBtn) {
+    chatEls.chatDeleteBtn.disabled = !chatState.activeSessionId;
+  }
+  if (App.isMobileLayout?.()) {
+    App.syncMobileBar(session?.title || "新对话", bits.join(" · "));
+  }
 }
 
 async function openChatSession(sessionId) {
@@ -163,6 +185,26 @@ async function openChatSession(sessionId) {
   App.navigate("chat");
   App.setSidebarPanel("chat");
   App.renderReportList();
+}
+
+async function deleteChatSession(sessionId) {
+  const targetId = String(sessionId || "").trim();
+  if (!targetId) return;
+  if (!window.confirm("确定删除这条对话？删除后无法恢复。")) return;
+
+  await api(`/api/chat/sessions/${encodeURIComponent(targetId)}`, { method: "DELETE" });
+  const wasActive = chatState.activeSessionId === targetId;
+  if (wasActive) {
+    chatState.activeSessionId = null;
+    chatState.activeSession = null;
+    renderChatMessages(null);
+    updateChatHeader(null);
+  }
+  await loadChatSessions();
+  if (wasActive && chatState.sessions.length) {
+    await openChatSession(chatState.sessions[0].id);
+  }
+  App.toast("对话已删除");
 }
 
 async function createChatSession() {
@@ -222,6 +264,8 @@ async function uploadChatPdf(file) {
   form.append("file", file);
   const response = await fetch(`/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/upload`, {
     method: "POST",
+    credentials: "same-origin",
+    headers: window.Auth?.authHeaders?.() || {},
     body: form,
   });
   if (!response.ok) {
@@ -310,6 +354,7 @@ async function attachReportById(reportId) {
   closeReportPicker();
   App.navigate("chat");
   App.setSidebarPanel("chat");
+  App.closeMobileRail?.();
   App.toast("报告已绑定到当前对话");
 }
 
@@ -357,6 +402,10 @@ async function analyzeInChat() {
 function bindChatEvents() {
   initChatElements();
   chatEls.chatNewBtn?.addEventListener("click", () => createChatSession().catch((e) => App.toast(e.message, "error")));
+  chatEls.chatDeleteBtn?.addEventListener("click", () => {
+    if (!chatState.activeSessionId) return;
+    deleteChatSession(chatState.activeSessionId).catch((e) => App.toast(e.message, "error"));
+  });
   chatEls.chatSendBtn?.addEventListener("click", () => sendChatMessage());
   chatEls.chatInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -391,6 +440,13 @@ function bindChatEvents() {
     event.target.value = "";
   });
   chatEls.chatSessions?.addEventListener("click", (event) => {
+    const deleteBtn = event.target.closest("[data-delete-id]");
+    if (deleteBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteChatSession(deleteBtn.dataset.deleteId).catch((e) => App.toast(e.message, "error"));
+      return;
+    }
     const item = event.target.closest("[data-chat-id]");
     if (!item) return;
     openChatSession(item.dataset.chatId).catch((e) => App.toast(e.message, "error"));
@@ -416,6 +472,16 @@ function bindChatEvents() {
     });
   }
 }
+
+window.resetChatState = () => {
+  chatState.sessions = [];
+  chatState.filteredSessions = [];
+  chatState.activeSessionId = null;
+  chatState.activeSession = null;
+  renderChatSessions();
+  renderChatMessages(null);
+  updateChatHeader(null);
+};
 
 window.openChatWithReport = () => attachActiveReportToChat().catch((e) => App.toast(e.message, "error"));
 window.attachReportById = attachReportById;

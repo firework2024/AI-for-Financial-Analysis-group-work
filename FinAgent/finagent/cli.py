@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from .env import load_dotenv
+from .env import load_dotenv, prepare_rqdata_env
 from .multiagent import MultiAgentOptions, run_multi_agent
 from .workflow import WorkflowOptions, run
 
@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     load_dotenv()
+    prepare_rqdata_env()
     args = build_parser().parse_args()
     try:
         if args.command == "analyze":

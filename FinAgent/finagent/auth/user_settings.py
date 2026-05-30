@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import json
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from ..env import get_env
+from ..llm_settings import LLMSettings
+from .crypto import decrypt_secret, encrypt_secret
+
+
+@dataclass
+class UserAPISettings:
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
+    openai_model: str | None = None
+    updated_at: str | None = None
+
+
+class UserSettingsStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+
+    def _path(self, user_id: str) -> Path:
+        return self.root / f"{Path(user_id).name}.json"
+
+    def load_raw(self, user_id: str) -> dict[str, Any]:
+        path = self._path(user_id)
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def load(self, user_id: str) -> UserAPISettings:
+        payload = self.load_raw(user_id)
+        encrypted = str(payload.get("openai_api_key_enc") or "")
+        api_key = decrypt_secret(encrypted) if encrypted else None
+        return UserAPISettings(
+            openai_api_key=api_key or None,
+            openai_base_url=payload.get("openai_base_url") or None,
+            openai_model=payload.get("openai_model") or None,
+            updated_at=payload.get("updated_at"),
+        )
+
+    def save(self, user_id: str, settings: UserAPISettings) -> None:
+        from datetime import datetime
+
+        payload = {
+            "openai_base_url": settings.openai_base_url or "",
+            "openai_model": settings.openai_model or "",
+            "updated_at": settings.updated_at or datetime.now().isoformat(timespec="seconds"),
+        }
+        if settings.openai_api_key is not None:
+            payload["openai_api_key_enc"] = encrypt_secret(settings.openai_api_key) if settings.openai_api_key else ""
+        else:
+            existing = self.load_raw(user_id)
+            if "openai_api_key_enc" in existing:
+                payload["openai_api_key_enc"] = existing["openai_api_key_enc"]
+        path = self._path(user_id)
+        with self._lock:
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def update(
+        self,
+        user_id: str,
+        *,
+        openai_api_key: str | None = None,
+        update_api_key: bool = False,
+        clear_api_key: bool = False,
+        openai_base_url: str | None = None,
+        openai_model: str | None = None,
+    ) -> UserAPISettings:
+        from datetime import datetime
+
+        current = self.load(user_id)
+        if clear_api_key:
+            current.openai_api_key = ""
+        elif update_api_key and openai_api_key is not None:
+            current.openai_api_key = openai_api_key.strip()
+        if openai_base_url is not None:
+            current.openai_base_url = openai_base_url.strip() or None
+        if openai_model is not None:
+            current.openai_model = openai_model.strip() or None
+        current.updated_at = datetime.now().isoformat(timespec="seconds")
+        self.save(user_id, current)
+        return current
+
+    def to_llm_settings(self, user_id: str) -> LLMSettings:
+        settings = self.load(user_id)
+        return LLMSettings(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            model=settings.openai_model,
+        )
+
+    def to_public(self, user_id: str) -> dict[str, Any]:
+        settings = self.load(user_id)
+        env = LLMSettings.from_env()
+        user_key = settings.openai_api_key
+        env_key = env.api_key
+        effective_key = user_key or env_key
+        source = "user" if user_key else ("env" if env_key else "none")
+        masked = _mask_api_key(user_key) if user_key else (_mask_api_key(env_key) if env_key else "")
+        return {
+            "has_api_key": bool(effective_key),
+            "has_user_api_key": bool(user_key),
+            "has_server_api_key": bool(env_key),
+            "api_key_masked": masked,
+            "api_key_source": source,
+            "openai_base_url": settings.openai_base_url or env.base_url or "",
+            "openai_model": settings.openai_model or env.model or "gpt-4.1-mini",
+            "updated_at": settings.updated_at,
+        }
+
+
+def _mask_api_key(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value)
+    if len(text) <= 8:
+        return "*" * len(text)
+    return f"{text[:3]}…{text[-4:]}"

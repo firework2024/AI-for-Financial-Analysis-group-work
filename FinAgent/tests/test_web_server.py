@@ -43,7 +43,12 @@ def test_chart_alias_route():
     chart_file.write_bytes(b"png")
     try:
         client = TestClient(create_app())
-        response = client.get("/charts/_test_alias/alias.png")
+        auth = client.post("/api/auth/register", json={"username": "chart_user", "password": "secret12"})
+        token = auth.json()["token"]
+        response = client.get(
+            "/charts/_test_alias/alias.png",
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert response.status_code == 200
         assert response.content == b"png"
     finally:

@@ -18,7 +18,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from .data_registry import DATA_KEY_TO_ROWS, data_available_for_chart
-from .env import get_env
+from .llm_settings import has_llm_api_key
 from .llm import llm_json
 from .multi_report import (
     CHART_CAPTIONS,
@@ -52,7 +52,7 @@ def dynamic_chart_pipeline(
     if prior_need and replan_only:
         need = prior_need
         need["replan_only"] = True
-    elif get_env("OPENAI_API_KEY"):
+    elif has_llm_api_key():
         need = chart_need_agent(data=data, sections=sections, plan=plan, validation=validation)
     else:
         need = local_chart_need(data=data, sections=sections, plan=plan)
@@ -72,7 +72,7 @@ def dynamic_chart_pipeline(
         "errors": [],
     }
 
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         all_charts = chart_agent_fn(data=data, output_dir=output_dir)
         charts = {k: v for k, v in all_charts.items() if k in fixed_keys}
         meta["mode"] = "fixed_subset"
@@ -190,7 +190,7 @@ def chart_need_agent(
     validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     fallback = local_chart_need(data=data, sections=sections, plan=plan)
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         return fallback
 
     structure = extract_section_structure(sections)
@@ -285,7 +285,7 @@ def chart_codegen_agent(spec: dict[str, Any], *, data: dict[str, Any]) -> dict[s
         enriched["use_fixed"] = True
         return enriched
 
-    if not get_env("OPENAI_API_KEY"):
+    if not has_llm_api_key():
         enriched.setdefault("chart_type", "line")
         enriched.setdefault("data_keys", ["price"])
         enriched.setdefault("y_fields", ["close"])

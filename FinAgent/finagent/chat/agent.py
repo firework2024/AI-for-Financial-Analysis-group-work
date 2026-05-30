@@ -7,9 +7,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..env import get_env
+from ..llm_settings import has_llm_api_key
 from ..pdf_text import extract_mda, extract_pdf_text
-from .data_tools import extract_stock_code, fetch_market_snapshot, needs_live_data
+from .data_tools import extract_stock_code
+from .tools import gather_tool_context
 from .knowledge_graph import build_graph_from_report, build_graph_from_text, query_graph
 from .rag import TextChunk, chunk_text, format_hits, search_chunks
 from .store import ChatMessage, ChatSession
@@ -106,20 +107,75 @@ def index_pdf(session: ChatSession, pdf_path: Path, *, display_name: str | None 
     )
     if session.title == "新对话":
         session.title = f"{session.stock_code or 'PDF'} 文档问答"
+    _persist_pdf_to_datastore(session, pdf_path, mda, text)
     return {"chars": len(text), "mda_confidence": mda.confidence, "stock_code": session.stock_code}
 
 
-def _local_answer(query: str, hits: list[dict[str, Any]], graph_hits: list[dict[str, Any]], live: dict[str, Any] | None) -> str:
+def _persist_pdf_to_datastore(session: ChatSession, pdf_path: Path, mda: Any, full_text: str) -> None:
+    stock = session.stock_code
+    if not stock:
+        return
+    report_year = _guess_report_year(pdf_path.name, full_text)
+    if report_year is None:
+        return
+    try:
+        from ..datastore import save_annual_report_record
+        from ..datastore.annual_text import mda_storage_payload
+
+        mda_payload = mda_storage_payload(mda)
+        save_annual_report_record(
+            stock_code=stock,
+            report_year=report_year,
+            title=session.pdf_name or pdf_path.name,
+            pdf_path=str(pdf_path),
+            meta={"source": "chat_upload", "pdf_name": session.pdf_name},
+            financial_data=[],
+            mda_text=mda_payload["mda_text"],
+            mda_meta=mda_payload["mda_meta"],
+        )
+    except Exception:
+        pass
+
+
+def _guess_report_year(filename: str, text: str) -> int | None:
+    for source in (filename, text[:8000]):
+        match = re.search(r"(20\d{2})\s*年?\s*度?\s*报告", source)
+        if match:
+            return int(match.group(1))
+    match = re.search(r"(20\d{2})", filename)
+    return int(match.group(1)) if match else None
+
+
+def _local_answer(
+    query: str,
+    hits: list[dict[str, Any]],
+    graph_hits: list[dict[str, Any]],
+    tools: dict[str, Any] | None,
+) -> str:
     parts: list[str] = []
-    if live and not live.get("error"):
-        tech = live.get("technical") or {}
-        factor = live.get("factor") or {}
+    data_api = (tools or {}).get("data_api") or {}
+    stored = data_api.get("stored") or {}
+    live = (tools or {}).get("live_data") or {}
+    web = (tools or {}).get("web_search") or {}
+
+    tech = live.get("technical") or stored.get("technical") or {}
+    factor = live.get("factor") or stored.get("factor") or {}
+    if (live and not live.get("error")) or stored:
         if tech or factor:
-            parts.append("我先看了下最新数据快照：")
+            parts.append("我先看了下数据库/最新数据快照：")
             if tech.get("latest_close") is not None:
                 parts.append(f"最新收盘大概 {tech.get('latest_close')}，20 日涨跌 {tech.get('return_20d')}。")
             if factor.get("pe_ratio_ttm") is not None:
                 parts.append(f"PE(TTM) 约 {factor.get('pe_ratio_ttm')}，PB 约 {factor.get('pb_ratio_ttm')}。")
+        if stored.get("series"):
+            keys = ", ".join(stored.get("matched_keys") or [])
+            parts.append(f"库里还命中这些序列：{keys}。")
+    if data_api.get("hint"):
+        parts.append(str(data_api["hint"]))
+    if web.get("results"):
+        parts.append("网上搜到这些：")
+        for item in web["results"][:3]:
+            parts.append(f"- {item.get('title')}: {str(item.get('snippet') or '')[:160]}")
     if hits:
         parts.append("结合你上传/绑定的材料，相关片段是：")
         for hit in hits[:3]:
@@ -146,7 +202,7 @@ def _llm_answer(
     history: list[ChatMessage],
     hits: list[dict[str, Any]],
     graph_hits: list[dict[str, Any]],
-    live: dict[str, Any] | None,
+    tools: dict[str, Any] | None,
     session: ChatSession,
 ) -> str:
     from ..llm import llm_text
@@ -154,6 +210,9 @@ def _llm_answer(
     system = (
         "你是 FinAgent 研究助手，像同事聊天一样回答，口语自然、别写成研报八股。"
         "可以分段，但不要用过多小标题和编号列表；需要数字时引用上下文里的数据，别编造。"
+        "payload 中 tools.data_api 是本地 SQLite 原始数据（行情/财务/年报 MD&A）；"
+        "tools.live_data 是米筐实时快照；tools.web_search 是网页检索结果。"
+        "引用数字时优先 data_api / live_data；新闻政策类可结合 web_search，并注明来源标题。"
         "如果材料里没有，就直说不知道；可以给下一步怎么查的建议。"
         "不要输出 JSON，不要写「作为 AI」之类套话，不要给买卖建议。"
     )
@@ -165,7 +224,7 @@ def _llm_answer(
         },
         "retrieved_chunks": hits,
         "graph_hits": graph_hits,
-        "live_data": live,
+        "tools": tools,
         "recent_messages": [{"role": m.role, "content": m.content} for m in history[-8:]],
         "question": query,
     }
@@ -184,27 +243,22 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
     hits = format_hits(search_chunks(chunks, query, top_k=6))
     graph_hits = query_graph(session.knowledge_graph, query, limit=8)
 
-    live: dict[str, Any] | None = None
-    tool_calls: list[dict[str, Any]] = []
-    stock = session.stock_code or extract_stock_code(query)
-    if stock and needs_live_data(query):
-        live = fetch_market_snapshot(stock)
-        tool_calls.append({"tool": "fetch_market_snapshot", "stock_code": stock, "ok": "error" not in (live or {})})
+    tools_payload, tool_calls = gather_tool_context(query, session)
 
     try:
-        if get_env("OPENAI_API_KEY"):
+        if has_llm_api_key():
             answer = _llm_answer(
                 query=query,
                 history=session.messages,
                 hits=hits,
                 graph_hits=graph_hits,
-                live=live,
+                tools=tools_payload,
                 session=session,
             )
         else:
-            answer = _local_answer(query, hits, graph_hits, live)
+            answer = _local_answer(query, hits, graph_hits, tools_payload)
     except Exception as exc:
-        answer = _local_answer(query, hits, graph_hits, live)
+        answer = _local_answer(query, hits, graph_hits, tools_payload)
         answer += f"\n\n（LLM 暂不可用：{exc}）"
 
     assistant = ChatMessage(
