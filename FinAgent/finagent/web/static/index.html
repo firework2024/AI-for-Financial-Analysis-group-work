@@ -211,6 +211,17 @@
     </main>
   </div>
 
+  <div id="reportPickerModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reportPickerTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="reportPickerTitle">绑定历史报告</h3>
+        <button class="modal-close" type="button" id="reportPickerClose" aria-label="关闭">×</button>
+      </div>
+      <p class="modal-lead">选择一份报告作为当前对话的 RAG 上下文，与左侧「报告」列表同步。</p>
+      <div class="modal-body scroll-list" id="reportPickerList"></div>
+    </div>
+  </div>
+
   <script src="/assets/app.js"></script>
   <script src="/assets/chat.js"></script>
 </body>

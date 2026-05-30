@@ -280,12 +280,44 @@ function filterSidebarItems(items, query, fields) {
   );
 }
 
+function updateChatAttachButton() {
+  if (!els.chatAttachReportBtn) return;
+  const hasReports = state.reports.length > 0;
+  els.chatAttachReportBtn.disabled = !hasReports;
+  if (!hasReports) {
+    els.chatAttachReportBtn.title = "暂无历史报告，请先生成或上传";
+    return;
+  }
+  if (state.activeReportId) {
+    const summary = state.reports.find((item) => item.id === state.activeReportId);
+    const label = summary?.title || state.activeReportId.split("_")[0];
+    els.chatAttachReportBtn.title = `绑定「${label}」到当前对话（也可选择其他报告）`;
+  } else {
+    els.chatAttachReportBtn.title = "从历史报告中选择并绑定到当前对话";
+  }
+}
+
+function setActiveReportId(reportId, reportPayload = null) {
+  state.activeReportId = reportId || null;
+  if (reportPayload) {
+    state.activeReport = reportPayload;
+  } else if (!reportId) {
+    state.activeReport = null;
+  }
+  renderReportList();
+  updateChatAttachButton();
+  if (typeof window.renderReportPicker === "function") {
+    window.renderReportPicker();
+  }
+}
+
 function renderReportList() {
   state.filteredReports = filterReports(state.reports, state.searchQuery);
   els.reportCount.textContent = String(state.reports.length);
   if (!els.reportList) return;
   if (!state.filteredReports.length) {
     els.reportList.innerHTML = `<div class="empty-state"><p>${state.reports.length ? "没有匹配的报告" : "暂无报告"}</p></div>`;
+    updateChatAttachButton();
     return;
   }
   els.reportList.innerHTML = state.filteredReports
@@ -293,15 +325,27 @@ function renderReportList() {
       const active = report.id === state.activeReportId ? " active" : "";
       const typeClass = report.report_type === "multi_analyze" ? "multi" : "annual";
       const code = report.stock_code || report.filename.split("_")[0] || "—";
+      const bound =
+        chatStateRef()?.activeSession?.report_id === report.id
+          ? `<span class="tag multi">已绑定对话</span>`
+          : "";
       return `
-        <button class="rail-item${active}" data-id="${report.id}" type="button">
-          <span class="rail-item-code">${code}</span>
-          <span class="rail-item-title">${report.title}</span>
-          <span class="rail-item-meta">${report.subtitle || ""}${report.generated_at ? " · " + formatDate(report.generated_at) : ""}</span>
-          <span class="tag-row"><span class="tag ${typeClass}">${reportTypeLabel(report.report_type)}</span></span>
-        </button>`;
+        <div class="rail-item-row">
+          <button class="rail-item${active}" data-id="${report.id}" type="button">
+            <span class="rail-item-code">${code}</span>
+            <span class="rail-item-title">${report.title}</span>
+            <span class="rail-item-meta">${report.subtitle || ""}${report.generated_at ? " · " + formatDate(report.generated_at) : ""}</span>
+            <span class="tag-row"><span class="tag ${typeClass}">${reportTypeLabel(report.report_type)}</span>${bound}</span>
+          </button>
+          <button class="rail-item-bind" type="button" data-bind-id="${report.id}" title="绑定到当前对话">绑定</button>
+        </div>`;
     })
     .join("");
+  updateChatAttachButton();
+}
+
+function chatStateRef() {
+  return typeof window.getChatState === "function" ? window.getChatState() : null;
 }
 
 async function loadReports() {
@@ -312,18 +356,19 @@ async function loadReports() {
   renderReportList();
 }
 
-async function loadReport(filename) {
+async function loadReport(filename, options = {}) {
+  const { navigateToReport = true } = options;
   try {
     const report = await api(`/api/reports/${encodeURIComponent(filename)}`);
-    state.activeReportId = filename;
-    state.activeReport = report;
-    renderReportList();
-    renderReportDetail(report);
-    const scrollEl = els.reportScroll;
-    if (scrollEl) scrollEl.scrollTop = 0;
-    if (els.chatAttachReportBtn) els.chatAttachReportBtn.disabled = false;
-    setSidebarPanel("reports");
-    navigate("report");
+    setActiveReportId(filename, report);
+    if (navigateToReport) {
+      renderReportDetail(report);
+      const scrollEl = els.reportScroll;
+      if (scrollEl) scrollEl.scrollTop = 0;
+      setSidebarPanel("reports");
+      navigate("report");
+    }
+    return report;
   } catch (error) {
     toast(error.message || "无法打开报告", "error");
     throw error;
@@ -780,7 +825,8 @@ function renderReportDetail(report) {
   }
 }
 
-async function pollTask(taskId) {
+async function pollTask(taskId, options = {}) {
+  const { stayOnChat = false, onComplete = null } = options;
   state.pollingTaskId = taskId;
   const poll = async () => {
     if (state.pollingTaskId !== taskId) return;
@@ -788,8 +834,19 @@ async function pollTask(taskId) {
     setTaskState(task.status, task.message || "处理中…", task.finished_at ? `完成于 ${formatDate(task.finished_at)}` : "");
     if (task.status === "completed") {
       await loadReports();
-      const reportId = task.result?.report?.id;
-      if (reportId) await loadReport(reportId);
+      const reportId = task.result?.report?.id || task.result?.report_id;
+      if (reportId) {
+        if (stayOnChat) {
+          setActiveReportId(reportId);
+          if (typeof onComplete === "function") {
+            await onComplete(reportId, task);
+          }
+        } else {
+          await loadReport(reportId);
+        }
+      } else if (typeof onComplete === "function") {
+        await onComplete(null, task);
+      }
       els.submitBtn.disabled = false;
       state.pollingTaskId = null;
       return;
@@ -859,11 +916,25 @@ async function bootstrap() {
   document.querySelectorAll("[data-sidebar]").forEach((btn) => {
     btn.addEventListener("click", () => {
       setSidebarPanel(btn.dataset.sidebar);
-      if (btn.dataset.sidebar === "reports" && !state.activeReportId) navigate("report-empty");
-      if (btn.dataset.sidebar === "chat") navigate("chat");
+      if (btn.dataset.sidebar === "reports") {
+        if (state.view === "chat") return;
+        navigate(state.activeReportId ? "report" : "report-empty");
+      }
+      if (btn.dataset.sidebar === "chat") {
+        navigate("chat");
+      }
     });
   });
   els.reportList?.addEventListener("click", (event) => {
+    const bindBtn = event.target.closest("[data-bind-id]");
+    if (bindBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof window.attachReportById === "function") {
+        window.attachReportById(bindBtn.dataset.bindId).catch((e) => toast(e.message, "error"));
+      }
+      return;
+    }
     const item = event.target.closest("[data-id]");
     if (!item) return;
     loadReport(item.dataset.id).catch(() => {});
@@ -916,9 +987,15 @@ window.App = {
   toast,
   navigate,
   setSidebarPanel,
+  loadReports,
   loadReport,
+  setActiveReportId,
+  renderReportList,
+  updateChatAttachButton,
   pollTask,
   setTaskState,
+  reportTypeLabel,
+  formatDate,
 };
 
 bootstrap();

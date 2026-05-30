@@ -25,6 +25,9 @@ function initChatElements() {
     chatAnalyzeBtn: document.getElementById("chatAnalyzeBtn"),
     chatStockInput: document.getElementById("chatStockInput"),
     chatContextPill: document.getElementById("chatContextPill"),
+    reportPickerModal: document.getElementById("reportPickerModal"),
+    reportPickerList: document.getElementById("reportPickerList"),
+    reportPickerClose: document.getElementById("reportPickerClose"),
   });
 }
 
@@ -148,6 +151,9 @@ async function openChatSession(sessionId) {
   const session = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
   chatState.activeSessionId = sessionId;
   chatState.activeSession = session;
+  if (session.report_id) {
+    App.setActiveReportId(session.report_id);
+  }
   renderChatSessions();
   renderChatMessages(session);
   updateChatHeader(session);
@@ -156,6 +162,7 @@ async function openChatSession(sessionId) {
   }
   App.navigate("chat");
   App.setSidebarPanel("chat");
+  App.renderReportList();
 }
 
 async function createChatSession() {
@@ -233,25 +240,89 @@ async function uploadChatPdf(file) {
   App.toast("PDF 已解析并加入对话上下文");
 }
 
-async function attachActiveReportToChat() {
-  if (!state.activeReportId) {
-    App.toast("请先在左侧打开一份报告", "error");
+async function ensureReportsLoaded() {
+  if (!App.state.reports.length) {
+    await App.loadReports();
+  }
+}
+
+function closeReportPicker() {
+  chatEls.reportPickerModal?.classList.add("hidden");
+}
+
+function renderReportPicker() {
+  if (!chatEls.reportPickerList) return;
+  const reports = App.state.reports || [];
+  if (!reports.length) {
+    chatEls.reportPickerList.innerHTML = `<div class="chat-empty">暂无历史报告，请先在侧栏生成分析</div>`;
     return;
   }
+  const boundId = chatState.activeSession?.report_id;
+  chatEls.reportPickerList.innerHTML = reports
+    .map((report) => {
+      const active = report.id === App.state.activeReportId ? " active" : "";
+      const bound = report.id === boundId ? " · 当前对话已绑定" : "";
+      const code = report.stock_code || report.filename?.split("_")[0] || "—";
+      const meta = [App.reportTypeLabel(report.report_type), report.generated_at ? App.formatDate(report.generated_at) : ""]
+        .filter(Boolean)
+        .join(" · ");
+      return `
+        <button class="report-picker-item${active}" type="button" data-pick-id="${report.id}">
+          <span class="report-picker-copy">
+            <span class="report-picker-title">${code} · ${escapeHtml(report.title || report.id)}</span>
+            <span class="report-picker-meta">${escapeHtml(meta)}${bound}</span>
+          </span>
+          <span class="report-picker-bind">绑定</span>
+        </button>`;
+    })
+    .join("");
+}
+
+async function openReportPicker() {
+  await ensureReportsLoaded();
+  if (!App.state.reports.length) {
+    App.toast("暂无历史报告，请先生成分析", "error");
+    return;
+  }
+  renderReportPicker();
+  chatEls.reportPickerModal?.classList.remove("hidden");
+}
+
+async function attachReportById(reportId) {
+  if (!reportId) {
+    App.toast("请选择一份报告", "error");
+    return;
+  }
+  await ensureReportsLoaded();
   if (!chatState.activeSessionId) {
     await createChatSession();
   }
   const session = await api(`/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/attach-report`, {
     method: "POST",
-    body: JSON.stringify({ report_id: state.activeReportId }),
+    body: JSON.stringify({ report_id: reportId }),
   });
   chatState.activeSession = session;
+  App.setActiveReportId(reportId);
+  renderChatSessions();
   renderChatMessages(session);
   updateChatHeader(session);
   await loadChatSessions();
+  closeReportPicker();
   App.navigate("chat");
   App.setSidebarPanel("chat");
   App.toast("报告已绑定到当前对话");
+}
+
+async function attachActiveReportToChat() {
+  await ensureReportsLoaded();
+  if (!App.state.reports.length) {
+    App.toast("暂无历史报告，请先在侧栏生成分析", "error");
+    return;
+  }
+  if (App.state.activeReportId) {
+    return attachReportById(App.state.activeReportId);
+  }
+  await openReportPicker();
 }
 
 async function analyzeInChat() {
@@ -267,11 +338,20 @@ async function analyzeInChat() {
     method: "POST",
     body: JSON.stringify({ stock, mode: "multi" }),
   });
-  setTaskState("running", "正在生成报告并写入对话…");
-  els.taskBox.classList.remove("hidden");
-  await pollTask(response.task_id);
-  await openChatSession(chatState.activeSessionId);
-  App.toast("报告已生成");
+  App.setTaskState("running", "正在生成报告并写入对话…");
+  App.els.taskBox.classList.remove("hidden");
+  App.navigate("chat");
+  App.setSidebarPanel("chat");
+  await App.pollTask(response.task_id, {
+    stayOnChat: true,
+    onComplete: async (reportId) => {
+      if (reportId) {
+        App.setActiveReportId(reportId);
+      }
+      await openChatSession(chatState.activeSessionId);
+    },
+  });
+  App.toast("报告已生成并绑定到对话");
 }
 
 function bindChatEvents() {
@@ -291,6 +371,20 @@ function bindChatEvents() {
   });
   chatEls.chatAttachReportBtn?.addEventListener("click", () => attachActiveReportToChat().catch((e) => App.toast(e.message, "error")));
   chatEls.chatAnalyzeBtn?.addEventListener("click", () => analyzeInChat().catch((e) => App.toast(e.message, "error")));
+  chatEls.reportPickerClose?.addEventListener("click", closeReportPicker);
+  chatEls.reportPickerModal?.addEventListener("click", (event) => {
+    if (event.target === chatEls.reportPickerModal) closeReportPicker();
+  });
+  chatEls.reportPickerList?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-pick-id]");
+    if (!item) return;
+    attachReportById(item.dataset.pickId).catch((e) => App.toast(e.message, "error"));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && chatEls.reportPickerModal && !chatEls.reportPickerModal.classList.contains("hidden")) {
+      closeReportPicker();
+    }
+  });
   chatEls.chatPdfInput?.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) uploadChatPdf(file).catch((e) => App.toast(e.message, "error"));
@@ -324,6 +418,9 @@ function bindChatEvents() {
 }
 
 window.openChatWithReport = () => attachActiveReportToChat().catch((e) => App.toast(e.message, "error"));
+window.attachReportById = attachReportById;
+window.renderReportPicker = renderReportPicker;
+window.getChatState = () => chatState;
 window.loadChatSessions = loadChatSessions;
 window.filterChatSessions = filterChatSessions;
 window.createChatSessionQuick = () => createChatSession().catch((e) => App.toast(e.message, "error"));
