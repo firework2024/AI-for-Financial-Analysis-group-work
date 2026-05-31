@@ -145,8 +145,13 @@ button { cursor: pointer; }
 .brand:hover { background: rgba(255,255,255,0.05); }
 .brand-icon {
   width: 32px; height: 32px; border-radius: 9px;
-  background: linear-gradient(135deg, #19c37d, #0d8a6a);
   display: grid; place-items: center; font-weight: 700; color: white;
+  flex-shrink: 0; object-fit: cover;
+  background: linear-gradient(135deg, #19c37d, #0d8a6a);
+}
+img.brand-icon {
+  display: block;
+  background: transparent;
 }
 .brand-title { font-weight: 600; font-size: 0.95rem; }
 .brand-sub { font-size: 0.72rem; color: var(--rail-muted); margin-top: 2px; }
@@ -532,8 +537,13 @@ button { cursor: pointer; }
 }
 .chat-welcome-icon {
   width: 48px; height: 48px; margin: 0 auto 14px; border-radius: 14px;
-  background: linear-gradient(135deg, #19c37d, #0d8a6a);
   display: grid; place-items: center; color: white; font-weight: 700; font-size: 1.1rem;
+  object-fit: cover;
+  background: linear-gradient(135deg, #19c37d, #0d8a6a);
+}
+img.chat-welcome-icon {
+  display: block;
+  background: transparent;
 }
 .chat-welcome-card h3 { margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; }
 .chat-welcome-card p { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.65; }

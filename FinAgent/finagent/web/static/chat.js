@@ -106,7 +106,7 @@ function renderChatMessages(session) {
   if (!messages.length) {
     chatEls.chatMessages.innerHTML = `
       <div class="chat-welcome-card">
-        <div class="chat-welcome-icon">F</div>
+        <img class="chat-welcome-icon" src="/assets/logo.png" alt="">
         <h3>有什么可以帮你？</h3>
         <p>上传 PDF、绑定报告，或直接提问。也可以试试下面的快捷问题。</p>
         <div class="chat-suggestions">
