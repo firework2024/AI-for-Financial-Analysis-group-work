@@ -18,6 +18,60 @@ _LLM_REVISE_PREAMBLE = re.compile(
 
 _FIELD_NAME = r"[a-z][a-z0-9_]{1,}"
 _QUARTER_CODE = r"20\d{2}q[1-4]"
+_TABLE_SEP_RE = re.compile(r"^\|[\s\-:|]+\|$")
+
+
+def _split_md_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _join_md_table_row(cells: list[str]) -> str:
+    return "| " + " | ".join(cells) + " |"
+
+
+def _drop_table_columns(block: list[str], drop_headers: set[str]) -> list[str]:
+    if len(block) < 2 or not _TABLE_SEP_RE.match(block[1].strip()):
+        return block
+    headers = _split_md_table_row(block[0])
+    drop_indices = {i for i, header in enumerate(headers) if header in drop_headers}
+    if not drop_indices:
+        return block
+    kept_headers = [headers[i] for i in range(len(headers)) if i not in drop_indices]
+    rows = [
+        _join_md_table_row(kept_headers),
+        _join_md_table_row(["---"] * len(kept_headers)),
+    ]
+    for row_line in block[2:]:
+        cells = _split_md_table_row(row_line)
+        kept = [cells[i] for i in range(len(headers)) if i not in drop_indices]
+        if kept:
+            rows.append(_join_md_table_row(kept))
+    return rows
+
+
+def _strip_data_source_columns_from_tables(text: str) -> str:
+    lines = text.splitlines()
+    out: list[str] = []
+    i = 0
+    drop_headers = {"数据来源"}
+    while i < len(lines):
+        line = lines[i]
+        if (
+            line.strip().startswith("|")
+            and i + 1 < len(lines)
+            and _TABLE_SEP_RE.match(lines[i + 1].strip())
+        ):
+            block = [line]
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("|"):
+                block.append(lines[j])
+                j += 1
+            out.extend(_drop_table_columns(block, drop_headers))
+            i = j
+            continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
 
 
 def polish_field_refs(text: str) -> str:
@@ -29,6 +83,8 @@ def polish_field_refs(text: str) -> str:
     field = _FIELD_NAME
     quarter = _QUARTER_CODE
 
+    result = re.sub(r"[（(]\s*来源[：:][^）)]+[）)]", "", result)
+    result = _strip_data_source_columns_from_tables(result)
     result = re.sub(
         rf"[（(]\s*`?quarter`?\s*为\s*`?({quarter})`?\s*[）)]",
         "",

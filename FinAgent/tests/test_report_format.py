@@ -24,6 +24,28 @@ def test_polish_field_refs_keeps_needed_field_tag():
     assert "`margin_balance`" in out
 
 
+def test_polish_field_refs_strips_inline_source_citations():
+    text = "成长性持续承压（来源：reviewed_signals中“收入与归母净利润连续两年下滑”）。"
+    out = polish_field_refs(text)
+    assert "来源" not in out
+    assert "reviewed_signals" not in out
+    assert "成长性持续承压" in out
+
+
+def test_polish_field_refs_drops_data_source_table_column():
+    text = (
+        "### 核心矛盾汇总\n\n"
+        "| 矛盾维度 | 具体表现 | 数据来源 |\n"
+        "| --- | --- | --- |\n"
+        "| 净现比异常 | 依赖央行借款 | `reviewed_signals` |\n"
+    )
+    out = polish_field_refs(text)
+    assert "数据来源" not in out
+    assert "reviewed_signals" not in out
+    assert "| 矛盾维度 | 具体表现 |" in out
+    assert "依赖央行借款" in out
+
+
 def test_build_report_toc_assigns_unique_ids():
     entries = build_report_toc(["执行摘要", "核心指标", "执行摘要"])
     assert len(entries) == 3
