@@ -15,6 +15,9 @@ dependencies = [
   "python-multipart",
 ]
 
+[project.scripts]
+finagent = "finagent.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["finagent*"]
 exclude = ["annual_reports*", "outputs*", "tests*"]

@@ -83,6 +83,8 @@ def normalize_section_text(content: Any, section_name: str) -> str:
     if not text:
         return "_本节暂无可用内容。_"
 
+    text = _strip_thinking_blocks(text)
+
     fence = re.match(r"^```[a-zA-Z]*\s*\n(.*?)\n```$", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
@@ -104,8 +106,16 @@ def normalize_section_text(content: Any, section_name: str) -> str:
     text = "\n".join(lines).strip()
     text = _strip_llm_preamble(text)
     text = _expand_inline_labels(text)
+    from .report_writing import normalize_core_conclusion_markdown
+
+    text = normalize_core_conclusion_markdown(text)
+    text = _structure_section_readability(text, section_name)
     text = _normalize_body_headings(text)
     text = polish_field_refs(text)
+    if not any(skip in section_name for skip in ("执行摘要", "免责声明", "数据与工具", "验证", "投资总监")):
+        from .report_writing import ensure_section_lead_conclusion
+
+        text = ensure_section_lead_conclusion(text, section_name)
     return text or "_本节暂无可用内容。_"
 
 
@@ -206,8 +216,39 @@ def _extract_section_body_from_json(text: str) -> str | None:
     return None
 
 
+def _strip_thinking_blocks(text: str) -> str:
+    cleaned = re.sub(
+        r"<(?:redacted_)?thinking>.*?</(?:redacted_)?thinking>",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    cleaned = re.sub(r"<(?:redacted_)?thinking>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
 def _strip_llm_preamble(text: str) -> str:
     cleaned = _LLM_REVISE_PREAMBLE.sub("", text.strip()).strip()
+    lines = cleaned.splitlines()
+    while lines:
+        line = lines[0].strip()
+        if not line:
+            lines.pop(0)
+            continue
+        if line == "---":
+            lines.pop(0)
+            continue
+        if re.match(r"^好的[，,]", line) and re.search(
+            r"(?:重写|修订|汇总|验证|根据|遵照|指示|反馈|意见|输入信息|严格基于)",
+            line,
+        ):
+            lines.pop(0)
+            continue
+        if re.match(r"^根据验证 Agent", line):
+            lines.pop(0)
+            continue
+        break
+    cleaned = "\n".join(lines).strip()
     cleaned = re.sub(r"^\s*---\s*\n+", "", cleaned)
     return cleaned.strip()
 
@@ -237,6 +278,147 @@ def _normalize_body_headings(markdown: str) -> str:
         new_level = 3 if level <= 3 else 4
         out.append("#" * new_level + match.group(2))
     return "\n".join(out)
+
+
+_TOPIC_MARKER_REWRITES: tuple[tuple[str, str], ...] = (
+    ("基本面方面", "**基本面**"),
+    ("融资融券方面", "**融资融券**"),
+    ("资金流向数据", "**资金流向**"),
+    ("宏观利率方面", "**宏观利率**"),
+    ("数据局限包括", "**数据局限**"),
+)
+
+_RISK_SECTION_NAMES = ("综合风险与数据局限", "综合风险", "数据覆盖与局限")
+
+
+def _structure_section_readability(text: str, section_name: str) -> str:
+    """拆分超长段落、主题小标题与编号式数据局限列表。"""
+    if not text.strip():
+        return text
+    if any(name in section_name for name in _RISK_SECTION_NAMES):
+        pass  # 章节级 **核心结论** 由 ensure_section_lead_conclusion 统一处理
+    text = _promote_topic_subheadings(text)
+    text = _normalize_numbered_limitations(text)
+    text = _split_long_paragraphs(text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _ensure_risk_opening_subheading(text: str) -> str:
+    stripped = text.lstrip()
+    if stripped.startswith("**") or stripped.startswith("#"):
+        return text
+    if re.match(r"截至|近\d+个?交易日|从\d", stripped):
+        return f"**价格与波动**\n\n{text}"
+    return text
+
+
+def _promote_topic_subheadings(text: str) -> str:
+    result = text
+    for marker, heading in _TOPIC_MARKER_REWRITES:
+        result = re.sub(
+            rf"(?<=[。；;!?！？])\s*{re.escape(marker)}[，,：:]?\s*",
+            f"\n\n{heading}\n\n",
+            result,
+        )
+        result = re.sub(
+            rf"(?<=\n\n)\s*{re.escape(marker)}[，,：:]?\s*",
+            f"{heading}\n\n",
+            result,
+        )
+        if result.startswith(marker):
+            result = re.sub(rf"^{re.escape(marker)}[，,：:]?\s*", f"{heading}\n\n", result, count=1)
+    # 「宏观利率方面未出现但单独一段以宏观利率开头」
+    result = re.sub(
+        r"(?<=[。；;])\s*(宏观利率方面[，,]\s*)",
+        r"\n\n**宏观利率**\n\n",
+        result,
+    )
+    result = re.sub(
+        r"(?<=[。；;])\s*(宏观利率[，,]\s*)",
+        r"\n\n**宏观利率**\n\n",
+        result,
+    )
+    return result
+
+
+def _normalize_numbered_limitations(text: str) -> str:
+    patterns = (
+        r"数据局限包括[：:]\s*(.+)$",
+        r"\*\*数据局限\*\*\s*\n\s*(.+)$",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.DOTALL)
+        if not match:
+            continue
+        body = match.group(1).strip()
+        if not re.search(r"\d+[）)]", body):
+            continue
+        items = re.findall(r"\d+[）)]([^；;\n]+)", body)
+        if not items:
+            continue
+        bullets = "\n".join(f"- {item.strip().rstrip('。')}" for item in items if item.strip())
+        prefix = text[: match.start()].rstrip()
+        if prefix.endswith("**数据局限**"):
+            return f"{prefix}\n\n{bullets}".strip()
+        return f"{prefix}\n\n**数据局限**\n\n{bullets}".strip()
+    return text
+
+
+def _split_long_paragraphs(text: str, *, max_chars: int = 280) -> str:
+    blocks: list[str] = []
+    for para in re.split(r"\n\n+", text):
+        stripped = para.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#") or stripped.startswith("|") or stripped.startswith("- "):
+            blocks.append(stripped)
+            continue
+        if re.fullmatch(r"\*\*.+\*\*", stripped):
+            blocks.append(stripped)
+            continue
+        if len(stripped) <= max_chars:
+            blocks.append(stripped)
+            continue
+        sentences = [part for part in re.split(r"(?<=[。！？!?；;])", stripped) if part.strip()]
+        if len(sentences) <= 1:
+            if len(stripped) > max_chars:
+                blocks.extend(_hard_split_text(stripped, max_chars=max_chars))
+            else:
+                blocks.append(stripped)
+            continue
+        chunk = ""
+        for sentence in sentences:
+            if chunk and len(chunk) + len(sentence) > max_chars:
+                blocks.append(chunk.strip())
+                chunk = sentence
+            else:
+                chunk += sentence
+        if chunk.strip():
+            blocks.append(chunk.strip())
+    return "\n\n".join(blocks)
+
+
+def _hard_split_text(text: str, *, max_chars: int) -> list[str]:
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(start + max_chars, len(text))
+        if end < len(text):
+            window = text[start:end]
+            pivot = max(window.rfind("，"), window.rfind(","), window.rfind(" "))
+            if pivot > max_chars // 3:
+                end = start + pivot + 1
+        piece = text[start:end].strip()
+        if piece:
+            chunks.append(piece)
+        start = end
+    return chunks
+
+
+def section_writing_style_hint(section_name: str) -> str:
+    from .report_writing import section_writing_guide
+
+    return section_writing_guide(section_name)
 
 
 _CHART_PATH_PATTERN = r"(?:charts|outputs)[\\/][\w./-]+\.(?:png|jpe?g|gif|webp)"
@@ -294,7 +476,13 @@ def render_toc_html(entries: list[dict[str, str]]) -> str:
         f'<li><a href="#{html.escape(item["id"])}">{html.escape(item["title"])}</a></li>'
         for item in entries
     )
-    return f'<nav class="report-toc"><h2>目录</h2><ul>{items}</ul></nav>'
+    return (
+        f'<nav class="report-toc">'
+        f'<details class="report-toc-details">'
+        f'<summary>目录 <span class="report-toc-count">{len(entries)} 节</span></summary>'
+        f"<ul>{items}</ul>"
+        f"</details></nav>"
+    )
 
 
 def markdown_section(title: str, anchor: str, body: str) -> list[str]:

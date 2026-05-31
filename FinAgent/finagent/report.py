@@ -163,6 +163,8 @@ def build_annual_json_payload(
             "negative_signals": analysis.get("negative_signals") or [],
             "key_risks": analysis.get("key_risks") or [],
             "data_notes": dedupe_strings(analysis.get("data_notes") or []),
+            "articulation_checks": analysis.get("articulation_checks") or [],
+            "mda_crosswalk": analysis.get("mda_crosswalk") or [],
         },
         "metrics": _slim_metrics(analysis.get("metrics") or []),
         "field_provenance": build_field_provenance(result.get("financial_data") or []),

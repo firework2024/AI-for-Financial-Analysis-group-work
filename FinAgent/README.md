@@ -25,6 +25,8 @@ python -m finagent analyze --stock 600519 --as-of 2026-05-29
 python -m finagent multi-analyze --stock 600519 --as-of 2026-05-29
 ```
 
+> 若 `python` 仍不可用，可直接使用 Anaconda：`D:\anaconda3\python.exe -m finagent analyze --stock 600519`
+
 运行结束后，报告输出在 `outputs/` 目录：
 
 - `analyze`：`outputs/{代码}_{年份}_report.md` 与 `.json`

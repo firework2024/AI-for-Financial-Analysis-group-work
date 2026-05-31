@@ -4,13 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#171717">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>FinAgent</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/app.css?v=20260531e">
 </head>
 <body class="auth-locked">
   <div id="toastHost" class="toast-host" aria-live="polite"></div>
@@ -45,7 +46,7 @@
         <span class="rail-user-label" id="railUserLabel"></span>
         <button class="rail-logout" type="button" id="railLogoutBtn">退出</button>
       </div>
-      <button class="rail-ghost rail-settings-btn" type="button" id="openSettingsBtn">API 设置</button>
+      <button class="rail-ghost rail-settings-btn js-open-settings" type="button" id="openSettingsBtn">API 设置</button>
 
       <div class="rail-segment" role="tablist">
         <button class="rail-segment-btn active" type="button" data-sidebar="chat" role="tab">对话</button>
@@ -99,6 +100,9 @@
       <button class="rail-expand-tab hidden" type="button" id="railExpandBtn" aria-label="展开侧栏" title="展开侧栏">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
       </button>
+      <button class="rail-settings-tab hidden" type="button" id="railSettingsBtn" aria-label="API 设置" title="API 设置">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
       <header class="mobile-bar" id="mobileBar">
         <button class="mobile-icon-btn" type="button" id="mobileMenuBtn" aria-label="打开菜单">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
@@ -107,6 +111,9 @@
           <span class="mobile-bar-title" id="mobileBarTitle">FinAgent</span>
           <span class="mobile-bar-sub" id="mobileBarSub"></span>
         </div>
+        <button class="mobile-icon-btn js-open-settings" type="button" id="mobileSettingsBtn" aria-label="API 设置">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
         <button class="mobile-icon-btn" type="button" id="mobileNewChatBtn" aria-label="新对话">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
         </button>
@@ -200,16 +207,10 @@
             <button class="ghost-btn primary" type="button" id="askReportBtn">继续追问</button>
           </div>
         </header>
-        <div class="report-body" id="reportBody">
+        <div class="report-body outline-collapsed" id="reportBody">
           <div class="report-main">
             <div class="report-scroll" id="reportScroll">
               <div class="report-content">
-                <section class="report-block report-block-hero" id="section-summary">
-                  <header class="report-section-head">
-                    <h2 class="report-section-title">执行摘要</h2>
-                  </header>
-                  <div class="report-section-body prose prose-lead" id="summaryContent"></div>
-                </section>
                 <div id="annualSections"></div>
                 <div id="multiSections"></div>
                 <section class="report-block report-block-muted" id="section-disclaimer">
@@ -221,10 +222,11 @@
               </div>
             </div>
           </div>
+          <div class="report-outline-backdrop" id="reportOutlineBackdrop" aria-hidden="true"></div>
           <aside class="report-outline" id="reportOutline" aria-label="报告目录">
             <div class="report-outline-head">
               <span class="report-outline-title">目录</span>
-              <button class="report-outline-close" type="button" id="reportOutlineClose" aria-label="收起目录">›</button>
+              <button class="report-outline-close" type="button" id="reportOutlineClose" aria-label="收起目录">×</button>
             </div>
             <nav class="report-outline-list" id="reportToc"></nav>
           </aside>
@@ -315,11 +317,11 @@
     </div>
   </div>
 
-  <script src="/assets/auth.js"></script>
-  <script src="/assets/settings.js"></script>
-  <script src="/assets/app.js"></script>
-  <script src="/assets/chat.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <script src="/assets/auth.js?v=20260531e"></script>
+  <script src="/assets/settings.js?v=20260531e"></script>
+  <script src="/assets/app.js?v=20260531e"></script>
+  <script src="/assets/chat.js?v=20260531e"></script>
 </body>
 </html>

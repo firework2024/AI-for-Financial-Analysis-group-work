@@ -351,21 +351,23 @@ def build_chart_pattern(chart_key: str, data: dict[str, Any]) -> dict[str, Any]:
         patterns["shape"] = "股本结构以阶梯/分段变化为主，反映增发或流通盘调整"
     elif chart_key == "shibor_rates":
         patterns["shape"] = _shibor_shape(frame)
+    elif chart_key == "gov_yield_trend":
+        patterns["shape"] = _multi_line_shape(frame, ("1Y", "10Y", "30Y"))
     elif chart_key == "yield_curve_snapshot":
         patterns["shape"] = _yield_curve_shape(frame)
-    elif chart_key.startswith("latest_"):
-        patterns["shape"] = "横截面条形图展示各指标相对高低，便于横向比较"
     else:
         patterns["shape"] = "曲线形态待数据补充"
     return patterns
 
 
 def chart_pattern_note(chart_key: str, data: dict[str, Any]) -> str:
-    """生成只描述形态的图注正文。"""
-    from .chart_catalog import chart_caption
+    """生成只描述形态的图注正文；无实质形态描述时返回空字符串。"""
+    from .chart_catalog import TABLE_SNAPSHOT_KEYS
 
+    if chart_key in TABLE_SNAPSHOT_KEYS:
+        return ""
     pattern = build_chart_pattern(chart_key, data)
     shape = str(pattern.get("shape") or "").strip()
     if shape and not shape.endswith("待数据补充"):
         return f"{shape}。"
-    return f"{chart_caption(chart_key)}形态待数据补充。"
+    return ""

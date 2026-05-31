@@ -1,6 +1,7 @@
 .env
 __pycache__/
 data_store/
+chat_data/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/

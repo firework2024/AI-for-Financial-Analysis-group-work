@@ -112,6 +112,28 @@ def snapshot_bar_value(field: str, value: float | None) -> float | None:
     return value
 
 
+def format_factor_display(field: str, raw_value: Any) -> str | None:
+    """因子快照表格：按字段量纲格式化为可读字符串。"""
+    from .technical import safe_float
+
+    value = safe_float(raw_value)
+    if value is None:
+        return None
+    if field in FACTOR_DECIMAL_FRACTION_FIELDS:
+        return f"{value * 100:.2f}%"
+    if field in FACTOR_PERCENT_POINT_FIELDS:
+        return f"{value:.2f}%"
+    if field in FACTOR_MULTIPLE_FIELDS:
+        suffix = " 倍" if field in {"current_ratio", "quick_ratio"} else ""
+        return f"{value:.2f}{suffix}"
+    if field == "market_cap":
+        if abs(value) >= 100_000_000:
+            return f"{value / 100_000_000:.2f} 亿"
+        if abs(value) >= 10_000:
+            return f"{value / 10_000:.2f} 万"
+    return f"{value:.4g}"
+
+
 def compute_rsi(close: Any, *, period: int = 14) -> Any:
     """Wilder 风格 RSI 近似（rolling mean），loss=0 时 RSI=100。"""
     import pandas as pd
@@ -364,6 +386,41 @@ def add_zero_line(ax: Any, *, color: str | None = None, linestyle: str = "--") -
 
 def add_ref_line(ax: Any, value: float, *, color: str | None = None, linestyle: str = "--") -> None:
     ax.axhline(value, color=color or PALETTE["muted"], linewidth=0.9, linestyle=linestyle, zorder=1)
+
+
+def to_percent_points(value: float | None) -> float | None:
+    """统一利率/收益率量纲为百分数点（3.89 表示 3.89%）。"""
+    if value is None:
+        return None
+    number = float(value)
+    if abs(number) <= 1.0:
+        return number * 100
+    return number
+
+
+def plot_category_bars(
+    ax: Any,
+    categories: list[str],
+    values: list[float],
+    *,
+    colors: list[str] | None = None,
+    width: float = 0.58,
+    show_values: bool = True,
+    value_suffix: str = "%",
+) -> None:
+    palette = colors or [PALETTE["secondary"]] * len(categories)
+    ax.bar(categories, values, color=palette, alpha=0.88, width=width, zorder=2)
+    if show_values:
+        for idx, value in enumerate(values):
+            ax.text(
+                idx,
+                value,
+                f"{value:.2f}{value_suffix}",
+                ha="center",
+                va="bottom" if value >= 0 else "top",
+                fontsize=8.5,
+                color=PALETTE["text"],
+            )
 
 
 def save_chart(fig: Any, path: Path | str) -> None:

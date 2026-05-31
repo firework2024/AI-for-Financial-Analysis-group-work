@@ -73,6 +73,46 @@ def test_query_matches_margin_keywords(temp_db):
     assert "securities_margin" in stored["series"]
 
 
+def test_persist_market_snapshot_matches_executor_shape(temp_db):
+    from finagent.datastore import list_snapshots, persist_market_snapshot
+
+    data = {
+        "order_book_id": "600519.XSHG",
+        "stock_code": "600519",
+        "sec_name": "贵州茅台",
+        "start_date": "2025-11-01",
+        "end_date": "2026-05-29",
+        "price": {
+            "rows": [{"date": "2026-05-29", "close": 1326.0}],
+            "row_count": 1,
+            "columns": ["date", "close"],
+        },
+        "securities_margin": {
+            "rows": [{"date": "2026-05-28", "margin_balance": 20048000000.0}],
+            "row_count": 1,
+        },
+        "interbank_rate": {
+            "rows": [{"date": "2026-05-29", "ON": 0.01324}],
+            "row_count": 1,
+        },
+        "factor": {"pe_ratio_ttm": 20.04},
+        "technical": {"latest_close": 1326.0, "rsi_14": 41.04},
+        "industry": {"first_industry_name": "食品饮料"},
+    }
+    snapshot_id = persist_market_snapshot(data, lookback_days=180, source="data_executor")
+    assert snapshot_id == 1
+    assert data.get("data_snapshot_id") is None  # caller attaches id when needed
+
+    snapshots = list_snapshots("600519", limit=1)
+    assert snapshots[0]["order_book_id"] == "600519.XSHG"
+    assert snapshots[0]["lookback_days"] == 180
+
+    stored = query_stored_data("600519", "最近股价和融资余额")
+    assert stored is not None
+    assert "price" in stored["series"]
+    assert "securities_margin" in stored["series"]
+
+
 def test_save_annual_report_and_query(temp_db):
     financial = [
         {

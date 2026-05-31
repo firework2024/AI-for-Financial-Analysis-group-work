@@ -1,0 +1,1961 @@
+{
+  "meta": {
+    "report_type": "multi_analyze",
+    "order_book_id": "000001.XSHE",
+    "stock_code": "000001",
+    "sec_name": "平安银行",
+    "start_date": "2024-12-25",
+    "end_date": "2026-05-29",
+    "output_markdown": "outputs\\000001_multi_agent_report.md",
+    "output_json": "outputs\\000001_multi_agent_report.json",
+    "output_html": "outputs\\000001_multi_agent_report.html",
+    "generated_at": "2026-05-31T14:44:24",
+    "validation_passed": false,
+    "publish_ready": false,
+    "validation_decision": "revise",
+    "validation_score": 72,
+    "validation_issue_count": 11
+  },
+  "summary": "平安银行当前估值处于历史低位，市盈率仅4.93倍、市净率0.40倍，但股价短期承压，近20日下跌5.12%，RSI为34.23，接近超卖区域。同时，公司营收连续下滑，2025年营业收入1314.42亿元，同比下降10.4%，净利润426.33亿元，同比减少4.2%。两融余额约55.8亿元，显示杠杆资金参与度较高。",
+  "executive_summary": "平安银行当前估值处于历史低位，市盈率仅4.93倍、市净率0.40倍，但股价短期承压，近20日下跌5.12%，RSI为34.23，接近超卖区域。同时，公司营收连续下滑，2025年营业收入1314.42亿元，同比下降10.4%，净利润426.33亿元，同比减少4.2%。两融余额约55.8亿元，显示杠杆资金参与度较高。",
+  "sections": {
+    "量价与技术面": "**核心结论**\n\n截至2026年5月29日，平安银行收盘价10.93元，20日跌幅-5.12%，RSI 34.23处于弱势区间，但近5日量价齐升，短期有止跌反弹迹象。\n\n#### 图 · 回撤曲线\n\n![回撤曲线](charts/000001_multi_agent_report/drawdown.png)\n\n**图注** 回撤经历加深后有所修复。\n\n#### 图 · RSI 与 MACD\n\n![RSI 与 MACD](charts/000001_multi_agent_report/technical_indicators.png)\n\n**图注** RSI 位于弱势区间；MACD 位于信号线下方，动能偏弱。\n\n#### 表 · 技术指标快照\n\n| 指标 | 数值 |\n| --- | --- |\n| 最新收盘价 | 10.93 |\n| MA20 | 11.022 |\n| MA60 | 11.0057 |\n| 20 日收益率 | -5.12% |\n| 60 日收益率 | 0.46% |\n| RSI14 | 34.2342 |\n| 20 日均量 | 9659.98 万 |\n\n**趋势概览**\n\n#### 图 · 收盘价与 MA20/MA60\n\n![收盘价与 MA20/MA60](charts/000001_multi_agent_report/moving_averages.png)\n\n**图注** 价格与均线缠绕，方向尚不明朗。\n\n截至2026年5月29日，平安银行（000001.XSHE）收盘价10.93元，低于20日均线（11.022元）和60日均线（11.006元），短期与中期均线呈空头排列。20日收益率为-5.12%，60日收益率仅为+0.46%，显示近一个月股价显著走弱。14日RSI为34.23，处于30-50的弱势区间，但尚未进入超卖区域。\n\n| 指标 | 数值 | 日期 |\n|------|------|------|\n| 最新收盘价 | 10.93元 | 2026-05-29 |\n| MA20 | 11.022元 | 2026-05-29 |\n| MA60 | 11.006元 | 2026-05-29 |\n| 20日收益率 | -5.12% | 2026-04-29至2026-05-29 |\n| 60日收益率 | +0.46% | 2026-03-02至2026-05-29 |\n| RSI14 | 34.23 | 2026-05-29 |\n\n**近期异动**\n\n近5个交易日（2026-05-25至2026-05-29），股价从10.68元上涨至10.93元，涨幅+2.34%，成交量从6631万股放大至1.40亿股，增幅+111.03%，呈现明显的放量上涨。其中，2026-05-29单日涨幅+2.53%（从10.66元升至10.93元），成交量1.40亿股，显著高于20日均量（9659.98万股），为近期最大单日涨幅与成交量。\n\n| 交易日期 | 收盘价 | 涨跌幅 | 成交量 | 较20日均量变化 |\n|----------|--------|--------|--------|----------------|\n| 2026-05-25 | 10.68元 | - | 6631万股 | -31.4% |\n| 2026-05-26 | 10.79元 | +1.03% | 8373万股 | -13.3% |\n| 2026-05-27 | 10.76元 | -0.28% | 8397万股 | -13.1% |\n| 2026-05-28 | 10.66元 | -0.93% | 9007万股 | -6.8% |\n| 2026-05-29 | 10.93元 | +2.53% | 1.40亿股 | +44.8% |\n\n**量价关系**\n\n#### 图 · 收盘价与成交量\n\n![收盘价与成交量](charts/000001_multi_agent_report/price_volume.png)\n\n**图注** 价格先扬后抑，成交量整体下行。\n\n- **放量下跌**：2026-05-21，股价下跌0.65%至10.70元，成交量1.11亿股，高于20日均量，显示下跌过程中抛压较重。\n- **缩量盘整**：2026-05-25至2026-05-28，股价在10.66-10.79元区间窄幅波动，成交量持续低于20日均量，市场观望情绪浓厚。\n- **放量反弹**：2026-05-29，股价放量上涨+2.53%，成交量1.40亿股，较20日均量放大44.8%，突破前期盘整区间，短期多头力量增强。\n\n**区间极值**\n\n- **区间最高价**：2025-07-10，盘中最高13.06元，收盘12.91元，成交量2.48亿股。\n- **区间最低价**：2025-04-07，盘中最低9.95元，收盘10.16元，成交量2.55亿股。\n\n**融资融券**\n\n融资余额从2024-12-25的45.35亿元增至2026-05-28的55.67亿元，增幅+22.76%，期间融资买入峰值出现在2025-03-17（10.93亿元），显示杠杆资金持续介入。\n\n**数据局限**\n\n- 未提供60日RSI、布林带、MACD等技术指标数据。\n- 未提供行业或板块相对强弱数据（如相对大盘收益率）。\n- 未提供机构持仓变化或大宗交易数据。",
+    "基本面与估值": "**核心结论**\n\n截至2026年5月29日，平安银行PE(TTM)仅4.93倍、PB(TTM)仅0.40倍，但营收与归母净利润已连续两年下滑，估值处于历史低位反映盈利持续承压。\n\n**盈利与成长**\n\n#### 表 · 最新盈利质量因子\n\n| 指标 | 最新值 |\n| --- | --- |\n| 净利率(TTM) | 32.37% |\n\n平安银行（000001.XSHE）近年营收与归母净利润持续下滑，成长性承压。根据年报数据，2023至2025年营收从1,646.99亿元降至1,314.42亿元，归母净利润从464.55亿元降至426.33亿元。2025年营收同比-10.4%，归母净利润同比-4.2%，MD&A解释为“受贷款利率下行和业务结构调整等因素影响，净息差1.78%，同比2024年下降9个基点”。TTM因子显示，截至2026年5月29日，归母净利润增速为-1.4%，营业利润增速为-3.1%，盈利下滑趋势延续。\n\n| 年份 | 营收（亿元） | 营收同比 | 归母净利润（亿元） | 归母净利润同比 | 营业利润（亿元） |\n|------|--------------|----------|---------------------|------------------|------------------|\n| 2023 | 1,646.99     | -        | 464.55              | -                | 579.28           |\n| 2024 | 1,466.95     | -10.9%   | 445.08              | -4.2%            | 552.06           |\n| 2025 | 1,314.42     | -10.4%   | 426.33              | -4.2%            | 514.08           |\n\n数据来源：`pit_financials_table`\n\n**图表解读**：若将PE(TTM)与归母净利润增速绘制双轴折线图（图1），可直观看到：2024年12月25日PE(TTM)为4.97倍、利润增速-4.0%；2026年5月29日PE(TTM)降至4.93倍、利润增速收窄至-1.4%。PE与利润增速同步下行，反映市场对盈利前景的悲观预期尚未扭转。\n\n**现金流与勾稽**\n\n利润现金转化质量良好，但经营现金流波动较大。2025年经营现金流净额达3,158.58亿元，同比大增398.7%，MD&A指出“主要是向中央银行借款净现金流入增加”。净现比（经营现金流/归母净利润）从2023年的1.99升至2025年的7.41，远高于1，表明利润现金含量高。然而，2024年经营现金流曾降至633.36亿元，波动显著。\n\n| 年份 | 经营现金流（亿元） | 归母净利润（亿元） | 净现比 |\n|------|---------------------|---------------------|--------|\n| 2023 | 924.61              | 464.55              | 1.99   |\n| 2024 | 633.36              | 445.08              | 1.42   |\n| 2025 | 3,158.58            | 426.33              | 7.41   |\n\n数据来源：`annual_report_context`\n\n**图表解读**：图2展示经营现金流与归母净利润的对比柱状图，2025年经营现金流柱形显著高于前两年，与MD&A中“向中央银行借款净现金流入增加”的表述一致，说明该增长并非来自主营业务改善，而是融资性现金流驱动。\n\n**估值水平**\n\n#### 图 · 估值因子走势\n\n![估值因子走势](charts/000001_multi_agent_report/valuation_factors.png)\n\n**图注** 各曲线走势分化，需结合分项观察。\n\n#### 图 · PE/PB 历史分位\n\n![PE/PB 历史分位](charts/000001_multi_agent_report/valuation_percentile.png)\n\n估值处于历史低位，股息率提供一定安全垫。截至2026年5月29日，PE(TTM)为4.93倍，PB(TTM)为0.40倍，PS(TTM)为1.59倍，均较2024年12月25日有所下降。股息率TTM为5.47%，高于2024年12月的8.10%（因当时股价较低），反映分红回报相对稳定。资产负债率仍高达90.98%，杠杆压力较大。\n\n#### 表 · 最新偿债与流动性\n\n| 指标 | 最新值 |\n| --- | --- |\n| 资产负债率 | 90.98% |\n\n| 指标                | 2024-12-25 | 2026-05-29 | 变动方向 |\n|---------------------|------------|------------|----------|\n| PE(TTM)             | 4.97       | 4.93       | 微降     |\n| PB(TTM)             | 0.48       | 0.40       | 下降     |\n| PS(TTM)             | 1.56       | 1.59       | 微升     |\n| 股息率TTM           | 8.10%      | 5.47%      | 下降     |\n| 资产负债率          | 91.46%     | 90.98%     | 微降     |\n\n数据来源：`factor_trend`\n\n**图表解读**：图3为PE(TTM)与PB(TTM)的双轴折线图，两条曲线均呈下行趋势，PB(TTM)从0.48倍降至0.40倍，降幅（-16.7%）大于PE(TTM)的降幅（-0.8%），说明市场对净资产价值的折价程度加深。\n\n- 数据局限：未提供ROE、扣非净利润等详细年报数据，无法计算完整杜邦分析；无行业可比公司估值对比数据，无法判断平安银行（000001.XSHE）在银行行业中的相对估值水平。",
+    "资金与交易结构": "**核心结论**\n\n截至2026-05-29，平安银行近20日日均成交额约10.6亿元，融资余额55.67亿元，股价较20日均线折价0.83%，短期资金参与度回升但整体动能偏弱。\n\n#### 图 · 融资融券余额\n\n![融资融券余额](charts/000001_multi_agent_report/margin_balances.png)\n\n**图注** 融资余额曲线先抑后扬。\n\n#### 表 · 两融区间变动\n\n| 指标 | 数值 |\n| --- | --- |\n| 区间起始 | 2024-12-25 |\n| 区间结束 | 2026-05-28 |\n| 融资余额（期初） | 45.35 亿 |\n| 融资余额（期末） | 55.67 亿 |\n| 融资余额变动 | 10.32 亿 |\n| 变动幅度 | 22.75% |\n| 融券余额（期初） | 0.06 亿 |\n| 融券余额（期末） | 0.14 亿 |\n| 融资买入峰值 | 10.93 亿（2025-03-17） |\n\n**成交与活跃度**\n\n#### 表 · 成交活跃度\n\n| 指标 | 数值 |\n| --- | --- |\n| 20 日均量 | 9659.98 万 |\n| 近12日日均成交额 | 9.81 亿 |\n| 近12日最高成交额 | 15.16 亿（2026-05-29） |\n| 近12日最低成交额 | 7.10 亿（2026-05-25） |\n| 近12日换手率区间 | 34.17% ~ 72.11% |\n| 主力资金流向 | 数据缺失 |\n\n区间内（2024-12-25至2026-05-29），平安银行（000001.XSHE）股价于2025-07-10触及区间最高价13.06元（当日成交额约32.49亿元），于2025-04-07触及区间最低价9.95元（当日成交额约27.51亿元）。截至2026-05-29，最新收盘价10.93元，较20日均线（11.02元）折价约0.83%，较60日均线（11.01元）折价约0.69%，RSI（14日）为34.23，处于偏弱区域。\n\n近5个交易日（2026-05-25至2026-05-29），股价上涨2.34%，成交额从7.10亿元增至15.16亿元，增幅达113.59%，显示短期资金参与度明显提升。近20日（2026-04-29至2026-05-29），股价下跌5.12%，成交额仅微增1.52%，表明中期交投活跃度改善有限。\n\n| 时间窗口 | 起始日 | 结束日 | 收盘价变化 | 成交额变化 |\n| :--- | :--- | :--- | :--- | :--- |\n| 近5日 | 2026-05-25 | 2026-05-29 | +2.34% | +113.59% |\n| 近20日 | 2026-04-29 | 2026-05-29 | -5.12% | +1.52% |\n\n- 数据局限：JSON未提供区间内每日成交额明细，仅依赖近5日与近20日窗口数据，无法评估更长时间维度的成交活跃度趋势。\n\n**融资融券**\n\n#### 图 · 融资余额与买卖额\n\n![融资余额与买卖额](charts/000001_multi_agent_report/margin_enhanced.png)\n\n#### 表 · 融资融券快照\n\n| 指标 | 数值 |\n| --- | --- |\n| 统计日期 | 2026-05-28 |\n| 融资余额 | 55.67 亿 |\n| 融券余额 | 0.14 亿 |\n| 融资买入额 | 0.82 亿 |\n| 融资偿还额 | 0.65 亿 |\n| 融券余量 | 135.11 万 |\n| 两融余额合计 | 55.81 亿 |\n\n融资余额从区间起始日（2024-12-25）的45.35亿元增至2026-05-28的55.67亿元，增幅22.75%。区间内融资买入峰值出现在2025-03-17，当日融资买入额达10.93亿元，显示杠杆资金在该时点有较强的买入意愿。融券余额数据缺失，无法分析融券端变化。\n\n- 数据局限：JSON未提供融券余额数据，无法评估融券端对股价的影响；融资余额仅提供起止日与峰值日数据，缺乏区间内每日变动序列，无法判断融资资金进出的持续性。\n\n**股东与股本**\n\n#### 表 · 股本结构快照\n\n| 项目 | 数值 |\n| --- | --- |\n| 统计日期 | 2026-05-29 |\n| 总股本 | 194.06 亿 |\n| 流通 A 股 | 194.06 亿 |\n| 自由流通股本 | 81.60 亿 |\n| 自由流通占比 | 42.1% |\n| 非自由流通占比 | 57.9% |\n\n- 数据局限：JSON未提供股东户数、前十大股东持股比例、机构持仓变动或股本结构（如流通股、限售股）等信息，无法分析股东层面的资金流向与筹码分布变化。\n\n**分红与资金成本**\n\n截至2026-05-29，平安银行TTM股息率为5.47%。结合2025年资产负债率90.98%（报表数据，MD&A提及“资产负债率连续三年超过90%，2025年为90.7%，杠杆水平较高”），公司整体财务杠杆较高，资金成本压力较大。2025年全年营收1,314.42亿元（同比下降10.4%），归母净利润426.33亿元（同比下降4.2%），MD&A指出“净息差1.78%，同比2024年下降9个基点”，盈利下滑进一步限制了内源性资金补充能力。",
+    "宏观利率背景": "**核心结论**\n\n截至2026-05-29，平安银行股息率5.47%与10年期国债收益率（数据缺失）的利差无法计算，但低估值（PE 4.93倍、PB 0.40倍）已隐含利率下行压力。\n\n**短端利率**\n- 数据局限：JSON中未提供Shibor、LPR或任何短期市场利率数据，无法计算短端利率变动及其对平安银行的影响。\n\n#### 图 · Shibor 利率\n\n![Shibor 利率](charts/000001_multi_agent_report/shibor_rates.png)\n\n**图注** 短端利率整体下行，波动相对平稳。\n\n**收益率曲线**\n- 数据局限：JSON中未提供国债收益率曲线（1Y/10Y/30Y）数据，无法计算期限利差或评估利率环境。\n\n#### 图 · 国债收益率走势\n\n![国债收益率走势](charts/000001_multi_agent_report/gov_yield_trend.png)\n\n**图注** 多条曲线整体向下，指标同步走弱。\n\n**利率环境与估值的逻辑联系**\n尽管缺乏直接利率数据，但可从平安银行自身财务数据推断利率环境的影响。下表展示了平安银行（000001.XSHE）近三年核心财务指标的变化，直接反映了宏观利率走低对银行盈利的侵蚀：\n\n| 指标 | 2023年 | 2024年 | 2025年 | 趋势分析 |\n|------|--------|--------|--------|----------|\n| 营收（亿元） | 1,646.99 | 1,466.95 | 1,314.42 | 连续两年下降，2025年同比-10.4% |\n| 归母净利润（亿元） | 464.55 | 445.08 | 426.33 | 连续两年下降，2025年同比-4.2% |\n| 经营现金流（亿元） | 924.61 | 633.36 | 3,158.58 | 2025年同比+398.7%，主要因向央行借款增加 |\n| 资产负债率（%） | 91.46 | 91.40 | 90.98 | 持续高于90%，杠杆压力大 |\n\n- **净息差下行压力**：MD&A指出，2025年净息差1.78%，同比2024年下降9个基点，主要受贷款利率下行和业务结构调整影响。这直接反映了宏观利率走低对银行盈利的侵蚀——资产收益率下降速度快于负债成本优化，导致利息净收入同比-5.8%。\n- **估值隐含的利率预期**：截至2026-05-29，平安银行PE TTM仅4.93倍、PB 0.40倍，股息率5.47%。在利率下行周期中，市场已通过低估值定价了净息差持续收窄的预期。股息率5.47%虽高于多数固收产品，但需注意：2025年归母净利润同比-4.2%，若盈利继续下滑，股息可持续性存疑。\n- **负债成本优化对冲**：MD&A显示，2025年吸收存款平均付息率1.65%，同比-42个基点；计息负债平均付息率1.67%，同比-47个基点。这在一定程度上缓解了资产端利率下行的冲击，但净息差仍收窄9个基点，说明对冲效果有限。\n\n**数据局限**\n- 无Shibor、LPR、国债收益率等宏观利率数据，无法进行利率曲线分析或与股息率直接对比。\n- 无行业平均净息差数据，无法评估平安银行在行业中的利率风险管理相对水平。\n- 无通胀或货币政策预期数据，无法判断未来利率走势对银行股的影响方向。",
+    "综合风险与数据局限": "**核心结论**\n\n截至2026-05-29，平安银行综合风险集中于高杠杆（资产负债率90.98%）与盈利连续两年下滑，但现金流质量显著改善（净现比7.41）。\n\n**价格与波动**\n- 截至2026-05-29，平安银行（000001.XSHE）收盘价10.93元，近20日下跌5.12%，近60日微涨0.46%，价格处于区间低位（2026-03-23低点10.43元，2025-11-20高点11.99元）。RSI14为34.23，低于50中性线，显示短期价格动能偏弱；近5日（2026-05-25至2026-05-29）价格反弹2.34%，成交量放大111.03%，但20日整体仍下跌，反弹持续性待观察。\n\n图表1（价格与成交量走势）显示，2026-05-29当日成交量达1.40亿股，为近20日最高，但收盘价10.93元仍低于20日均线（11.02元）和60日均线（11.01元），分别低0.83%和0.69%。\n\n**基本面与估值**\n- 平安银行估值处于历史低位：`PE_TTM` 4.93倍，`PB_TTM` 0.40倍，均低于2024-12-25水平（PE 4.97倍，PB 0.48倍），反映市场对盈利下滑的定价。盈利持续承压：2025年营收1314.42亿元（同比-10.4%），归母净利润426.33亿元（同比-4.2%），连续两年下滑；扣非净利润同比-4.9%，核心盈利恶化。但净现比7.41（2025年），利润现金转化良好，MD&A指出“经营活动产生的现金流量净额3,158.58亿元，同比增加2,525.22亿元，主要是向中央银行借款净现金流入增加”。\n\n| 指标 | 2023年 | 2024年 | 2025年 |\n|------|--------|--------|--------|\n| 营收（亿元） | 1646.99 | 1466.95 | 1314.42 |\n| 归母净利润（亿元） | 464.55 | 445.08 | 426.33 |\n| 经营现金流（亿元） | 924.61 | 633.36 | 3158.58 |\n| 净现比 | 1.99 | 1.42 | 7.41 |\n\n**杠杆与流动性**\n- 平安银行资产负债率90.98%（2026-05-29），持续高于90%（2024-12-25为91.46%），MD&A指出“资产负债率连续三年超过90%，2025年为90.7%，杠杆水平较高，财务风险较大”，高杠杆为主要偿债风险。融资融券余额从2024-12-25的45.35亿元增至2026-05-28的55.67亿元，增长22.76%，但融券余额缺失，杠杆交易活跃度有限。\n\n**宏观与利率**\n- 银行行业属性下，平安银行净息差持续承压：2025年净息差1.78%，同比降9个基点，MD&A提及“受贷款利率下行和业务结构调整等因素影响”为主要原因，预计仍有下行压力。负债成本优化：吸收存款平均付息率1.65%（同比降42个基点），但资产收益率下行幅度更大，息差收窄趋势未改。股息率5.47%（2026-05-29），较2024-12-25的8.10%下降，但仍高于10年期国债收益率（假设约2.5%），利差约3个百分点。\n\n**数据局限**\n- 缺乏流动性比率（流动比率、速动比率）数据，无法评估平安银行短期偿债能力。\n- 缺乏应收账款周转率、流动资产周转率等营运效率指标。\n- 融券余额缺失，无法全面评估平安银行卖空压力。\n- 无行业对比数据，平安银行估值与风险水平无法与同业横向比较。\n- 毛利率数据缺失，盈利能力分析依赖净利润率（32.37%）。"
+  },
+  "table_of_contents": [
+    {
+      "title": "执行摘要",
+      "id": "执行摘要"
+    },
+    {
+      "title": "核心指标速览",
+      "id": "核心指标速览"
+    },
+    {
+      "title": "量价与技术面",
+      "id": "量价与技术面"
+    },
+    {
+      "title": "基本面与估值",
+      "id": "基本面与估值"
+    },
+    {
+      "title": "资金与交易结构",
+      "id": "资金与交易结构"
+    },
+    {
+      "title": "宏观利率背景",
+      "id": "宏观利率背景"
+    },
+    {
+      "title": "综合风险与数据局限",
+      "id": "综合风险与数据局限"
+    },
+    {
+      "title": "数据与工具说明",
+      "id": "数据与工具说明"
+    },
+    {
+      "title": "免责声明",
+      "id": "免责声明"
+    }
+  ],
+  "charts": {
+    "price_volume": "charts/000001_multi_agent_report/price_volume.png",
+    "moving_averages": "charts/000001_multi_agent_report/moving_averages.png",
+    "nav_curve": "charts/000001_multi_agent_report/nav_curve.png",
+    "cumulative_return": "charts/000001_multi_agent_report/cumulative_return.png",
+    "drawdown": "charts/000001_multi_agent_report/drawdown.png",
+    "technical_indicators": "charts/000001_multi_agent_report/technical_indicators.png",
+    "turnover_amount": "charts/000001_multi_agent_report/turnover_amount.png",
+    "rolling_volatility": "charts/000001_multi_agent_report/rolling_volatility.png",
+    "daily_return": "charts/000001_multi_agent_report/daily_return.png",
+    "turnover_rate": "charts/000001_multi_agent_report/turnover_rate.png",
+    "valuation_factors": "charts/000001_multi_agent_report/valuation_factors.png",
+    "valuation_percentile": "charts/000001_multi_agent_report/valuation_percentile.png",
+    "growth_factors": "charts/000001_multi_agent_report/growth_factors.png",
+    "profitability_factors": "charts/000001_multi_agent_report/profitability_factors.png",
+    "debt_ratio_trend": "charts/000001_multi_agent_report/debt_ratio_trend.png",
+    "market_cap_trend": "charts/000001_multi_agent_report/market_cap_trend.png",
+    "margin_balances": "charts/000001_multi_agent_report/margin_balances.png",
+    "margin_activity": "charts/000001_multi_agent_report/margin_activity.png",
+    "margin_enhanced": "charts/000001_multi_agent_report/margin_enhanced.png",
+    "share_structure": "charts/000001_multi_agent_report/share_structure.png",
+    "share_structure_pie": "charts/000001_multi_agent_report/share_structure_pie.png",
+    "dividend_history": "charts/000001_multi_agent_report/dividend_history.png",
+    "dividend_spread": "charts/000001_multi_agent_report/dividend_spread.png",
+    "shibor_rates": "charts/000001_multi_agent_report/shibor_rates.png",
+    "gov_yield_trend": "charts/000001_multi_agent_report/gov_yield_trend.png",
+    "yield_curve_snapshot": "charts/000001_multi_agent_report/yield_curve_snapshot.png",
+    "latest_liquidity_snapshot": "charts/000001_multi_agent_report/latest_liquidity_snapshot.png",
+    "latest_growth_snapshot": "charts/000001_multi_agent_report/latest_growth_snapshot.png"
+  },
+  "validation": {
+    "score": 72,
+    "action_items": [
+      "将图表分散到对应分析段落附近，而非集中在可视化章节",
+      "在正文中明确引用图表编号（如图1、图2）",
+      "合并或删除冗余图表（如 cumulative_return 与 nav_curve 重复）",
+      "将单指标折线图改为双轴对比图（如 PE vs 利润增速）",
+      "补充行业对比图（个股 vs 行业中位数）",
+      "在宏观利率章节补充股息率与国债收益率的利差分析",
+      "在基本面章节补充 ROE 杜邦分解图（若数据允许）"
+    ],
+    "section_feedback": {
+      "量价与技术面": [
+        "图表过多且重复：cumulative_return、nav_curve、drawdown 均为收益类，建议合并为一张双轴图（左轴价格，右轴累计收益）",
+        "rolling_volatility 与 daily_return 可合并为一张双轴图",
+        "正文未引用任何图表，需补充引用"
+      ],
+      "基本面与估值": [
+        "估值图（valuation_factors）为单指标柱状图，建议改为双轴折线图（PE vs 利润增速）",
+        "缺少行业对比图，需补充个股与行业中位数对比",
+        "ROE 杜邦分解图缺失，若数据不足应说明"
+      ],
+      "资金与交易结构": [
+        "两融图（margin_balances、margin_activity、margin_enhanced）重复，建议保留一张双轴图（融资余额 vs 融券余额）",
+        "股本结构图（share_structure、share_structure_pie）可合并为一张",
+        "正文未引用图表"
+      ],
+      "宏观利率背景": [
+        "Shibor 和国债收益率图未与股息率挂钩，需补充股息率与国债收益率的利差图",
+        "正文未引用图表"
+      ],
+      "综合风险与数据局限": [
+        "该章节无图表，但可考虑添加风险指标雷达图"
+      ]
+    },
+    "unsupported_claims": [
+      "MD&A 解释净息差下降原因（未采集管理层指引）",
+      "净息差 1.78% 及同比变动（未采集）",
+      "吸收存款平均付息率 1.65% 及同比变动（未采集）",
+      "利息净收入同比-5.8%（未采集）"
+    ],
+    "missing_data_notes": [
+      "融券余额缺失，无法评估卖空压力",
+      "行业对比数据缺失，无法进行横向估值比较",
+      "ROE、扣非净利润等详细年报数据缺失",
+      "Shibor、LPR、国债收益率等宏观利率数据缺失"
+    ],
+    "chart_quality_review": {
+      "requirements": [
+        "每张图必须回答一个明确的分析问题，不画冗余或纯信息重复的图。",
+        "同一种分析视角只保留最有解释力的一张图（例如价格走势用均线图就够了，无需同时画价格+收益）。",
+        "优先使用能同时展示多个相关指标趋势的图表（如双轴图：股价 vs 资金流、PE vs 利润增速）。",
+        "对于财务指标，尽量展示 3~5 年历史趋势并标注 CAGR 或近两年变动幅度。",
+        "对于估值指标（PE/PB/PS），若数据充足应叠加历史百分位带（如 30%/70% 分位线），否则应在正文说明缺乏历史对比。",
+        "不同量纲的指标禁止堆在同一柱状图；如需对比，可拆分为子图或使用双轴（左轴市值/右轴比率）。",
+        "柱状图适用于离散事件（分红、股本变动）或少量分类对比；趋势数据优先用折线图。",
+        "宏观利率图（Shibor、国债收益率）必须与目标股票的估值逻辑挂钩（如 DCF 折现率、股息率利差），否则不单独成图。",
+        "自由现金流应搭配资本开支共同展示，以判断扩张效率。",
+        "ROE 允许用杜邦分解图（净利率×周转率×权益乘数）替代单柱。",
+        "两融余额图应同时展示融资余额与融券余额（双轴），突出杠杆结构。",
+        "行业对比图必须同时显示目标股票与行业中位数/均值，不能只画个股绝对值。"
+      ],
+      "keep": {
+        "price_volume": "量价结合展示交易活跃度。",
+        "moving_averages": "均线图用于趋势判断，和量价图用途不同。"
+      },
+      "redraw": {},
+      "delete": {
+        "latest_valuation_snapshot": "市值、PE、PB、PS、股息率量纲差异过大，放在同一柱状图会误导比较。"
+      }
+    },
+    "stock_relevance_review": {
+      "量价与技术面": {
+        "decision": "pass",
+        "reason": "所有图表和结论均基于目标股票数据"
+      },
+      "基本面与估值": {
+        "decision": "pass",
+        "reason": "财务数据和估值指标均为目标股票"
+      },
+      "资金与交易结构": {
+        "decision": "pass",
+        "reason": "融资融券和成交数据均为目标股票"
+      },
+      "宏观利率背景": {
+        "decision": "pass",
+        "reason": "虽缺乏宏观数据，但通过目标股票财务数据间接分析利率影响"
+      },
+      "综合风险与数据局限": {
+        "decision": "pass",
+        "reason": "风险分析基于目标股票数据"
+      }
+    },
+    "refinement_requests": {
+      "refresh_charts": true,
+      "refresh_data": true,
+      "lookback_days": 520,
+      "reason": "图表数量过多（27张），大量冗余；缺少行业对比和双轴图；数据缺失ROE、融券余额、宏观利率等，需补充或说明"
+    },
+    "final_decision": "revise",
+    "structural_feedback": [
+      {
+        "section": "量价与技术面",
+        "issue": "layout",
+        "suggestion": "将图表分散到对应分析段落附近，如价格图放在趋势概览段，成交量图放在量价关系段"
+      },
+      {
+        "section": "量价与技术面",
+        "issue": "cohesion",
+        "suggestion": "在章节末尾添加过渡句，引出基本面与估值章节，如'量价表现反映了市场对基本面的预期，下一节将分析盈利与估值'"
+      },
+      {
+        "section": "基本面与估值",
+        "issue": "verbosity",
+        "suggestion": "将盈利与成长、现金流与勾稽、估值水平三个子段落用更清晰的小标题分隔，并添加图表引用"
+      },
+      {
+        "section": "资金与交易结构",
+        "issue": "cohesion",
+        "suggestion": "在章节开头添加与上一节的衔接，如'基本面承压背景下，资金行为如何？'"
+      },
+      {
+        "section": "宏观利率背景",
+        "issue": "layout",
+        "suggestion": "将Shibor和国债收益率图移至该章节，并添加股息率对比线"
+      },
+      {
+        "section": "综合风险与数据局限",
+        "issue": "verbosity",
+        "suggestion": "将风险点用列表或表格呈现，避免大段文字"
+      },
+      {
+        "section": "量价与技术面",
+        "issue": "cohesion",
+        "suggestion": "融资融券内容与资金与交易结构章节重叠，建议移至该章节"
+      }
+    ],
+    "refinement_performed": {
+      "refresh_data": true,
+      "refresh_charts": true,
+      "lookback_days": 520,
+      "reason": "图表数量过多（27张），大量冗余；缺少行业对比和双轴图；数据缺失ROE、融券余额、宏观利率等，需补充或说明"
+    }
+  },
+  "plan": {
+    "objective": "对股票 000001.XSHE 截至 2026-05-30 回看 260 个交易日，从量价、资金、估值、财务、分红、股本、融资融券、行业对比等维度生成多智能体分析报告。",
+    "tools": [
+      "get_price",
+      "get_price_change_rate",
+      "get_turnover_rate",
+      "get_capital_flow",
+      "get_factor",
+      "get_securities_margin",
+      "get_dividend",
+      "get_shares",
+      "get_instrument_industry",
+      "is_suspended",
+      "is_st_stock",
+      "get_interbank_offered_rate",
+      "get_yield_curve",
+      "get_pit_financials_ex"
+    ],
+    "risk_controls": [
+      "检查停牌状态：is_suspended(security='000001.XSHE', date='2026-05-30')，若停牌则跳过量价和资金流分析。",
+      "检查ST状态：is_st_stock(security='000001.XSHE', date='2026-05-30')，若ST则限制估值和财务分析。",
+      "数据完整性：若某函数返回空或异常，对应agent输出缺失说明，不中断整体流程。",
+      "行业对比：若行业分类缺失，则仅展示个股绝对值。",
+      "图表质量：确保每张图有明确问题，避免冗余，双轴图优先，财务数据展示3-5年趋势。",
+      "只能引用本系统实际采集的米筐数据与本地计算指标",
+      "不得声称使用 Wind、行业调研、宏观数据、新闻或预测模型"
+    ],
+    "sections": [
+      "量价与技术面",
+      "基本面与估值",
+      "资金与交易结构",
+      "宏观利率背景",
+      "综合风险与数据局限"
+    ]
+  },
+  "data_summary": {
+    "stock_code": "000001",
+    "sec_name": "平安银行",
+    "technical": {
+      "latest_close": 10.93,
+      "return_20d": -0.05121527777777779,
+      "return_60d": 0.004595588235293935,
+      "ma20": 11.021999999999998,
+      "ma60": 11.005666666666665,
+      "rsi14": 34.23423423423422,
+      "avg_volume_20d": 96599804.0
+    },
+    "factor": {
+      "order_book_id": "000001.XSHE",
+      "date": "2026-05-29",
+      "market_cap": 212106685904.0,
+      "pe_ratio_ttm": 4.925840360058987,
+      "pb_ratio_ttm": 0.39958702335257257,
+      "ps_ratio_ttm": 1.5946672122708065,
+      "gross_profit_margin_ttm": null,
+      "net_profit_margin_ttm": 0.32373505751447257,
+      "debt_to_asset_ratio": 90.982989,
+      "current_ratio": null,
+      "quick_ratio": null,
+      "dividend_yield_ttm": 0.054711802378774016,
+      "net_profit_growth_ratio_ttm": -0.014013555596263052,
+      "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+      "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+      "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+      "account_receivable_turnover_rate_ttm": null,
+      "current_asset_turnover_ttm": null
+    },
+    "industry": {
+      "order_book_id": "000001.XSHE",
+      "first_industry_code": "40",
+      "first_industry_name": "银行"
+    },
+    "pit_financials": {
+      "rows": [
+        {
+          "quarter": "2023q4",
+          "year": 2023,
+          "total_assets": 5587116000000.0,
+          "current_assets": null,
+          "cash_equivalent": 274663000000.0,
+          "bill_accts_receivable": null,
+          "bill_receivable": null,
+          "inventory": null,
+          "net_fixed_assets": 9814000000.0,
+          "construction_in_progress": null,
+          "goodwill": 7568000000.0,
+          "current_liabilities": null,
+          "total_liabilities": 5114788000000.0,
+          "short_term_loans": null,
+          "non_current_liability_due_one_year": null,
+          "long_term_loans": null,
+          "bond_payable": 728328000000.0,
+          "lease_liabilities": 6210000000.0,
+          "accts_payable": null,
+          "contract_liabilities": null,
+          "equity_parent_company": 472328000000.0,
+          "undistributed_profit": 221255000000.0,
+          "revenue": 164699000000.0,
+          "operating_revenue": 164699000000.0,
+          "cost_of_goods_sold": null,
+          "profit_from_operation": 57928000000.0,
+          "net_profit": 46455000000.0,
+          "net_profit_parent_company": 46455000000.0,
+          "net_profit_deduct_non_recurring_pnl": 46431000000.0,
+          "selling_expense": null,
+          "ga_expense": null,
+          "r_n_d": null,
+          "financing_expense": null,
+          "adjust_asset_impairment": -77000000.0,
+          "adjust_credit_asset_impairment": -59017000000.0,
+          "cash_flow_from_operating_activities": 92461000000.0,
+          "cash_received_from_sales_of_goods": null,
+          "cash_paid_for_asset": 3096000000.0,
+          "cash_flow_from_investing_activities": -26142000000.0,
+          "cash_flow_from_financing_activities": 8089000000.0,
+          "info_date": "2026-03-21 00:00:00",
+          "rice_create_tm": "2026-03-21 04:12:50",
+          "if_adjusted": "1"
+        },
+        {
+          "quarter": "2024q4",
+          "year": 2024,
+          "total_assets": 5769270000000.0,
+          "current_assets": null,
+          "cash_equivalent": 268973000000.0,
+          "bill_accts_receivable": null,
+          "bill_receivable": null,
+          "inventory": null,
+          "net_fixed_assets": 8634000000.0,
+          "construction_in_progress": null,
+          "goodwill": 7568000000.0,
+          "current_liabilities": null,
+          "total_liabilities": 5274428000000.0,
+          "short_term_loans": null,
+          "non_current_liability_due_one_year": null,
+          "long_term_loans": null,
+          "bond_payable": 695200000000.0,
+          "lease_liabilities": 5410000000.0,
+          "accts_payable": null,
+          "contract_liabilities": null,
+          "equity_parent_company": 494842000000.0,
+          "undistributed_profit": 243605000000.0,
+          "revenue": 146695000000.0,
+          "operating_revenue": 146695000000.0,
+          "cost_of_goods_sold": null,
+          "profit_from_operation": 55206000000.0,
+          "net_profit": 44508000000.0,
+          "net_profit_parent_company": 44508000000.0,
+          "net_profit_deduct_non_recurring_pnl": 44838000000.0,
+          "selling_expense": null,
+          "ga_expense": null,
+          "r_n_d": null,
+          "financing_expense": null,
+          "adjust_asset_impairment": -489000000.0,
+          "adjust_credit_asset_impairment": -48939000000.0,
+          "cash_flow_from_operating_activities": 63336000000.0,
+          "cash_received_from_sales_of_goods": null,
+          "cash_paid_for_asset": 2388000000.0,
+          "cash_flow_from_investing_activities": -31859000000.0,
+          "cash_flow_from_financing_activities": -73933000000.0,
+          "info_date": "2026-03-21 00:00:00",
+          "rice_create_tm": "2026-03-21 04:12:50",
+          "if_adjusted": "1"
+        },
+        {
+          "quarter": "2025q4",
+          "year": 2025,
+          "total_assets": 5925777000000.0,
+          "current_assets": null,
+          "cash_equivalent": 254225000000.0,
+          "bill_accts_receivable": null,
+          "bill_receivable": null,
+          "inventory": null,
+          "net_fixed_assets": 11155000000.0,
+          "construction_in_progress": null,
+          "goodwill": 7568000000.0,
+          "current_liabilities": null,
+          "total_liabilities": 5374593000000.0,
+          "short_term_loans": null,
+          "non_current_liability_due_one_year": null,
+          "long_term_loans": null,
+          "bond_payable": 544534000000.0,
+          "lease_liabilities": 4255000000.0,
+          "accts_payable": null,
+          "contract_liabilities": null,
+          "equity_parent_company": 551184000000.0,
+          "undistributed_profit": 270788000000.0,
+          "revenue": 131442000000.0,
+          "operating_revenue": 131442000000.0,
+          "cost_of_goods_sold": null,
+          "profit_from_operation": 51408000000.0,
+          "net_profit": 42633000000.0,
+          "net_profit_parent_company": 42633000000.0,
+          "net_profit_deduct_non_recurring_pnl": 42624000000.0,
+          "selling_expense": null,
+          "ga_expense": null,
+          "r_n_d": null,
+          "financing_expense": null,
+          "adjust_asset_impairment": -160000000.0,
+          "adjust_credit_asset_impairment": -40407000000.0,
+          "cash_flow_from_operating_activities": 315858000000.0,
+          "cash_received_from_sales_of_goods": null,
+          "cash_paid_for_asset": 2893000000.0,
+          "cash_flow_from_investing_activities": -79036000000.0,
+          "cash_flow_from_financing_activities": -149236000000.0,
+          "info_date": "2026-04-25 00:00:00",
+          "rice_create_tm": "2026-04-24 20:12:51",
+          "if_adjusted": "1"
+        }
+      ],
+      "row_count": 3,
+      "report_year": 2025,
+      "years": 3
+    },
+    "data_quality": {
+      "available": [
+        "行情",
+        "日涨跌幅",
+        "换手率",
+        "两融",
+        "因子历史",
+        "年报三表",
+        "分红",
+        "股本",
+        "Shibor",
+        "收益率曲线"
+      ],
+      "empty": [
+        "基准指数",
+        "资金流向",
+        "大宗交易"
+      ],
+      "summary_line": "10 项可用；缺失 基准指数, 资金流向, 大宗交易"
+    },
+    "inventory": {
+      "price": {
+        "row_count": 343,
+        "columns": [
+          "order_book_id",
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume",
+          "total_turnover"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-20",
+            "open": 10.86,
+            "high": 10.88,
+            "low": 10.76,
+            "close": 10.77,
+            "volume": 74763214.0,
+            "total_turnover": 808079588.87
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-21",
+            "open": 10.78,
+            "high": 10.8,
+            "low": 10.69,
+            "close": 10.7,
+            "volume": 111021108.0,
+            "total_turnover": 1194144111.5
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-22",
+            "open": 10.7,
+            "high": 10.73,
+            "low": 10.65,
+            "close": 10.68,
+            "volume": 95413273.0,
+            "total_turnover": 1020057083.13
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-25",
+            "open": 10.68,
+            "high": 10.76,
+            "low": 10.64,
+            "close": 10.68,
+            "volume": 66310295.0,
+            "total_turnover": 709614127.77
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-26",
+            "open": 10.71,
+            "high": 10.83,
+            "low": 10.66,
+            "close": 10.79,
+            "volume": 83734690.0,
+            "total_turnover": 900879538.05
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-27",
+            "open": 10.76,
+            "high": 10.85,
+            "low": 10.72,
+            "close": 10.76,
+            "volume": 83972718.0,
+            "total_turnover": 905710898.28
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-28",
+            "open": 10.76,
+            "high": 10.79,
+            "low": 10.63,
+            "close": 10.66,
+            "volume": 90071107.0,
+            "total_turnover": 963695781.21
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-29",
+            "open": 10.65,
+            "high": 10.93,
+            "low": 10.62,
+            "close": 10.93,
+            "volume": 139936780.0,
+            "total_turnover": 1515692068.28
+          }
+        ]
+      },
+      "price_change_rate": {
+        "row_count": 343,
+        "columns": [
+          "date",
+          "000001.XSHE"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "date": "2026-05-20",
+            "000001.XSHE": -0.008287292817679592
+          },
+          {
+            "date": "2026-05-21",
+            "000001.XSHE": -0.006499535747446661
+          },
+          {
+            "date": "2026-05-22",
+            "000001.XSHE": -0.0018691588785046953
+          },
+          {
+            "date": "2026-05-25",
+            "000001.XSHE": 0.0
+          },
+          {
+            "date": "2026-05-26",
+            "000001.XSHE": 0.010299625468164653
+          },
+          {
+            "date": "2026-05-27",
+            "000001.XSHE": -0.00278035217794248
+          },
+          {
+            "date": "2026-05-28",
+            "000001.XSHE": -0.009293680297397744
+          },
+          {
+            "date": "2026-05-29",
+            "000001.XSHE": 0.025328330206378924
+          }
+        ]
+      },
+      "turnover": {
+        "row_count": 343,
+        "columns": [
+          "order_book_id",
+          "date",
+          "today",
+          "week",
+          "month",
+          "year",
+          "current_year"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-20",
+            "today": 0.3853,
+            "week": 0.4294,
+            "month": 0.5578,
+            "year": 0.5448,
+            "current_year": 0.4721
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-21",
+            "today": 0.5721,
+            "week": 0.462,
+            "month": 0.5661,
+            "year": 0.5443,
+            "current_year": 0.4732
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-22",
+            "today": 0.4917,
+            "week": 0.4599,
+            "month": 0.5692,
+            "year": 0.5442,
+            "current_year": 0.4734
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-25",
+            "today": 0.3417,
+            "week": 0.4399,
+            "month": 0.5846,
+            "year": 0.5436,
+            "current_year": 0.472
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-26",
+            "today": 0.4315,
+            "week": 0.4445,
+            "month": 0.5765,
+            "year": 0.5439,
+            "current_year": 0.4715
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-27",
+            "today": 0.4327,
+            "week": 0.4539,
+            "month": 0.507,
+            "year": 0.544,
+            "current_year": 0.4711
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-28",
+            "today": 0.4642,
+            "week": 0.4324,
+            "month": 0.486,
+            "year": 0.5445,
+            "current_year": 0.471
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-29",
+            "today": 0.7211,
+            "week": 0.4782,
+            "month": 0.4866,
+            "year": 0.5455,
+            "current_year": 0.4737
+          }
+        ]
+      },
+      "capital_flow": {
+        "row_count": 0,
+        "columns": null,
+        "net_buy_value_sum": null,
+        "recent_rows": []
+      },
+      "securities_margin": {
+        "row_count": 342,
+        "columns": [
+          "order_book_id",
+          "date",
+          "margin_balance",
+          "buy_on_margin_value",
+          "short_sell_quantity",
+          "margin_repayment",
+          "short_balance_quantity",
+          "short_repayment_quantity",
+          "short_balance",
+          "total_balance"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-19",
+            "margin_balance": 5473260193,
+            "buy_on_margin_value": 116446043,
+            "short_sell_quantity": 41600,
+            "margin_repayment": 80584460,
+            "short_balance_quantity": 1151300,
+            "short_repayment_quantity": 500,
+            "short_balance": 12503118,
+            "total_balance": 5485763311
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-20",
+            "margin_balance": 5474409737,
+            "buy_on_margin_value": 68943709,
+            "short_sell_quantity": 6800,
+            "margin_repayment": 67794165,
+            "short_balance_quantity": 1148100,
+            "short_repayment_quantity": 10000,
+            "short_balance": 12365037,
+            "total_balance": 5486774774
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-21",
+            "margin_balance": 5535012019,
+            "buy_on_margin_value": 151639156,
+            "short_sell_quantity": 101500,
+            "margin_repayment": 91036874,
+            "short_balance_quantity": 1248000,
+            "short_repayment_quantity": 1600,
+            "short_balance": 13353600,
+            "total_balance": 5548365619
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-22",
+            "margin_balance": 5586642321,
+            "buy_on_margin_value": 123311100,
+            "short_sell_quantity": 38000,
+            "margin_repayment": 71680798,
+            "short_balance_quantity": 1285800,
+            "short_repayment_quantity": 200,
+            "short_balance": 13732344,
+            "total_balance": 5600374665
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-25",
+            "margin_balance": 5606678530,
+            "buy_on_margin_value": 79126304,
+            "short_sell_quantity": 66100,
+            "margin_repayment": 59090095,
+            "short_balance_quantity": 1318400,
+            "short_repayment_quantity": 33500,
+            "short_balance": 14080512,
+            "total_balance": 5620759042
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-26",
+            "margin_balance": 5580700299,
+            "buy_on_margin_value": 74121884,
+            "short_sell_quantity": 54200,
+            "margin_repayment": 100100115,
+            "short_balance_quantity": 1358200,
+            "short_repayment_quantity": 14400,
+            "short_balance": 14654978,
+            "total_balance": 5595355277
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-27",
+            "margin_balance": 5549086088,
+            "buy_on_margin_value": 63716726,
+            "short_sell_quantity": 59900,
+            "margin_repayment": 95330937,
+            "short_balance_quantity": 1366100,
+            "short_repayment_quantity": 52000,
+            "short_balance": 14699236,
+            "total_balance": 5563785324
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-28",
+            "margin_balance": 5566535656,
+            "buy_on_margin_value": 82453429,
+            "short_sell_quantity": 13100,
+            "margin_repayment": 65003861,
+            "short_balance_quantity": 1351100,
+            "short_repayment_quantity": 28100,
+            "short_balance": 14402726,
+            "total_balance": 5580938382
+          }
+        ]
+      },
+      "dividend": {
+        "row_count": 4,
+        "columns": [
+          "order_book_id",
+          "declaration_announcement_date",
+          "book_closure_date",
+          "dividend_cash_before_tax",
+          "ex_dividend_date",
+          "payable_date",
+          "advance_date",
+          "round_lot",
+          "quarter"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "order_book_id": "000001.XSHE",
+            "declaration_announcement_date": "2024-06-06T00:00:00",
+            "book_closure_date": "2024-06-13T00:00:00",
+            "dividend_cash_before_tax": 7.19,
+            "ex_dividend_date": "2024-06-14T00:00:00",
+            "payable_date": "2024-06-14T00:00:00",
+            "advance_date": "2024-03-15T00:00:00",
+            "round_lot": 10,
+            "quarter": "2023q4"
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "declaration_announcement_date": "2024-09-26T00:00:00",
+            "book_closure_date": "2024-10-09T00:00:00",
+            "dividend_cash_before_tax": 2.46,
+            "ex_dividend_date": "2024-10-10T00:00:00",
+            "payable_date": "2024-10-10T00:00:00",
+            "advance_date": "2024-08-16T00:00:00",
+            "round_lot": 10,
+            "quarter": "2024q2"
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "declaration_announcement_date": "2025-06-05T00:00:00",
+            "book_closure_date": "2025-06-11T00:00:00",
+            "dividend_cash_before_tax": 3.62,
+            "ex_dividend_date": "2025-06-12T00:00:00",
+            "payable_date": "2025-06-12T00:00:00",
+            "advance_date": "2025-03-15T00:00:00",
+            "round_lot": 10,
+            "quarter": "2024q4"
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "declaration_announcement_date": "2025-09-30T00:00:00",
+            "book_closure_date": "2025-10-14T00:00:00",
+            "dividend_cash_before_tax": 2.36,
+            "ex_dividend_date": "2025-10-15T00:00:00",
+            "payable_date": "2025-10-15T00:00:00",
+            "advance_date": "2025-08-23T00:00:00",
+            "round_lot": 10,
+            "quarter": "2025q2"
+          }
+        ]
+      },
+      "shares": {
+        "row_count": 485,
+        "columns": [
+          "order_book_id",
+          "date",
+          "total",
+          "circulation_a",
+          "non_circulation_a",
+          "total_a",
+          "preferred_shares",
+          "free_circulation"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-20",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-21",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-22",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-25",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-26",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-27",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-28",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-29",
+            "total": 19405918198.0,
+            "circulation_a": 19405600653.0,
+            "non_circulation_a": 317545.0,
+            "total_a": 19405918198.0,
+            "preferred_shares": 0.0,
+            "free_circulation": 8160481215.0
+          }
+        ]
+      },
+      "suspended": {
+        "row_count": 343,
+        "columns": [
+          "date",
+          "000001.XSHE"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "date": "2026-05-20",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-21",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-22",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-25",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-26",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-27",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-28",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-29",
+            "000001.XSHE": false
+          }
+        ]
+      },
+      "st_stock": {
+        "row_count": 343,
+        "columns": [
+          "date",
+          "000001.XSHE"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "date": "2026-05-20",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-21",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-22",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-25",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-26",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-27",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-28",
+            "000001.XSHE": false
+          },
+          {
+            "date": "2026-05-29",
+            "000001.XSHE": false
+          }
+        ]
+      },
+      "interbank_rate": {
+        "row_count": 80,
+        "columns": [
+          "date",
+          "ON",
+          "1W",
+          "2W",
+          "1M",
+          "3M",
+          "6M",
+          "9M",
+          "1Y"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "date": "2026-05-20",
+            "ON": 1.286,
+            "1W": 1.339,
+            "2W": 1.344,
+            "1M": 1.3855,
+            "3M": 1.4045,
+            "6M": 1.43,
+            "9M": 1.452,
+            "1Y": 1.4655
+          },
+          {
+            "date": "2026-05-21",
+            "ON": 1.288,
+            "1W": 1.331,
+            "2W": 1.343,
+            "1M": 1.3855,
+            "3M": 1.4065,
+            "6M": 1.429,
+            "9M": 1.451,
+            "1Y": 1.4655
+          },
+          {
+            "date": "2026-05-22",
+            "ON": 1.324,
+            "1W": 1.365,
+            "2W": 1.372,
+            "1M": 1.388,
+            "3M": 1.405,
+            "6M": 1.429,
+            "9M": 1.45,
+            "1Y": 1.4685
+          },
+          {
+            "date": "2026-05-25",
+            "ON": 1.327,
+            "1W": 1.401,
+            "2W": 1.407,
+            "1M": 1.392,
+            "3M": 1.4065,
+            "6M": 1.43,
+            "9M": 1.45,
+            "1Y": 1.4675
+          },
+          {
+            "date": "2026-05-26",
+            "ON": 1.319,
+            "1W": 1.377,
+            "2W": 1.402,
+            "1M": 1.391,
+            "3M": 1.4065,
+            "6M": 1.429,
+            "9M": 1.45,
+            "1Y": 1.4665
+          },
+          {
+            "date": "2026-05-27",
+            "ON": 1.317,
+            "1W": 1.371,
+            "2W": 1.388,
+            "1M": 1.39,
+            "3M": 1.4045,
+            "6M": 1.429,
+            "9M": 1.449,
+            "1Y": 1.4655
+          },
+          {
+            "date": "2026-05-28",
+            "ON": 1.317,
+            "1W": 1.362,
+            "2W": 1.381,
+            "1M": 1.389,
+            "3M": 1.4055,
+            "6M": 1.428,
+            "9M": 1.45,
+            "1Y": 1.4655
+          },
+          {
+            "date": "2026-05-29",
+            "ON": 1.324,
+            "1W": 1.387,
+            "2W": 1.387,
+            "1M": 1.39,
+            "3M": 1.4075,
+            "6M": 1.429,
+            "9M": 1.45,
+            "1Y": 1.4655
+          }
+        ]
+      },
+      "yield_curve": {
+        "row_count": 80,
+        "columns": [
+          "date",
+          "0S",
+          "1M",
+          "2M",
+          "3M",
+          "6M",
+          "9M",
+          "1Y",
+          "2Y",
+          "3Y",
+          "4Y",
+          "5Y",
+          "6Y",
+          "7Y",
+          "8Y",
+          "9Y",
+          "10Y",
+          "15Y",
+          "20Y",
+          "30Y",
+          "40Y",
+          "50Y"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "date": "2026-05-20",
+            "0S": 0.01015,
+            "1M": 0.011000000000000001,
+            "2M": 0.011000000000000001,
+            "3M": 0.010953,
+            "6M": 0.011251,
+            "9M": 0.011257,
+            "1Y": 0.011785,
+            "2Y": 0.012552,
+            "3Y": 0.012882,
+            "4Y": null,
+            "5Y": 0.014369,
+            "6Y": null,
+            "7Y": 0.015893,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.017381999999999998,
+            "15Y": 0.020609000000000002,
+            "20Y": 0.02243,
+            "30Y": 0.022311,
+            "40Y": 0.023342,
+            "50Y": 0.024624999999999998
+          },
+          {
+            "date": "2026-05-21",
+            "0S": 0.01015,
+            "1M": 0.0109,
+            "2M": 0.0109,
+            "3M": 0.010936999999999999,
+            "6M": 0.01123,
+            "9M": 0.011231999999999999,
+            "1Y": 0.011768,
+            "2Y": 0.012583,
+            "3Y": 0.012874000000000002,
+            "4Y": null,
+            "5Y": 0.014449,
+            "6Y": null,
+            "7Y": 0.016039,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.017447999999999998,
+            "15Y": 0.020642,
+            "20Y": 0.02243,
+            "30Y": 0.02231,
+            "40Y": 0.023334,
+            "50Y": 0.02461
+          },
+          {
+            "date": "2026-05-22",
+            "0S": 0.01015,
+            "1M": 0.0109,
+            "2M": 0.0109,
+            "3M": 0.010924,
+            "6M": 0.011205,
+            "9M": 0.011207,
+            "1Y": 0.01175,
+            "2Y": 0.012623,
+            "3Y": 0.01302,
+            "4Y": null,
+            "5Y": 0.014576,
+            "6Y": null,
+            "7Y": 0.016113,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.017519,
+            "15Y": 0.020697,
+            "20Y": 0.02247,
+            "30Y": 0.022345,
+            "40Y": 0.023371,
+            "50Y": 0.02465
+          },
+          {
+            "date": "2026-05-25",
+            "0S": 0.01015,
+            "1M": 0.010787999999999999,
+            "2M": 0.010953,
+            "3M": 0.011124,
+            "6M": 0.011399999999999999,
+            "9M": 0.011402,
+            "1Y": 0.011797,
+            "2Y": 0.012561,
+            "3Y": 0.012976000000000001,
+            "4Y": null,
+            "5Y": 0.014558,
+            "6Y": null,
+            "7Y": 0.016040000000000002,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.017484,
+            "15Y": 0.020640000000000002,
+            "20Y": 0.02239,
+            "30Y": 0.02226,
+            "40Y": 0.023279,
+            "50Y": 0.024550000000000002
+          },
+          {
+            "date": "2026-05-26",
+            "0S": 0.01015,
+            "1M": 0.010721000000000001,
+            "2M": 0.0109,
+            "3M": 0.010904,
+            "6M": 0.01135,
+            "9M": 0.011352,
+            "1Y": 0.011747,
+            "2Y": 0.012513000000000002,
+            "3Y": 0.012976000000000001,
+            "4Y": null,
+            "5Y": 0.014495000000000001,
+            "6Y": null,
+            "7Y": 0.015961,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.017405,
+            "15Y": 0.020535,
+            "20Y": 0.02226,
+            "30Y": 0.022205,
+            "40Y": 0.023177,
+            "50Y": 0.024399999999999998
+          },
+          {
+            "date": "2026-05-27",
+            "0S": 0.00985,
+            "1M": 0.010589999999999999,
+            "2M": 0.010905,
+            "3M": 0.010905,
+            "6M": 0.01125,
+            "9M": 0.011252,
+            "1Y": 0.011672,
+            "2Y": 0.012378,
+            "3Y": 0.012803,
+            "4Y": null,
+            "5Y": 0.01439,
+            "6Y": null,
+            "7Y": 0.015777,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.017216,
+            "15Y": 0.020331000000000002,
+            "20Y": 0.022040999999999998,
+            "30Y": 0.022080000000000002,
+            "40Y": 0.023052000000000003,
+            "50Y": 0.024275
+          },
+          {
+            "date": "2026-05-28",
+            "0S": 0.0098,
+            "1M": 0.010426,
+            "2M": 0.010685,
+            "3M": 0.010704,
+            "6M": 0.011021000000000001,
+            "9M": 0.011107,
+            "1Y": 0.011563,
+            "2Y": 0.012263999999999999,
+            "3Y": 0.012627999999999999,
+            "4Y": null,
+            "5Y": 0.014255,
+            "6Y": null,
+            "7Y": 0.015699,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.017193,
+            "15Y": 0.020256,
+            "20Y": 0.022099999999999998,
+            "30Y": 0.022094999999999997,
+            "40Y": 0.023077,
+            "50Y": 0.024310000000000002
+          },
+          {
+            "date": "2026-05-29",
+            "0S": 0.0098,
+            "1M": 0.010426,
+            "2M": 0.0106,
+            "3M": 0.010605,
+            "6M": 0.01098,
+            "9M": 0.011107,
+            "1Y": 0.011578,
+            "2Y": 0.012256,
+            "3Y": 0.012705,
+            "4Y": null,
+            "5Y": 0.014189,
+            "6Y": null,
+            "7Y": 0.015581000000000001,
+            "8Y": null,
+            "9Y": null,
+            "10Y": 0.01709,
+            "15Y": 0.020168,
+            "20Y": 0.022026,
+            "30Y": 0.02205,
+            "40Y": 0.023012,
+            "50Y": 0.024225
+          }
+        ]
+      },
+      "factor_history": {
+        "row_count": 343,
+        "columns": [
+          "order_book_id",
+          "date",
+          "market_cap",
+          "pe_ratio_ttm",
+          "pb_ratio_ttm",
+          "ps_ratio_ttm",
+          "gross_profit_margin_ttm",
+          "net_profit_margin_ttm",
+          "debt_to_asset_ratio",
+          "current_ratio",
+          "quick_ratio",
+          "dividend_yield_ttm",
+          "net_profit_growth_ratio_ttm",
+          "net_profit_parent_company_growth_ratio_ttm",
+          "operating_profit_growth_ratio_ttm",
+          "gross_profit_growth_ratio_ttm",
+          "account_receivable_turnover_rate_ttm",
+          "current_asset_turnover_ttm"
+        ],
+        "net_buy_value_sum": null,
+        "recent_rows": [
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-20",
+            "market_cap": 209001738992.0,
+            "pe_ratio_ttm": 4.8537329073957265,
+            "pb_ratio_ttm": 0.3937376250235322,
+            "ps_ratio_ttm": 1.571323501935644,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.05552460538532962,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-21",
+            "market_cap": 207643324719.0,
+            "pe_ratio_ttm": 4.82218589685555,
+            "pb_ratio_ttm": 0.391178513254577,
+            "ps_ratio_ttm": 1.56111062866401,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.055887850467289724,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-22",
+            "market_cap": 207255206355.0,
+            "pe_ratio_ttm": 4.813172465272642,
+            "pb_ratio_ttm": 0.390447338463447,
+            "ps_ratio_ttm": 1.5581926648721147,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.05599250936329588,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-25",
+            "market_cap": 207255206355.0,
+            "pe_ratio_ttm": 4.813172465272642,
+            "pb_ratio_ttm": 0.390447338463447,
+            "ps_ratio_ttm": 1.5581926648721147,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.05599250936329588,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-26",
+            "market_cap": 209389857356.0,
+            "pe_ratio_ttm": 4.862746338978634,
+            "pb_ratio_ttm": 0.39446879981466226,
+            "ps_ratio_ttm": 1.5742414657275392,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.055421686746987955,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-27",
+            "market_cap": 208807679810.0,
+            "pe_ratio_ttm": 4.849226191604274,
+            "pb_ratio_ttm": 0.39337203762796724,
+            "ps_ratio_ttm": 1.5698645200396963,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.05557620817843866,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-28",
+            "market_cap": 206867087991.0,
+            "pe_ratio_ttm": 4.804159033689735,
+            "pb_ratio_ttm": 0.38971616367231693,
+            "ps_ratio_ttm": 1.5552747010802195,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.05609756097560975,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          },
+          {
+            "order_book_id": "000001.XSHE",
+            "date": "2026-05-29",
+            "market_cap": 212106685904.0,
+            "pe_ratio_ttm": 4.925840360058987,
+            "pb_ratio_ttm": 0.39958702335257257,
+            "ps_ratio_ttm": 1.5946672122708065,
+            "gross_profit_margin_ttm": null,
+            "net_profit_margin_ttm": 0.32373505751447257,
+            "debt_to_asset_ratio": 90.982989,
+            "current_ratio": null,
+            "quick_ratio": null,
+            "dividend_yield_ttm": 0.054711802378774016,
+            "net_profit_growth_ratio_ttm": -0.014013555596263052,
+            "net_profit_parent_company_growth_ratio_ttm": -0.01401355559626305,
+            "operating_profit_growth_ratio_ttm": -0.03127217056868675,
+            "gross_profit_growth_ratio_ttm": -0.07939697497624332,
+            "account_receivable_turnover_rate_ttm": null,
+            "current_asset_turnover_ttm": null
+          }
+        ]
+      }
+    }
+  },
+  "chart_placement": {
+    "placements": [
+      {
+        "section": "量价与技术面",
+        "charts": [
+          "technical_snapshot_table"
+        ],
+        "anchor": "RSI",
+        "note": null
+      },
+      {
+        "section": "量价与技术面",
+        "charts": [
+          "price_volume"
+        ],
+        "anchor": "量价关系",
+        "note": null
+      },
+      {
+        "section": "量价与技术面",
+        "charts": [
+          "moving_averages"
+        ],
+        "anchor": "趋势概览",
+        "note": null
+      },
+      {
+        "section": "量价与技术面",
+        "charts": [
+          "technical_indicators"
+        ],
+        "anchor": "RSI",
+        "note": null
+      },
+      {
+        "section": "量价与技术面",
+        "charts": [
+          "drawdown"
+        ],
+        "anchor": "跌幅",
+        "note": null
+      },
+      {
+        "section": "基本面与估值",
+        "charts": [
+          "latest_quality_snapshot"
+        ],
+        "anchor": "盈利与成长",
+        "note": null
+      },
+      {
+        "section": "基本面与估值",
+        "charts": [
+          "latest_liquidity_snapshot"
+        ],
+        "anchor": "负债",
+        "note": null
+      },
+      {
+        "section": "基本面与估值",
+        "charts": [
+          "valuation_percentile"
+        ],
+        "anchor": "估值水平",
+        "note": null
+      },
+      {
+        "section": "基本面与估值",
+        "charts": [
+          "valuation_factors"
+        ],
+        "anchor": "估值水平",
+        "note": null
+      },
+      {
+        "section": "资金与交易结构",
+        "charts": [
+          "margin_snapshot_table"
+        ],
+        "anchor": "融资融券",
+        "note": null
+      },
+      {
+        "section": "资金与交易结构",
+        "charts": [
+          "margin_period_table"
+        ],
+        "anchor": "融资余额",
+        "note": null
+      },
+      {
+        "section": "资金与交易结构",
+        "charts": [
+          "trading_activity_table"
+        ],
+        "anchor": "成交与活跃度",
+        "note": null
+      },
+      {
+        "section": "资金与交易结构",
+        "charts": [
+          "share_structure_table"
+        ],
+        "anchor": "股东与股本",
+        "note": null
+      },
+      {
+        "section": "资金与交易结构",
+        "charts": [
+          "margin_enhanced"
+        ],
+        "anchor": "融资融券",
+        "note": null
+      },
+      {
+        "section": "资金与交易结构",
+        "charts": [
+          "margin_balances"
+        ],
+        "anchor": "融资余额",
+        "note": null
+      },
+      {
+        "section": "宏观利率背景",
+        "charts": [
+          "shibor_rates"
+        ],
+        "anchor": "Shibor",
+        "note": null
+      },
+      {
+        "section": "宏观利率背景",
+        "charts": [
+          "gov_yield_trend"
+        ],
+        "anchor": "收益率曲线",
+        "note": null
+      }
+    ],
+    "omitted": [
+      "latest_valuation_snapshot"
+    ],
+    "unused": [
+      "nav_curve",
+      "cumulative_return",
+      "turnover_amount",
+      "rolling_volatility",
+      "daily_return",
+      "turnover_rate",
+      "growth_factors",
+      "profitability_factors",
+      "debt_ratio_trend",
+      "market_cap_trend",
+      "margin_activity",
+      "share_structure",
+      "share_structure_pie",
+      "dividend_history",
+      "dividend_spread",
+      "yield_curve_snapshot",
+      "latest_growth_snapshot"
+    ]
+  },
+  "omitted_charts": [
+    "cumulative_return",
+    "daily_return",
+    "debt_ratio_trend",
+    "dividend_history",
+    "dividend_spread",
+    "growth_factors",
+    "latest_growth_snapshot",
+    "margin_activity",
+    "market_cap_trend",
+    "nav_curve",
+    "profitability_factors",
+    "rolling_volatility",
+    "share_structure",
+    "share_structure_pie",
+    "turnover_amount",
+    "turnover_rate",
+    "yield_curve_snapshot"
+  ],
+  "unused_charts": [
+    "cumulative_return",
+    "daily_return",
+    "debt_ratio_trend",
+    "dividend_history",
+    "dividend_spread",
+    "growth_factors",
+    "latest_growth_snapshot",
+    "margin_activity",
+    "market_cap_trend",
+    "nav_curve",
+    "profitability_factors",
+    "rolling_volatility",
+    "share_structure",
+    "share_structure_pie",
+    "turnover_amount",
+    "turnover_rate",
+    "yield_curve_snapshot"
+  ],
+  "chart_need": {
+    "visuals": [
+      {
+        "visual_key": "technical_snapshot_table",
+        "kind": "table",
+        "caption": "technical_snapshot_table",
+        "section": "量价与技术面",
+        "anchor": "RSI",
+        "needed": true,
+        "reason": "正文提及RSI数值，表格可集中展示技术指标"
+      },
+      {
+        "visual_key": "price_volume",
+        "kind": "chart",
+        "caption": "收盘价与成交量",
+        "section": "量价与技术面",
+        "anchor": "量价关系",
+        "needed": true,
+        "reason": "正文详细描述放量下跌、缩量盘整、放量反弹，图可直观展示"
+      },
+      {
+        "visual_key": "moving_averages",
+        "kind": "chart",
+        "caption": "收盘价与 MA20/MA60",
+        "section": "量价与技术面",
+        "anchor": "趋势概览",
+        "needed": true,
+        "reason": "正文提及MA20、MA60及空头排列，均线图支撑趋势判断"
+      },
+      {
+        "visual_key": "technical_indicators",
+        "kind": "chart",
+        "caption": "RSI 与 MACD",
+        "section": "量价与技术面",
+        "anchor": "RSI",
+        "needed": true,
+        "reason": "正文提及RSI 34.23，图可展示RSI与MACD"
+      },
+      {
+        "visual_key": "drawdown",
+        "kind": "chart",
+        "caption": "回撤曲线",
+        "section": "量价与技术面",
+        "anchor": "跌幅",
+        "needed": true,
+        "reason": "正文提及20日跌幅-5.12%，回撤曲线可展示区间最大回撤"
+      },
+      {
+        "visual_key": "latest_quality_snapshot",
+        "kind": "table",
+        "caption": "最新质量因子快照",
+        "section": "基本面与估值",
+        "anchor": "盈利与成长",
+        "needed": true,
+        "reason": "正文提及营收、净利润、净现比等，表格展示盈利质量"
+      },
+      {
+        "visual_key": "latest_liquidity_snapshot",
+        "kind": "table",
+        "caption": "最新偿债与流动性快照",
+        "section": "基本面与估值",
+        "anchor": "负债",
+        "needed": true,
+        "reason": "正文提及资产负债率90.98%，表格展示偿债与流动性"
+      },
+      {
+        "visual_key": "valuation_percentile",
+        "kind": "chart",
+        "caption": "PE/PB 历史分位",
+        "section": "基本面与估值",
+        "anchor": "估值水平",
+        "needed": true,
+        "reason": "正文指出估值处于历史低位，历史分位图可直观验证"
+      },
+      {
+        "visual_key": "valuation_factors",
+        "kind": "chart",
+        "caption": "估值因子走势",
+        "section": "基本面与估值",
+        "anchor": "估值水平",
+        "needed": true,
+        "reason": "正文对比2024-12-25与2026-05-29估值，走势图展示趋势"
+      },
+      {
+        "visual_key": "margin_snapshot_table",
+        "kind": "table",
+        "caption": "margin_snapshot_table",
+        "section": "资金与交易结构",
+        "anchor": "融资融券",
+        "needed": true,
+        "reason": "正文提及融资余额55.67亿元，表格展示两融快照"
+      },
+      {
+        "visual_key": "margin_period_table",
+        "kind": "table",
+        "caption": "margin_period_table",
+        "section": "资金与交易结构",
+        "anchor": "融资余额",
+        "needed": true,
+        "reason": "正文提及融资余额从45.35亿增至55.67亿，表格展示区间变动"
+      },
+      {
+        "visual_key": "trading_activity_table",
+        "kind": "table",
+        "caption": "trading_activity_table",
+        "section": "资金与交易结构",
+        "anchor": "成交与活跃度",
+        "needed": true,
+        "reason": "正文提及近5日成交额变化，表格展示成交活跃度"
+      },
+      {
+        "visual_key": "share_structure_table",
+        "kind": "table",
+        "caption": "share_structure_table",
+        "section": "资金与交易结构",
+        "anchor": "股东与股本",
+        "needed": true,
+        "reason": "正文提及数据局限，但表格可展示股本结构快照"
+      },
+      {
+        "visual_key": "margin_enhanced",
+        "kind": "chart",
+        "caption": "融资余额与买卖额",
+        "section": "资金与交易结构",
+        "anchor": "融资融券",
+        "needed": true,
+        "reason": "正文提及融资余额与买入峰值，图展示融资余额与买卖额"
+      },
+      {
+        "visual_key": "margin_balances",
+        "kind": "chart",
+        "caption": "融资融券余额",
+        "section": "资金与交易结构",
+        "anchor": "融资余额",
+        "needed": true,
+        "reason": "正文提及融资余额变化，图展示两融余额趋势"
+      },
+      {
+        "visual_key": "shibor_rates",
+        "kind": "chart",
+        "caption": "Shibor 利率",
+        "section": "宏观利率背景",
+        "anchor": "Shibor",
+        "needed": true,
+        "reason": "正文提及数据局限，但Shibor图可补充短端利率背景"
+      },
+      {
+        "visual_key": "gov_yield_trend",
+        "kind": "chart",
+        "caption": "国债收益率走势",
+        "section": "宏观利率背景",
+        "anchor": "收益率曲线",
+        "needed": true,
+        "reason": "正文提及国债收益率数据缺失，但走势图可辅助分析"
+      }
+    ],
+    "skip": [
+      {
+        "visual_key": "relative_return",
+        "kind": "chart",
+        "reason": "数据不足或未出图"
+      },
+      {
+        "visual_key": "capital_flow",
+        "kind": "chart",
+        "reason": "数据不足或未出图"
+      },
+      {
+        "visual_key": "cumulative_capital_flow",
+        "kind": "chart",
+        "reason": "数据不足或未出图"
+      },
+      {
+        "visual_key": "buy_sell_value",
+        "kind": "chart",
+        "reason": "数据不足或未出图"
+      },
+      {
+        "visual_key": "block_trade_activity",
+        "kind": "chart",
+        "reason": "数据不足或未出图"
+      }
+    ],
+    "source": "llm"
+  }
+}

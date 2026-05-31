@@ -44,6 +44,12 @@ function renderAuthUser() {
   const logoutBtn = document.getElementById("railLogoutBtn");
   if (label) label.textContent = authState.user?.username ? `@${authState.user.username}` : "";
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !authState.user);
+  if (typeof window.syncSettingsButtonsVisible === "function") {
+    window.syncSettingsButtonsVisible(Boolean(authState.user));
+  }
+  if (typeof window.App?.syncRailCollapseUi === "function") {
+    window.App.syncRailCollapseUi();
+  }
 }
 
 async function authFetch(path, options = {}) {
@@ -212,6 +218,7 @@ window.Auth = {
   state: authState,
   getAuthToken,
   authHeaders,
+  authFetch,
   ensureAuth,
   login,
   register,

@@ -18,9 +18,14 @@ from .chart_catalog import (
     RISK_SECTION,
     SECTION_INLINE_CHART_LIMITS,
     SYNTHESIS_SECTION,
+    TABLE_SNAPSHOT_KEYS,
+    TABLE_SNAPSHOT_SPECS,
+    TABLE_ALL_KEYS,
+    TABLE_SUBHEADING_HINTS,
     chart_caption,
     fallback_chart_note,
 )
+from .table_blocks import format_table_block, table_data_available
 from .data_capabilities import build_data_capability_inventory, filter_gap_notes
 from .data_registry import COLLECTED_SERIES
 from .report_format import (
@@ -213,11 +218,103 @@ def section_digest(sections: dict[str, str], plan: dict[str, Any], *, max_chars:
     return digest
 
 
+def _guess_sec_name_from_summary(summary: str, stock_code: str) -> str:
+    text = str(summary or "").strip()
+    if not text:
+        return ""
+    patterns = [
+        r"^(.+?)（\d{6}[.)]",
+        r"^(.+?)（[\w.]+）",
+    ]
+    if stock_code:
+        patterns.append(rf"([\u4e00-\u9fff]{{2,12}})（{re.escape(stock_code)}[.)]")
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        name = str(match.group(1)).strip()
+        if name and name != stock_code and not re.fullmatch(r"\d+", name):
+            return name
+    return ""
+
+
+def _guess_sec_name_from_sections(sections: dict[str, Any], stock_code: str) -> str:
+    if not stock_code:
+        return ""
+    pattern = re.compile(rf"([\u4e00-\u9fff]{{2,12}})（{re.escape(stock_code)}[.)]")
+    for content in sections.values():
+        match = pattern.search(str(content or "")[:3000])
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
+def resolve_multi_sec_name(payload: dict[str, Any], stock_code: str | None = None) -> str:
+    """从 meta / data / 摘要 / 正文 / 本地年报缓存推断 A 股简称。"""
+    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    for key in ("sec_name", "symbol"):
+        value = str(meta.get(key) or "").strip()
+        if value:
+            return value
+
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    for key in ("sec_name", "symbol"):
+        value = str(data.get(key) or "").strip()
+        if value:
+            return value
+
+    data_summary = payload.get("data_summary") if isinstance(payload.get("data_summary"), dict) else {}
+    for key in ("sec_name", "symbol"):
+        value = str(data_summary.get(key) or "").strip()
+        if value:
+            return value
+
+    code = str(stock_code or meta.get("stock_code") or data.get("stock_code") or "").strip()
+    if not code:
+        order_book_id = str(meta.get("order_book_id") or data.get("order_book_id") or "")
+        code = order_book_id.split(".")[0] if order_book_id else ""
+
+    guessed = _guess_sec_name_from_summary(str(payload.get("summary") or ""), code)
+    if guessed:
+        return guessed
+
+    sections = payload.get("sections") if isinstance(payload.get("sections"), dict) else {}
+    guessed = _guess_sec_name_from_sections(sections, code)
+    if guessed:
+        return guessed
+
+    if code:
+        try:
+            from .datastore.db import get_annual_report
+
+            annual = get_annual_report(code)
+            if annual and annual.get("sec_name"):
+                return str(annual["sec_name"]).strip()
+        except Exception:
+            pass
+    return ""
+
+
+def multi_report_display_title(*, stock_code: str, sec_name: str = "", suffix: str = "多智能体报告") -> str:
+    stock_code = str(stock_code or "").strip()
+    sec_name = str(sec_name or "").strip()
+    if stock_code and sec_name:
+        return f"{stock_code} {sec_name} {suffix}".strip()
+    if sec_name:
+        return f"{sec_name} {suffix}".strip()
+    if stock_code:
+        return f"{stock_code} {suffix}".strip()
+    return suffix
+
+
 def build_multi_toc_entries(
     plan: dict[str, Any],
     ordered_sections: list[tuple[str, str]],
+    *,
+    include_executive_summary: bool = False,
 ) -> list[dict[str, str]]:
-    titles = ["执行摘要", "核心指标速览"]
+    titles = ["执行摘要"] if include_executive_summary else []
+    titles.append("核心指标速览")
     titles.extend(name for name, _ in ordered_sections)
     titles.extend(["数据与工具说明", "免责声明"])
     return build_report_toc(titles)
@@ -236,23 +333,42 @@ def render_multi_markdown(
 ) -> str:
     """按固定模版渲染多智能体 Markdown（不含验证 Agent 复核段）。"""
     ordered_sections = _output_section_items(sections, plan, charts)
-    toc_entries = build_multi_toc_entries(plan, ordered_sections)
+    summary_text = str(summary or "").strip()
+    toc_entries = build_multi_toc_entries(
+        plan,
+        ordered_sections,
+        include_executive_summary=bool(summary_text),
+    )
     anchors = toc_id_map(toc_entries)
     body = "\n\n".join(
         f'<a id="{anchors.get(name, name)}"></a>\n\n## {name}\n\n{content}'
         for name, content in ordered_sections
     )
-    summary_text = normalize_section_text(summary, "执行摘要")
     quality = build_data_quality_summary(data)
+    stock_code = str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0])
+    title = multi_report_display_title(
+        stock_code=stock_code,
+        sec_name=str(data.get("sec_name") or ""),
+        suffix="多智能体研究报告",
+    )
     lines = [
-        f"# {data['order_book_id']} 多智能体研究报告",
+        f"# {title}",
         "",
     ]
     banner = validation_publish_banner(validation)
     if banner:
         lines.extend([banner, ""])
     lines.extend(render_toc_markdown(toc_entries))
-    lines.extend(markdown_section("执行摘要", anchors["执行摘要"], summary_text))
+    if summary_text:
+        from .report_format import normalize_section_text
+
+        lines.extend(
+            markdown_section(
+                "执行摘要",
+                anchors["执行摘要"],
+                normalize_section_text(summary_text, "执行摘要"),
+            )
+        )
     lines.extend(markdown_section("核心指标速览", anchors["核心指标速览"], "\n".join(_core_metric_table(data))))
     lines.extend([body, ""])
     if not inline_charts and unused_charts is None:
@@ -265,7 +381,6 @@ def render_multi_markdown(
                 [
                     f"- 数据区间：{data['start_date']} 至 {data['end_date']}",
                     f"- 计划使用的米筐函数：{', '.join(plan.get('tools') or [])}",
-                    f"- 数据执行日志：`{data.get('data_log') or data.get('python_script', '')}`",
                     f"- 数据质量：{quality['summary_line']}",
                     f"- 生成时间：{format_generated_at()}",
                 ]
@@ -300,11 +415,20 @@ def render_multi_html(
 ) -> str:
     """与 render_multi_markdown 结构对称；图表用 HTML img，可直接浏览器打开。"""
     ordered_sections = _output_section_items(sections, plan, charts)
-    toc_entries = build_multi_toc_entries(plan, ordered_sections)
+    summary_text = str(summary or "").strip()
+    toc_entries = build_multi_toc_entries(
+        plan,
+        ordered_sections,
+        include_executive_summary=bool(summary_text),
+    )
     anchors = toc_id_map(toc_entries)
-    summary_text = normalize_section_text(summary, "执行摘要")
     quality = build_data_quality_summary(data)
-    title = f"{data['order_book_id']} 多智能体研究报告"
+    stock_code = str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0])
+    title = multi_report_display_title(
+        stock_code=stock_code,
+        sec_name=str(data.get("sec_name") or ""),
+        suffix="多智能体研究报告",
+    )
     parts = [f"<h1>{html.escape(title)}</h1>"]
     banner = validation_publish_banner(validation)
     if banner:
@@ -312,8 +436,13 @@ def render_multi_html(
 
     parts.append(render_toc_html(toc_entries))
 
-    parts.append(f'<h2 id="{html.escape(anchors["执行摘要"])}">执行摘要</h2>')
-    parts.append(f'<section class="section-body">{markdown_to_html(summary_text, in_section=True)}</section>')
+    if summary_text:
+        from .report_format import normalize_section_text
+
+        parts.append(f'<h2 id="{html.escape(anchors["执行摘要"])}">执行摘要</h2>')
+        parts.append(
+            f'<section class="section-body prose-lead">{markdown_to_html(normalize_section_text(summary_text, "执行摘要"), in_section=True)}</section>'
+        )
 
     parts.append(f'<h2 id="{html.escape(anchors["核心指标速览"])}">核心指标速览</h2>')
     parts.append(_core_metric_table_html(data))
@@ -331,9 +460,6 @@ def render_multi_html(
     parts.append("<ul class=\"meta-list\">")
     parts.append(f"<li>数据区间：{html.escape(str(data['start_date']))} 至 {html.escape(str(data['end_date']))}</li>")
     parts.append(f"<li>计划使用的米筐函数：{html.escape(', '.join(plan.get('tools') or []))}</li>")
-    parts.append(
-        f"<li>数据执行日志：<code>{html.escape(str(data.get('data_log') or data.get('python_script') or ''))}</code></li>"
-    )
     parts.append(f"<li>数据质量：{html.escape(quality['summary_line'])}</li>")
     parts.append(f"<li>生成时间：{html.escape(format_generated_at())}</li>")
     parts.append("</ul>")
@@ -365,21 +491,30 @@ def build_multi_json_payload(
     """分层 JSON：报告可读结构 + 数据摘要，避免整包 time-series rows。"""
     normalized = _ordered_sections_dict(sections, plan)
     validation = validation or {}
-    toc_entries = build_multi_toc_entries(plan, list(normalized.items()))
+    summary_text = str(summary or "").strip()
+    toc_entries = build_multi_toc_entries(
+        plan,
+        list(normalized.items()),
+        include_executive_summary=bool(summary_text),
+    )
+    stock_code = str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0])
+    sec_name = str(data.get("sec_name") or "")
     payload: dict[str, Any] = {
         "meta": {
             "report_type": "multi_analyze",
             "order_book_id": data.get("order_book_id"),
+            "stock_code": stock_code,
+            "sec_name": sec_name,
             "start_date": data.get("start_date"),
             "end_date": data.get("end_date"),
             "output_markdown": output_markdown,
             "output_json": output_json,
             "output_html": output_html,
             "generated_at": format_generated_at_iso(),
-            "data_log": data.get("data_log") or data.get("python_script"),
             **_validation_meta(validation),
         },
-        "summary": normalize_section_text(summary, "执行摘要"),
+        "summary": summary_text,
+        "executive_summary": summary_text,
         "sections": normalized,
         "table_of_contents": toc_entries,
         "charts": {name: _normalize_chart_path(path) for name, path in charts.items()},
@@ -414,14 +549,24 @@ def _inline_chart_limit(section: str) -> int:
     return SECTION_INLINE_CHART_LIMITS.get(section, MAX_INLINE_CHARTS_PER_SECTION)
 
 
+def _placement_keys(charts: dict[str, str], data: dict[str, Any] | None = None) -> set[str]:
+    keys = set(charts)
+    if data:
+        for name in TABLE_ALL_KEYS:
+            if table_data_available(name, data):
+                keys.add(name)
+    return keys
+
+
 def build_default_chart_placement(
     *,
     charts: dict[str, str],
     sections: dict[str, str],
     blocked: set[str] | None = None,
+    data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     blocked = blocked or set()
-    allowed = [name for name in charts if name not in blocked]
+    allowed = _placement_keys(charts, data) - blocked
     placements: list[dict[str, Any]] = []
     used: set[str] = set()
     for section, candidates in DEFAULT_SECTION_CHART_CANDIDATES.items():
@@ -444,9 +589,11 @@ def normalize_chart_placement(
     charts: dict[str, str],
     sections: dict[str, str],
     blocked: set[str] | None = None,
+    data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     blocked = blocked or set()
     valid_sections = set(sections.keys())
+    available = _placement_keys(charts, data)
     seen: set[str] = set()
     placements: list[dict[str, Any]] = []
     for item in placement.get("placements") or []:
@@ -458,7 +605,7 @@ def normalize_chart_placement(
         chart_names: list[str] = []
         for name in item.get("charts") or []:
             key = str(name).strip()
-            if key in charts and key not in blocked and key not in seen:
+            if key in available and key not in blocked and key not in seen:
                 chart_names.append(key)
                 seen.add(key)
         if not chart_names:
@@ -477,9 +624,11 @@ def fill_missing_section_placements(
     charts: dict[str, str],
     sections: dict[str, str],
     blocked: set[str] | None = None,
+    data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """在 LLM 编排结果上补全未覆盖章节的图表，避免大量图表仅堆在附录。"""
     blocked = blocked or set()
+    available = _placement_keys(charts, data)
     placements: list[dict[str, Any]] = list(placement.get("placements") or [])
     used: set[str] = set()
     section_counts: dict[str, int] = {}
@@ -487,7 +636,7 @@ def fill_missing_section_placements(
         if not isinstance(item, dict):
             continue
         section = str(item.get("section") or "")
-        names = [str(name) for name in item.get("charts") or [] if str(name) in charts and str(name) not in blocked]
+        names = [str(name) for name in item.get("charts") or [] if str(name) in available and str(name) not in blocked]
         if not names:
             continue
         used.update(names)
@@ -501,7 +650,7 @@ def fill_missing_section_placements(
         for name in candidates:
             if count >= limit:
                 break
-            if name not in charts or name in blocked or name in used:
+            if name not in available or name in blocked or name in used:
                 continue
             placements.append({"section": section, "charts": [name], "anchor": None, "note": None})
             used.add(name)
@@ -528,6 +677,7 @@ def extract_section_structure(sections: dict[str, str]) -> dict[str, list[dict[s
         for paragraph in re.split(r"\n\s*\n", text):
             lines = paragraph.splitlines()
             first_line = lines[0].strip() if lines else ""
+            bold_heading = re.match(r"^\*\*(.+?)\*\*\s*:?\s*$", first_line)
             if re.match(r"^#{1,6}\s+\S", first_line):
                 if current_excerpt:
                     subsections.append(
@@ -537,6 +687,19 @@ def extract_section_structure(sections: dict[str, str]) -> dict[str, list[dict[s
                         }
                     )
                 current_heading = re.sub(r"^#{1,6}\s+", "", first_line).strip()
+                current_excerpt = []
+                body = "\n".join(lines[1:]).strip()
+                if body:
+                    current_excerpt.append(body[:320])
+            elif bold_heading:
+                if current_excerpt:
+                    subsections.append(
+                        {
+                            "heading": current_heading,
+                            "excerpt": " ".join(current_excerpt)[:480],
+                        }
+                    )
+                current_heading = bold_heading.group(1).strip()
                 current_excerpt = []
                 body = "\n".join(lines[1:]).strip()
                 if body:
@@ -582,8 +745,10 @@ def local_chart_placement_review(
     *,
     sections: dict[str, str],
     charts: dict[str, str],
+    data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """规则校验：图标题语义与目标章节/小节正文是否匹配。"""
+    """规则校验：图/表标题语义与目标章节/小节正文是否匹配。"""
+    data = data or {}
     issues: list[dict[str, Any]] = []
     for item in placement.get("placements") or []:
         if not isinstance(item, dict):
@@ -592,13 +757,16 @@ def local_chart_placement_review(
         content = str(sections.get(section) or "")
         anchor = str(item.get("anchor") or "").strip()
         for chart_name in item.get("charts") or []:
-            if chart_name not in charts:
+            key = str(chart_name)
+            is_table = key in TABLE_ALL_KEYS
+            if is_table:
+                if not table_data_available(key, data):
+                    continue
+            elif key not in charts:
                 continue
-            caption = _chart_caption(str(chart_name))
-            hints = CHART_SUBHEADING_HINTS.get(str(chart_name), ())
-            anchor_ok = bool(anchor and anchor in content)
+            hints = _visual_subheading_hints(key)
+            anchor_ok = bool(anchor and (anchor in content or f"**{anchor}**" in content))
             hint_ok = any(hint in content for hint in hints)
-            heading_ok = any(hint in content for hint in hints if hint in content)
             structure = extract_section_structure({section: content}).get(section, [])
             subsection_ok = any(
                 any(hint in sub.get("heading", "") or hint in sub.get("excerpt", "") for hint in hints)
@@ -606,14 +774,15 @@ def local_chart_placement_review(
             )
             if anchor_ok or hint_ok or subsection_ok:
                 continue
+            caption = table_caption(key) if is_table else _chart_caption(key)
             issues.append(
                 {
-                    "chart": str(chart_name),
+                    "chart": key,
                     "caption": caption,
                     "section": section,
                     "anchor": anchor or None,
-                    "problem": f"图「{caption}」与章节「{section}」正文/小节标题缺乏语义匹配",
-                    "suggested_section": suggest_section_for_chart(str(chart_name), sections),
+                    "problem": f"「{caption}」与章节「{section}」正文/小节标题缺乏语义匹配",
+                    "suggested_section": suggest_section_for_chart(key, sections),
                     "suggested_anchor": hints[0] if hints else None,
                 }
             )
@@ -627,7 +796,7 @@ def local_chart_placement_review(
 
 
 def suggest_section_for_chart(chart_name: str, sections: dict[str, str]) -> str | None:
-    hints = CHART_SUBHEADING_HINTS.get(chart_name, ())
+    hints = _visual_subheading_hints(chart_name)
     best_section: str | None = None
     best_score = 0
     for section_name, content in sections.items():
@@ -645,7 +814,12 @@ def suggest_section_for_chart(chart_name: str, sections: dict[str, str]) -> str 
             best_section = section_name
     if best_section:
         return best_section
+    from .chart_catalog import DEFAULT_SECTION_TABLE_CANDIDATES
+
     for section_name, candidates in DEFAULT_SECTION_CHART_CANDIDATES.items():
+        if chart_name in candidates and section_name in sections:
+            return section_name
+    for section_name, candidates in DEFAULT_SECTION_TABLE_CANDIDATES.items():
         if chart_name in candidates and section_name in sections:
             return section_name
     return None
@@ -658,8 +832,10 @@ def apply_chart_placement_fixes(
     sections: dict[str, str],
     charts: dict[str, str],
     blocked: set[str] | None = None,
+    data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """根据验证意见修正 placement（章节、anchor）。"""
+    data = data or {}
     blocked = blocked or set()
     issue_map = {
         str(item.get("chart")): item
@@ -673,7 +849,13 @@ def apply_chart_placement_fixes(
             continue
         for chart_name in item.get("charts") or []:
             key = str(chart_name)
-            if key not in charts or key in blocked or key in seen:
+            is_table = key in TABLE_ALL_KEYS
+            if key in blocked or key in seen:
+                continue
+            if is_table:
+                if not table_data_available(key, data):
+                    continue
+            elif key not in charts:
                 continue
             issue = issue_map.get(key)
             section = str(item.get("section") or "").strip()
@@ -684,10 +866,15 @@ def apply_chart_placement_fixes(
                 if suggested_section in sections:
                     section = suggested_section
                 suggested_anchor = str(issue.get("suggested_anchor") or "").strip()
-                if suggested_anchor and suggested_anchor in str(sections.get(section) or ""):
+                section_content = str(sections.get(section) or "")
+                if suggested_anchor and suggested_anchor in section_content:
                     anchor = suggested_anchor
                 elif suggested_anchor:
                     anchor = suggested_anchor
+            elif not anchor:
+                hints = _visual_subheading_hints(key)
+                structure = extract_section_structure({section: str(sections.get(section) or "")}).get(section, [])
+                anchor = _pick_anchor_from_structure(str(sections.get(section) or ""), hints, structure)
             fixed.append({"section": section, "charts": [key], "anchor": anchor, "note": note})
             seen.add(key)
     omitted = sorted({str(name) for name in (placement.get("omitted") or []) if str(name) in charts} | blocked)
@@ -733,12 +920,21 @@ def apply_chart_placements(
         section = str(item.get("section") or "")
         if section not in result or section == CHART_INTERPRETATION_SECTION:
             continue
-        chart_names = [name for name in item.get("charts") or [] if name in charts]
+        chart_names = [
+            name
+            for name in item.get("charts") or []
+            if name in charts
+            or (str(name) in TABLE_ALL_KEYS and table_data_available(str(name), data))
+        ]
         anchor = str(item.get("anchor") or "").strip() or None
         placement_note = str(item.get("note") or "").strip() or None
         for chart_name in chart_names:
-            note = figure_notes.get(chart_name) or placement_note or fallback_chart_note(chart_name, data)
-            block = _format_figure_block(chart_name, charts[chart_name], note)
+            chart_name = str(chart_name)
+            if chart_name in TABLE_ALL_KEYS:
+                block = format_table_block(chart_name, data)
+            else:
+                note = figure_notes.get(chart_name) or placement_note or fallback_chart_note(chart_name, data)
+                block = _format_figure_block(chart_name, charts[chart_name], note)
             if not block:
                 continue
             result[section] = _insert_chart_block(
@@ -831,12 +1027,21 @@ def _insert_chart_block(
         return content
     anchor_text = str(anchor or "").strip()
     if anchor_text:
+        inserted = _insert_after_text(content, anchor_text, block)
+        if inserted != content:
+            return inserted
+        inserted = _insert_after_subheading_hints(content, (anchor_text,), block)
+        if inserted:
+            return inserted
         inserted = _insert_before_text(content, anchor_text, block)
         if inserted != content:
             return inserted
     if chart_name:
-        hints = CHART_SUBHEADING_HINTS.get(chart_name, ())
+        hints = _visual_subheading_hints(chart_name)
         if hints:
+            inserted = _insert_after_subheading_hints(content, hints, block)
+            if inserted:
+                return inserted
             inserted = _insert_after_section_heading(content, hints, block)
             if inserted:
                 return inserted
@@ -860,7 +1065,9 @@ def _insert_after_section_heading(content: str, hints: tuple[str, ...], block: s
     for index, paragraph in enumerate(paragraphs):
         lines = paragraph.splitlines()
         first_line = lines[0].strip() if lines else ""
-        if not re.match(r"^#{1,6}\s+\S", first_line):
+        is_md_heading = bool(re.match(r"^#{1,6}\s+\S", first_line))
+        is_bold_heading = bool(re.match(r"^\*\*(.+?)\*\*", first_line))
+        if not is_md_heading and not is_bold_heading:
             continue
         if not any(hint in first_line or hint in paragraph for hint in hints):
             continue
@@ -925,9 +1132,39 @@ def _section_contains_chart_block(content: str, block: str) -> bool:
     paths = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", block)
     if not paths:
         paths = re.findall(r'<img src="([^"]+)"', block)
-    if not paths:
-        return False
-    return any(path in content for path in paths)
+    if paths:
+        return any(path in content for path in paths)
+    table_title = re.search(r"^####\s+表\s·\s+(.+)$", block, flags=re.MULTILINE)
+    if table_title:
+        return table_title.group(0) in content
+    return block.strip() in content
+
+
+def _visual_subheading_hints(visual_key: str) -> tuple[str, ...]:
+    if visual_key in TABLE_SUBHEADING_HINTS:
+        return TABLE_SUBHEADING_HINTS[visual_key]
+    return CHART_SUBHEADING_HINTS.get(visual_key, ())
+
+
+def _pick_anchor_from_structure(
+    content: str,
+    hints: tuple[str, ...],
+    structure: list[dict[str, str]],
+) -> str | None:
+    for sub in structure:
+        heading = sub.get("heading", "")
+        if any(h in heading for h in hints):
+            return heading[:40]
+    for hint in hints:
+        if hint in content:
+            return hint
+    return hints[0] if hints else None
+
+
+def table_caption(table_key: str) -> str:
+    from .table_blocks import table_caption as _tc
+
+    return _tc(table_key)
 
 
 def _strip_embedded_chart_blocks(content: str) -> str:
@@ -939,6 +1176,21 @@ def _strip_embedded_chart_blocks(content: str) -> str:
 
 _chart_caption = chart_caption
 
+_GENERIC_FIGURE_NOTE_FRAGMENTS = (
+    "横截面条形图展示各指标相对高低",
+    "便于横向比较",
+    "形态待数据补充",
+)
+
+
+def _sanitize_figure_note(note: str | None, chart_name: str) -> str:
+    text = str(note or CHART_BRIEF_NOTES.get(chart_name) or "").strip()
+    if not text:
+        return ""
+    if any(fragment in text for fragment in _GENERIC_FIGURE_NOTE_FRAGMENTS):
+        return ""
+    return text
+
 
 def _format_chart_markdown(name: str, path: str) -> list[str]:
     return [_format_figure_block(name, path, CHART_BRIEF_NOTES.get(name, _chart_caption(name)))]
@@ -948,7 +1200,7 @@ def _format_figure_block(chart_name: str, path: str, note: str | None = None) ->
     caption = _chart_caption(chart_name)
     safe_path = _normalize_chart_path(path)
     lines = [f"#### 图 · {caption}", "", f"![{caption}]({safe_path})", ""]
-    caption_note = str(note or CHART_BRIEF_NOTES.get(chart_name) or "").strip()
+    caption_note = _sanitize_figure_note(note, chart_name)
     if caption_note:
         lines.append(f"**图注** {caption_note}")
     return "\n".join(lines).strip()
@@ -973,6 +1225,8 @@ def _insert_after_first_heading(content: str, block: str) -> str:
 
 def build_data_summary(data: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {
+        "stock_code": str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0]),
+        "sec_name": str(data.get("sec_name") or ""),
         "technical": data.get("technical"),
         "factor": data.get("factor"),
         "industry": data.get("industry"),

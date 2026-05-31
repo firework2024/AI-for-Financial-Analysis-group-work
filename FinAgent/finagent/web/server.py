@@ -76,7 +76,7 @@ def _find_output_file(filename: str) -> Path | None:
             return candidate
 
     basename = Path(relative).name
-    if basename != relative:
+    if basename:
         for directory in _output_dirs():
             charts_root = directory / "charts"
             if not charts_root.is_dir():
@@ -203,11 +203,21 @@ def _report_type(payload: dict[str, Any]) -> str:
 def _report_summary(payload: dict[str, Any], filename: str) -> dict[str, Any]:
     report_type = _report_type(payload)
     meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    sec_name = ""
 
     if report_type == "multi_analyze":
         order_book_id = str(meta.get("order_book_id") or "")
-        stock_code = order_book_id.split(".")[0] if order_book_id else filename.split("_")[0]
-        title = f"{stock_code} 多智能体报告"
+        data_block = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        if not order_book_id:
+            order_book_id = str(data_block.get("order_book_id") or "")
+        stock_code = (
+            str(meta.get("stock_code") or data_block.get("stock_code") or "").strip()
+            or (order_book_id.split(".")[0] if order_book_id else filename.split("_")[0])
+        )
+        from ..multi_report import multi_report_display_title, resolve_multi_sec_name
+
+        sec_name = resolve_multi_sec_name(payload, stock_code)
+        title = multi_report_display_title(stock_code=stock_code, sec_name=sec_name)
         subtitle = meta.get("end_date") or meta.get("generated_at")
     elif report_type == "annual_analyze":
         stock_code = str(meta.get("stock_code") or payload.get("annual_report", {}).get("stock_code") or filename.split("_")[0])
@@ -229,6 +239,7 @@ def _report_summary(payload: dict[str, Any], filename: str) -> dict[str, Any]:
         "filename": filename,
         "report_type": report_type,
         "stock_code": stock_code,
+        "sec_name": sec_name,
         "title": title,
         "subtitle": subtitle,
         "generated_at": generated_at,

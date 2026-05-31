@@ -12,6 +12,7 @@ def test_financial_agent_output_shape():
     assert set(result) == {
         "positive_signals",
         "negative_signals",
+        "display_signals",
         "key_risks",
         "reviewed_signals",
         "raw_signals",

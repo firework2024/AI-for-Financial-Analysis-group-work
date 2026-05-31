@@ -44,6 +44,9 @@ def test_chart_alias_route():
     try:
         client = TestClient(create_app())
         auth = client.post("/api/auth/register", json={"username": "chart_user", "password": "secret12"})
+        if auth.status_code != 200:
+            auth = client.post("/api/auth/login", json={"username": "chart_user", "password": "secret12"})
+        assert auth.status_code == 200, auth.text
         token = auth.json()["token"]
         response = client.get(
             "/charts/_test_alias/alias.png",

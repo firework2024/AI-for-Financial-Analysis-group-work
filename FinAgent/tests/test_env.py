@@ -53,6 +53,7 @@ def test_load_dotenv_skips_empty_values(monkeypatch, tmp_path):
 def test_prepare_rqdata_env_reads_conf_file(monkeypatch, tmp_path):
     conf = tmp_path / "rq.conf"
     conf.write_text("tcp://license:token@rqdatad-pro.ricequant.com:16011", encoding="utf-8")
+    monkeypatch.setattr(env, "project_root", lambda: tmp_path)
     monkeypatch.setenv("RQDATAC2_CONF_FILE", str(conf))
     monkeypatch.delenv("RQDATAC2_CONF", raising=False)
     env.load_dotenv.cache_clear()

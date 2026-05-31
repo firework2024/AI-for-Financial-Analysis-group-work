@@ -7,6 +7,7 @@ from typing import Any
 from .env import get_env
 from .llm_settings import has_llm_api_key, llm_api_key, llm_base_url, llm_model
 from .report_format import normalize_section_text
+from .report_writing import annual_director_structure_guide, annual_director_system_prompt
 
 
 def _openai_client(*, timeout: float | None = None):
@@ -72,7 +73,7 @@ def financial_analysis_agent(
 
 def investment_director_analysis(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
     if not has_llm_api_key():
-        return _local_summary(mda_text, financial_analysis, company_context)
+        return normalize_section_text(_local_summary(mda_text, financial_analysis, company_context), "投资总监分析")
 
     client = _openai_client()
     model = llm_model()
@@ -81,12 +82,13 @@ def investment_director_analysis(mda_text: str, financial_analysis: dict[str, An
         **_chat_completion_kwargs(
             model=model,
             messages=[
-            {"role": "system", "content": "你是投资总监。请基于 MD&A 与财务数据解释经营表现，给出克制、可追溯的总结分析，不给买卖建议。"},
-            {"role": "user", "content": prompt},
+                {"role": "system", "content": annual_director_system_prompt()},
+                {"role": "user", "content": prompt},
             ],
+            max_tokens=int(get_env("OPENAI_DIRECTOR_MAX_TOKENS", "4096")),
         )
     )
-    return _clean_model_text(response.choices[0].message.content or "")
+    return normalize_section_text(_clean_model_text(response.choices[0].message.content or ""), "投资总监分析")
 
 
 def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
@@ -145,12 +147,18 @@ def llm_json(system: str, user: str) -> dict[str, Any]:
     return json.loads(_extract_json_object(content))
 
 
-def _chat_completion_kwargs(*, model: str, messages: list[dict[str, str]], response_format: dict[str, str] | None = None) -> dict[str, Any]:
+def _chat_completion_kwargs(
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    response_format: dict[str, str] | None = None,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": 0.2,
-        "max_tokens": int(get_env("OPENAI_MAX_TOKENS", "2600")),
+        "max_tokens": max_tokens if max_tokens is not None else int(get_env("OPENAI_MAX_TOKENS", "2600")),
     }
     base_url = (llm_base_url() or "").lower()
     if "moonshot" in base_url or "kimi" in model.lower():
@@ -178,14 +186,33 @@ def _extract_json_object(text: str) -> str:
 
 
 def _build_prompt(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
+    metrics = financial_analysis.get("metrics") or []
+    crosswalk = financial_analysis.get("mda_crosswalk") or []
+    articulation = financial_analysis.get("articulation_checks") or []
     return (
         "公司上下文：\n"
         f"{json.dumps(company_context, ensure_ascii=False, indent=2)}\n\n"
-        "财务数据分析智能体输出：\n"
-        f"{json.dumps(financial_analysis, ensure_ascii=False, indent=2)}\n\n"
-        "MD&A 文本：\n"
+        "财务数据分析智能体输出（含 signals / metrics / data_notes，请优先引用 metrics 与 reviewed_signals 中的数字）：\n"
+        f"{json.dumps(financial_analysis, ensure_ascii=False, indent=2)[:14000]}\n\n"
+        + (f"核心指标逐年表（{len(metrics)} 年）：\n{json.dumps(metrics, ensure_ascii=False, indent=2)}\n\n" if metrics else "")
+        + (
+            "报表勾稽对照素材（融入各段分析，勿单独成章）：\n"
+            f"{json.dumps(crosswalk[:12], ensure_ascii=False, indent=2)}\n\n"
+            if crosswalk
+            else ""
+        )
+        + (
+            f"结构化勾稽项摘要：\n{json.dumps(articulation, ensure_ascii=False, indent=2)}\n\n"
+            if articulation
+            else ""
+        )
+        + "MD&A 文本：\n"
         f"{mda_text[:12000]}\n\n"
-        "请融合财务数据分析智能体给出的数据信号与MD&A的信息进行全面的总结分析。"
+        + annual_director_structure_guide()
+        + "\n\n请融合财务信号、报表勾稽与 MD&A："
+        "将 mda_crosswalk 中的对照信息写入「利润驱动」「现金流质量」「营运资本」等对应段落，"
+        "用「报表显示…，MD&A 称…，因此…」的句式；禁止单独设「MD&A与报表勾稽」章节或小标题。"
+        "MD&A 未覆盖项写入数据局限。按上述结构输出完整分析。"
     )
 
 

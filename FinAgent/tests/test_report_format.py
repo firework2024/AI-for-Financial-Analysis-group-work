@@ -1,5 +1,9 @@
-from finagent.multi_report import strip_data_limitation_blocks
-from finagent.report_format import build_report_toc, clean_chart_prose, polish_field_refs, render_toc_markdown, section_anchor
+from finagent.multi_report import (
+    multi_report_display_title,
+    resolve_multi_sec_name,
+    strip_data_limitation_blocks,
+)
+from finagent.report_format import build_report_toc, clean_chart_prose, normalize_section_text, polish_field_refs, render_toc_markdown, section_anchor
 
 
 def test_polish_field_refs_removes_redundant_metadata():
@@ -73,3 +77,174 @@ def test_clean_embedded_markdown_image():
     out = clean_chart_prose(text)
     assert "![price volume]" not in out
     assert "正文继续" in out
+
+
+def test_resolve_multi_sec_name_from_summary():
+    payload = {
+        "meta": {"order_book_id": "600519.XSHG"},
+        "summary": "贵州茅台（600519.XSHG）近期量价与基本面均承压。",
+    }
+    assert resolve_multi_sec_name(payload, "600519") == "贵州茅台"
+
+
+def test_multi_report_display_title_includes_company_name():
+    title = multi_report_display_title(stock_code="600519", sec_name="贵州茅台")
+    assert title == "600519 贵州茅台 多智能体报告"
+
+
+def test_strip_llm_revise_preamble_from_summary():
+    text = (
+        "好的，这是根据您提供的全部输入信息，为您汇总生成的《执行摘要》。\n\n"
+        "宁德时代当前呈现“基本面强韧、技术面承压”的格局。"
+    )
+    out = normalize_section_text(text, "执行摘要")
+    assert not out.startswith("好的")
+    assert "宁德时代" in out
+
+
+def test_strip_llm_revise_preamble_from_section():
+    text = (
+        "好的，这是根据您的反馈重写的《量价与趋势》章节。我已将融资融券内容移除。\n\n"
+        "### 近期价格与量价\n\n- **日度价格走势**：截至2026年5月29日"
+    )
+    out = normalize_section_text(text, "量价与趋势")
+    assert "好的" not in out.splitlines()[0]
+    assert "### 近期价格与量价" in out
+
+
+def test_apply_chart_placements_inserts_inline_images():
+    from finagent.multi_report import apply_chart_placements, build_default_chart_placement
+
+    sections = {"量价与趋势": "### 量价\n\n正文。"}
+    charts = {"price_volume": "charts/test/price_volume.png"}
+    placement = build_default_chart_placement(charts=charts, sections=sections)
+    result, _ = apply_chart_placements(sections, charts, placement, data={})
+    assert "![收盘价与成交量]" in result["量价与趋势"]
+    assert "price_volume.png" in result["量价与趋势"]
+
+
+def test_apply_chart_placements_inserts_quality_snapshot_table():
+    from finagent.multi_report import apply_chart_placements
+
+    sections = {"基本面与估值": "### 盈利\n\n正文。"}
+    charts = {"valuation_factors": "charts/test/valuation_factors.png"}
+    data = {
+        "factor": {
+            "gross_profit_margin_ttm": 0.2621,
+            "net_profit_margin_ttm": 0.1809,
+            "roe_ttm": 0.15,
+        }
+    }
+    placement = {
+        "placements": [{"section": "基本面与估值", "charts": ["latest_quality_snapshot"], "anchor": None, "note": None}],
+        "omitted": [],
+    }
+    result, _ = apply_chart_placements(sections, charts, placement, data=data)
+    body = result["基本面与估值"]
+    assert "#### 表 · 最新盈利质量因子" in body
+    assert "| 毛利率(TTM) | 26.21% |" in body
+    assert "latest_quality_snapshot.png" not in body
+    assert "**图注**" not in body
+
+
+def test_apply_chart_placements_inserts_after_bold_subheading():
+    from finagent.multi_report import apply_chart_placements
+
+    sections = {
+        "资金与交易结构": "**融资融券**\n\n融资余额上升。\n\n**股东与股本结构**\n\n股本稳定。"
+    }
+    charts = {"margin_enhanced": "charts/test/margin_enhanced.png"}
+    placement = {
+        "placements": [
+            {
+                "section": "资金与交易结构",
+                "charts": ["margin_enhanced"],
+                "anchor": "融资融券",
+                "note": None,
+            }
+        ],
+        "omitted": [],
+    }
+    result, _ = apply_chart_placements(sections, charts, placement, data={})
+    body = result["资金与交易结构"]
+    assert body.index("#### 图") < body.index("融资余额上升")
+    assert "margin_enhanced.png" in body
+
+
+def test_local_visual_need_picks_margin_for_capital_section():
+    from finagent.visual_placement import local_visual_need
+
+    sections = {
+        "量价与技术面": "价格与均线分析。",
+        "资金与交易结构": "**融资融券**\n\n融资余额从211亿升至221亿。",
+        "基本面与估值": "PE 24倍。",
+    }
+    charts = {"margin_enhanced": "charts/test/margin_enhanced.png", "price_volume": "charts/test/price_volume.png"}
+    data = {
+        "securities_margin": {
+            "row_count": 2,
+            "rows": [
+                {"date": "2026-05-27", "margin_balance": 22100000000, "buy_on_margin_value": 2100000000},
+                {"date": "2026-05-28", "margin_balance": 22000000000, "buy_on_margin_value": 760000000},
+            ],
+        },
+        "factor": {"pe_ratio_ttm": 24.8},
+    }
+    need = local_visual_need(data=data, sections=sections, charts=charts)
+    keys = [item["visual_key"] for item in need.get("visuals") or []]
+    assert "margin_enhanced" in keys or "margin_snapshot_table" in keys
+
+
+def test_section_writing_style_hint_for_risk_section():
+    from finagent.report_format import section_writing_style_hint
+
+    hint = section_writing_style_hint("综合风险与数据局限")
+    assert "核心结论" in hint
+    assert "数据局限" in hint
+
+
+def test_normalize_core_conclusion_removes_orphan_colon():
+    raw = (
+        "**核心结论**\n\n"
+        "：2025年营收与净利润连续第二年下滑，但经营现金流暴增398.7%，利润与现金流严重背离。\n\n"
+        "### 后续章节"
+    )
+    out = normalize_section_text(raw, "投资总监分析")
+    assert "\n\n：2025" not in out
+    assert "2025年营收" in out
+
+
+def test_normalize_section_forces_lead_conclusion():
+    text = "**趋势概览**\n\n近20日收益率为-5.36%，显示短期价格处于下行趋势。"
+    out = normalize_section_text(text, "量价与技术面")
+    assert out.startswith("**核心结论**")
+
+
+def test_structure_risk_section_splits_topics_and_limitations():
+    wall = (
+        "截至2026年5月29日，600519.XSHG收盘价为1326.0元，较20日均线折价0.55%，"
+        "近20日收益率为-5.36%，显示短期价格处于下行趋势。"
+        "基本面方面，截至2026-05-29，600519.XSHG市盈率（TTM）为20.04倍，"
+        "毛利率（TTM）高达90.50%，但归母净利润同比增长率为-7.07%。"
+        "融资融券方面，截至2026-05-28，融资余额约200.48亿元，融资买入额达14.66亿元。"
+        "资金流向数据缺失（row_count为0），无法评估主力资金流向。"
+        "宏观利率方面，2026-05-29 Shibor隔夜为1.324%，10年期国债收益率为1.74%。"
+        "数据局限包括：1）资金流向数据完全缺失；2）成长性指标缺乏季度环比；3）无行业对比数据。"
+    )
+    out = normalize_section_text(wall, "综合风险与数据局限")
+    assert "**核心结论**" in out
+    assert "**基本面**" in out
+    assert "**融资融券**" in out
+    assert "**宏观利率**" in out
+    assert "**数据局限**" in out
+    assert "- 资金流向数据完全缺失" in out
+    assert "- 成长性指标缺乏季度环比" in out
+    assert "1）" not in out
+
+
+def test_split_long_paragraph_into_shorter_blocks():
+    long_para = "第一句内容较长但仍需保留。" * 25
+    out = normalize_section_text(long_para, "量价与技术面")
+    paragraphs = [p for p in out.split("\n\n") if p.strip()]
+    assert len(paragraphs) >= 2
+    assert all(len(p) <= 320 for p in paragraphs)

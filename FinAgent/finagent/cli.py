@@ -55,7 +55,9 @@ def main() -> None:
                 )
             )
             print(f"Markdown report: {result['output_markdown']}")
-            print(f"HTML report: {result['output_html']}")
+            html_path = result.get("output_html") or (result.get("meta") or {}).get("output_html")
+            if html_path:
+                print(f"HTML report: {html_path}")
             print(f"JSON data: {result['output_json']}")
         elif args.command == "serve":
             from .web.server import serve

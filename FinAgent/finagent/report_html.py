@@ -82,26 +82,51 @@ h3.chart-group {
 }
 .draft-banner p { margin: 0; }
 .report-toc {
-  margin: 0 0 1.75rem;
-  padding: 1rem 1.15rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-soft);
+  overflow: hidden;
 }
-.report-toc h2 {
-  margin: 0 0 0.65rem;
-  font-size: 1.05rem;
+.report-toc-details { margin: 0; }
+.report-toc-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
   color: #374151;
+  user-select: none;
+}
+.report-toc-details > summary::-webkit-details-marker { display: none; }
+.report-toc-details > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.35rem;
+  transition: transform 0.15s ease;
+  color: #64748b;
+}
+.report-toc-details[open] > summary::before { transform: rotate(90deg); }
+.report-toc-count {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 0.35rem;
 }
 .report-toc ul {
   margin: 0;
-  padding-left: 1.2rem;
+  padding: 0.35rem 0.85rem 0.65rem 1.35rem;
   columns: 2;
-  column-gap: 2rem;
+  column-gap: 1.5rem;
+  border-top: 1px solid var(--border);
+  background: #fff;
 }
 .report-toc li {
-  margin: 0.25rem 0;
+  margin: 0.15rem 0;
   break-inside: avoid;
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 .report-toc a {
   color: var(--accent);
@@ -111,7 +136,10 @@ h3.chart-group {
   text-decoration: underline;
 }
 @media (max-width: 720px) {
-  .report-toc ul { columns: 1; }
+  .report-toc { margin-bottom: 0.85rem; }
+  .report-toc-details > summary { padding: 0.5rem 0.75rem; font-size: 0.82rem; }
+  .report-toc ul { columns: 1; padding: 0.3rem 0.65rem 0.55rem 1.1rem; }
+  .report-toc li { font-size: 0.8rem; margin: 0.1rem 0; }
 }
 ul, ol { margin: 0.75rem 0; padding-left: 1.4rem; font-size: 1rem; }
 li { margin: 0.35rem 0; }

@@ -34,6 +34,8 @@ def _sample_data():
             "gross_profit_margin_ttm": 0.9 - i * 0.001,
             "net_profit_growth_ratio_ttm": 0.12 - i * 0.002,
             "debt_to_asset_ratio": 0.2 + i * 0.001,
+            "current_ratio": 1.5 - i * 0.01,
+            "quick_ratio": 1.2 - i * 0.008,
         }
         for i, d in enumerate(dates)
     ]
@@ -90,6 +92,31 @@ def test_local_chart_need_recognizes_new_templates():
     need = local_chart_need(data=data, sections=sections, plan={})
     picked = {item["chart_key"] for item in need.get("charts") or []}
     assert "relative_return" in picked or "rolling_volatility" in picked
+
+
+def test_dividend_spread_chart(tmp_path: Path):
+    data = _sample_data()
+    data["factor"] = {"dividend_yield_ttm": 0.0389}
+    data["yield_curve"] = {
+        "rows": [{"date": "2026-05-29", "1Y": 0.011578, "10Y": 0.01709}],
+        "row_count": 1,
+    }
+    charts = chart_agent(data=data, output_dir=tmp_path, only_keys={"dividend_spread"})
+    assert "dividend_spread" in charts
+    assert Path(charts["dividend_spread"]).exists()
+    assert Path(charts["dividend_spread"]).stat().st_size > 500
+
+
+def test_gov_yield_trend_chart(tmp_path: Path):
+    data = _sample_data()
+    rows = [
+        {"date": d.strftime("%Y-%m-%d"), "1Y": 0.011 + i * 0.0001, "10Y": 0.017 + i * 0.00005}
+        for i, d in enumerate(pd.date_range("2026-05-20", periods=8, freq="B"))
+    ]
+    data["yield_curve"] = {"rows": rows, "row_count": len(rows)}
+    charts = chart_agent(data=data, output_dir=tmp_path, only_keys={"gov_yield_trend"})
+    assert "gov_yield_trend" in charts
+    assert Path(charts["gov_yield_trend"]).exists()
 
 
 def test_parametric_line_chart(tmp_path: Path):

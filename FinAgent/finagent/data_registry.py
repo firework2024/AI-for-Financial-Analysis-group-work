@@ -88,11 +88,16 @@ CHART_DATA_SOURCE: dict[str, str] = {
     "dividend_history": "dividend",
     "share_structure": "shares",
     "shibor_rates": "interbank_rate",
+    "gov_yield_trend": "yield_curve",
     "yield_curve_snapshot": "yield_curve",
     "latest_valuation_snapshot": "factor",
     "latest_quality_snapshot": "factor",
     "latest_liquidity_snapshot": "factor",
     "latest_growth_snapshot": "factor",
+    "margin_enhanced": "securities_margin",
+    "valuation_percentile": "factor_history",
+    "share_structure_pie": "shares",
+    "dividend_spread": "yield_curve",
 }
 
 

@@ -45,12 +45,101 @@ CHART_CAPTIONS: dict[str, str] = {
     "dividend_history": "分红历史",
     "share_structure": "股本结构",
     "shibor_rates": "Shibor 利率",
+    "gov_yield_trend": "国债收益率走势",
     "yield_curve_snapshot": "收益率曲线快照",
     "latest_valuation_snapshot": "最新估值快照",
     "latest_quality_snapshot": "最新质量因子快照",
     "latest_liquidity_snapshot": "最新偿债与流动性快照",
     "latest_growth_snapshot": "最新成长因子快照",
+    "margin_enhanced": "融资余额与买卖额",
+    "valuation_percentile": "PE/PB 历史分位",
+    "share_structure_pie": "股本结构",
+    "dividend_spread": "股息率与无风险利率利差",
 }
+
+# 量纲差异大、不适合同轴条形图，改在正文中以表格展示
+TABLE_SNAPSHOT_SPECS: dict[str, tuple[str, ...]] = {
+    "latest_quality_snapshot": (
+        "gross_profit_margin_ttm",
+        "net_profit_margin_ttm",
+        "roe_ttm",
+    ),
+    "latest_valuation_snapshot": (
+        "market_cap",
+        "pe_ratio_ttm",
+        "pb_ratio_ttm",
+        "ps_ratio_ttm",
+        "dividend_yield_ttm",
+    ),
+    "latest_liquidity_snapshot": (
+        "current_ratio",
+        "quick_ratio",
+        "debt_to_asset_ratio",
+    ),
+}
+TABLE_SNAPSHOT_KEYS = frozenset(TABLE_SNAPSHOT_SPECS)
+
+TABLE_CAPTIONS: dict[str, str] = {
+    "latest_quality_snapshot": "最新盈利质量因子",
+    "latest_valuation_snapshot": "最新估值因子",
+    "latest_liquidity_snapshot": "最新偿债与流动性",
+    "technical_snapshot_table": "技术指标快照",
+    "margin_snapshot_table": "融资融券快照",
+    "margin_period_table": "两融区间变动",
+    "share_structure_table": "股本结构快照",
+    "trading_activity_table": "成交活跃度",
+    "funding_cost_table": "股息与资金成本",
+    "dividend_recent_table": "近期分红记录",
+}
+
+TABLE_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
+    "latest_quality_snapshot": ("盈利", "毛利率", "净利率", "ROE", "财务健康"),
+    "latest_valuation_snapshot": ("估值", "市盈率", "市净率", "PE", "PB", "PS"),
+    "latest_liquidity_snapshot": ("偿债", "流动比率", "速动", "负债"),
+    "technical_snapshot_table": ("RSI", "均线", "MA20", "MA60", "技术指标", "收益率"),
+    "margin_snapshot_table": ("融资", "两融", "融券", "杠杆", "融资融券"),
+    "margin_period_table": ("融资余额", "近两周", "攀升", "两融", "变动", "区间"),
+    "share_structure_table": ("股东", "股本", "流通", "自由流通", "限售"),
+    "trading_activity_table": ("成交", "换手", "成交额", "资金流向", "活跃度", "放量"),
+    "funding_cost_table": ("分红", "资金成本", "Shibor", "国债", "股息", "无风险"),
+    "dividend_recent_table": ("分红", "股息", "派息"),
+}
+
+MAX_TABLES_PER_SECTION = 2
+SECTION_TABLE_LIMITS: dict[str, int] = {
+    "资金与交易结构": 4,
+    "基本面与估值": 3,
+}
+
+DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
+    MARKET_TECH_SECTION: ("technical_snapshot_table",),
+    "基本面与估值": (
+        "latest_valuation_snapshot",
+        "latest_quality_snapshot",
+        "latest_liquidity_snapshot",
+        "dividend_recent_table",
+        "funding_cost_table",
+    ),
+    "资金与交易结构": (
+        "margin_snapshot_table",
+        "margin_period_table",
+        "trading_activity_table",
+        "share_structure_table",
+    ),
+}
+
+TABLE_ALL_KEYS = frozenset(
+    set(TABLE_SNAPSHOT_KEYS)
+    | {
+        "technical_snapshot_table",
+        "margin_snapshot_table",
+        "margin_period_table",
+        "share_structure_table",
+        "trading_activity_table",
+        "funding_cost_table",
+        "dividend_recent_table",
+    }
+)
 
 CHART_GROUPS: list[tuple[str, tuple[str, ...]]] = [
     (
@@ -78,6 +167,7 @@ CHART_GROUPS: list[tuple[str, tuple[str, ...]]] = [
             "block_trade_activity",
             "margin_balances",
             "margin_activity",
+            "margin_enhanced",
         ),
     ),
     (
@@ -97,7 +187,7 @@ CHART_GROUPS: list[tuple[str, tuple[str, ...]]] = [
             "latest_growth_snapshot",
         ),
     ),
-    ("宏观利率", ("shibor_rates", "yield_curve_snapshot")),
+    ("宏观利率", ("shibor_rates", "gov_yield_trend", "yield_curve_snapshot")),
 ]
 
 CHART_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
@@ -118,6 +208,7 @@ CHART_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "block_trade_activity": ("大宗", "大宗交易", "折价"),
     "margin_balances": ("融资余额", "融券余额", "两融余额"),
     "margin_activity": ("融资买入", "融券卖出", "两融交易"),
+    "margin_enhanced": ("融资", "两融", "融券", "杠杆"),
     "valuation_factors": ("估值", "PE", "PB", "PS"),
     "market_cap_trend": ("市值", "总市值"),
     "profitability_factors": ("盈利", "毛利率", "净利率", "ROE"),
@@ -126,11 +217,15 @@ CHART_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "debt_ratio_trend": ("负债", "资产负债率", "杠杆"),
     "dividend_history": ("分红", "股息"),
     "share_structure": ("股本", "流通", "总股本"),
-    "shibor_rates": ("Shibor", "同业", "短期资金"),
+    "shibor_rates": ("Shibor", "同业", "短期资金", "银行间"),
+    "gov_yield_trend": ("国债", "收益率", "10年", "1年", "期限利差", "无风险"),
     "yield_curve_snapshot": ("收益率曲线", "国债", "无风险"),
     "latest_valuation_snapshot": ("估值快照", "市值"),
     "latest_quality_snapshot": ("质量因子", "偿债", "盈利能力"),
     "latest_growth_snapshot": ("成长因子", "增长", "增速"),
+    "valuation_percentile": ("估值", "PE", "PB", "分位"),
+    "share_structure_pie": ("股本", "流通", "结构"),
+    "dividend_spread": ("股息", "分红", "利差"),
 }
 
 CHART_BRIEF_NOTES: dict[str, str] = {
@@ -151,29 +246,31 @@ CHART_BRIEF_NOTES: dict[str, str] = {
     "growth_factors": "利润与营收增长因子，观察成长性变化（已换算为 %）。",
     "liquidity_factors": "流动比率与速动比率，观察短期偿债能力。",
     "debt_ratio_trend": "资产负债率时间序列（米筐返回百分数点）。",
-    "latest_valuation_snapshot": "最新估值因子横截面，注意量纲差异。",
-    "latest_quality_snapshot": "盈利与偿债类因子快照。",
     "latest_liquidity_snapshot": "偿债与流动性因子快照。",
     "latest_growth_snapshot": "成长类因子快照，可与正文增长表述对照。",
     "shibor_rates": "利率环境变化会影响权益资产折现率与相对吸引力。",
+    "gov_yield_trend": "长端国债收益率下行往往压低 DCF 折现率并抬升高股息资产相对吸引力。",
     "yield_curve_snapshot": "利率环境变化会影响权益资产折现率与相对吸引力。",
 }
 
+_MARKET_TECH_CHART_CANDIDATES: tuple[str, ...] = (
+    "price_volume",
+    "moving_averages",
+    "relative_return",
+    "technical_indicators",
+    "drawdown",
+    "nav_curve",
+    "turnover_rate",
+    "turnover_amount",
+    "daily_return",
+    "rolling_volatility",
+    "cumulative_return",
+)
+
 DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
-    MARKET_TECH_SECTION: (
-        "price_volume",
-        "moving_averages",
-        "relative_return",
-        "technical_indicators",
-        "drawdown",
-        "nav_curve",
-        "turnover_rate",
-        "turnover_amount",
-        "daily_return",
-        "rolling_volatility",
-        "cumulative_return",
-    ),
+    MARKET_TECH_SECTION: _MARKET_TECH_CHART_CANDIDATES,
     "基本面与估值": (
+        "valuation_percentile",
         "valuation_factors",
         "market_cap_trend",
         "profitability_factors",
@@ -181,13 +278,16 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
         "liquidity_factors",
         "debt_ratio_trend",
         "dividend_history",
+        "dividend_spread",
         "share_structure",
+        "share_structure_pie",
         "latest_valuation_snapshot",
         "latest_quality_snapshot",
         "latest_liquidity_snapshot",
         "latest_growth_snapshot",
     ),
     "资金与交易结构": (
+        "margin_enhanced",
         "capital_flow",
         "cumulative_capital_flow",
         "buy_sell_value",
@@ -195,11 +295,23 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
         "margin_balances",
         "margin_activity",
     ),
-    "宏观利率背景": ("shibor_rates", "yield_curve_snapshot"),
+    "宏观利率背景": ("shibor_rates", "gov_yield_trend", "yield_curve_snapshot"),
+    "量价与趋势": _MARKET_TECH_CHART_CANDIDATES,
+    "技术因素": (
+        "technical_indicators",
+        "drawdown",
+        "rolling_volatility",
+        "daily_return",
+        "cumulative_return",
+    ),
 }
 
 MAX_INLINE_CHARTS_PER_SECTION = 2
-SECTION_INLINE_CHART_LIMITS: dict[str, int] = {MARKET_TECH_SECTION: 4}
+SECTION_INLINE_CHART_LIMITS: dict[str, int] = {
+    MARKET_TECH_SECTION: 4,
+    "量价与趋势": 4,
+    "宏观利率背景": 2,
+}
 
 
 def chart_caption(name: str) -> str:

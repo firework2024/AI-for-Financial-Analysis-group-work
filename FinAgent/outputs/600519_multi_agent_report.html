@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>600519.XSHG 多智能体研究报告</title>
+  <title>600519 贵州茅台 多智能体研究报告</title>
   <style>
 :root {
   color-scheme: light;
@@ -81,6 +81,66 @@ h3.chart-group {
   font-size: 0.95rem;
 }
 .draft-banner p { margin: 0; }
+.report-toc {
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.report-toc-details { margin: 0; }
+.report-toc-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #374151;
+  user-select: none;
+}
+.report-toc-details > summary::-webkit-details-marker { display: none; }
+.report-toc-details > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.35rem;
+  transition: transform 0.15s ease;
+  color: #64748b;
+}
+.report-toc-details[open] > summary::before { transform: rotate(90deg); }
+.report-toc-count {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 0.35rem;
+}
+.report-toc ul {
+  margin: 0;
+  padding: 0.35rem 0.85rem 0.65rem 1.35rem;
+  columns: 2;
+  column-gap: 1.5rem;
+  border-top: 1px solid var(--border);
+  background: #fff;
+}
+.report-toc li {
+  margin: 0.15rem 0;
+  break-inside: avoid;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.report-toc a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.report-toc a:hover {
+  text-decoration: underline;
+}
+@media (max-width: 720px) {
+  .report-toc { margin-bottom: 0.85rem; }
+  .report-toc-details > summary { padding: 0.5rem 0.75rem; font-size: 0.82rem; }
+  .report-toc ul { columns: 1; padding: 0.3rem 0.65rem 0.55rem 1.1rem; }
+  .report-toc li { font-size: 0.8rem; margin: 0.1rem 0; }
+}
 ul, ol { margin: 0.75rem 0; padding-left: 1.4rem; font-size: 1rem; }
 li { margin: 0.35rem 0; }
 hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
@@ -128,10 +188,27 @@ th { background: var(--bg-soft); text-align: left; }
   display: block;
   max-width: 100%;
   height: auto;
-  margin: 1rem auto;
+  margin: 0.5rem auto 0.75rem;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+.report-figure {
+  margin: 0.75rem 0 0.25rem;
+  text-align: center;
+}
+.report-figure img {
+  margin: 0 auto;
+}
+.figure-note {
+  margin: 0 0 1.75rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-soft);
+  font-size: 0.94rem;
+  color: #374151;
+  line-height: 1.6;
+}
+.figure-note strong { color: #1e40af; }
 .meta-list { color: var(--muted); }
 .disclaimer {
   margin-top: 2rem;
@@ -153,131 +230,131 @@ th { background: var(--bg-soft); text-align: left; }
 </style>
 </head>
 <body>
-  <main class="page"><h1>600519.XSHG 多智能体研究报告</h1>
+  <main class="page"><h1>600519 贵州茅台 多智能体研究报告</h1>
 <aside class="draft-banner"><p>&gt; <strong>草稿状态</strong>：验证评分 72，结论 <code>revise</code>。 本报告尚未通过验证 Agent 复核，请勿对外发布。</p></aside>
-<h2>执行摘要</h2>
-<section class="section-body"><p>贵州茅台（600519.XSHG）近期量价与基本面均承压，技术面偏弱，但财务结构稳健。</p>
-<ul><li>近20日与60日收益率分别为-5.36%和-7.03%，股价低于20日与60日均线，呈空头排列。</li><li>盈利增长下滑，TTM净利润与营业利润同比降幅均超6.6%，但毛利率仍高达90.5%。</li><li>融资余额持续增长至约200亿元，显示杠杆资金介入，但资金流向数据缺失。</li><li>14日RSI为41.04，处于弱势区域，反弹伴随放量但持续性存疑。</li><li>数据局限：未覆盖波动率、行业对比、宏观事件及盈利预测等关键信息。</li></ul></section>
-<h2>核心指标速览</h2>
+<nav class="report-toc"><details class="report-toc-details"><summary>目录 <span class="report-toc-count">9 节</span></summary><ul><li><a href="#执行摘要">执行摘要</a></li><li><a href="#核心指标速览">核心指标速览</a></li><li><a href="#量价与技术面">量价与技术面</a></li><li><a href="#基本面与估值">基本面与估值</a></li><li><a href="#资金与交易结构">资金与交易结构</a></li><li><a href="#宏观利率背景">宏观利率背景</a></li><li><a href="#综合风险与数据局限">综合风险与数据局限</a></li><li><a href="#数据与工具说明">数据与工具说明</a></li><li><a href="#免责声明">免责声明</a></li></ul></details></nav>
+<h2 id="执行摘要">执行摘要</h2>
+<section class="section-body prose-lead"><p>贵州茅台当前股价1326元，近20日下跌5.36%、近60日下跌7.02%，技术面偏弱，但RSI 14为41.04尚未进入超卖区；同时TTM市盈率约20.04倍、股息率约3.89%，估值已回落至近年低位。</p>
+<p><strong>基本面</strong></p>
+<p>2025年归母净利润同比下降约7.07%，但毛利率仍高达90.50%、资产负债率仅12.12%，财务结构稳健。两融余额约202.95亿元，市场多空分歧仍存。</p></section>
+<h2 id="核心指标速览">核心指标速览</h2>
 <table class="metrics"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>中信一级行业</td><td>36</td></tr><tr><td>最新收盘价</td><td>1326</td></tr><tr><td>MA20</td><td>1333.3915</td></tr><tr><td>MA60</td><td>1397.8362</td></tr><tr><td>20 日收益率</td><td>-5.36%</td></tr><tr><td>60 日收益率</td><td>-7.03%</td></tr><tr><td>RSI14</td><td>41.0425</td></tr><tr><td>20 日均量</td><td>506.69 万</td></tr><tr><td>PE(TTM)</td><td>20.04</td></tr><tr><td>PB(TTM)</td><td>6.5567</td></tr><tr><td>PS(TTM)</td><td>9.6291</td></tr><tr><td>股息率(TTM)</td><td>3.89%</td></tr><tr><td>总市值</td><td>16576.08 亿</td></tr><tr><td>融资余额</td><td>200.48 亿</td></tr><tr><td>融资买入额</td><td>6.63 亿</td></tr></tbody></table>
-<h2>量价与趋势</h2>
-<section class="section-body"><h3>近期价格走势与均线系统（600519.XSHG）</h3>
-<p>截至2026年5月29日，贵州茅台（600519.XSHG）最新收盘价为1326.0元。从均线系统看，股价处于短期与中期均线下方：20日均线（MA20）为1333.39元，60日均线（MA60）为1397.84元。最新收盘价低于MA20约0.55%，低于MA60约5.14%，显示短期与中期趋势均偏弱。</p>
-<p>回顾近12个交易日（2026年5月14日至5月29日），600519.XSHG价格整体呈现震荡下行后反弹的格局。期间最低触及1250.1元（5月27日），最高为1369.06元（5月14日）。5月27日出现一根长阳线，当日涨幅为+2.33%（收盘价从1273.38元升至1303.0元），但次日（5月28日）即回落2.07%（收盘价降至1275.98元），显示反弹持续性存疑。5月29日再度上涨3.92%（收盘价从1275.98元升至1326.0元），但尚未有效站上20日均线。</p>
-<p><strong>图表解读</strong>：请参考 <code>charts/600519_multi_agent_report/moving_averages.png</code> 图表，该图展示了600519.XSHG的收盘价与MA20、MA60均线的位置关系，可直观验证股价在均线下方运行的状态。</p>
-<h3>成交量与换手率分析（600519.XSHG）</h3>
-<p>近20个交易日，600519.XSHG的平均成交量为5,066,895股。从日度数据观察，成交量在价格波动加剧时显著放大：</p>
-<ul><li><strong>5月27日</strong>：当日成交量达8,272,791股，为近12个交易日最高，对应价格从1250.1元低点反弹至1303.0元，形成放量上涨。</li><li><strong>5月29日</strong>：成交量7,647,805股，为次高，对应价格从1270.6元上涨至1326.0元，再次出现放量上涨。</li></ul>
-<p>换手率数据与成交量同步。5月27日当日换手率为0.6606%，5月29日为0.6118%，均显著高于近12个交易日的其他交易日（多数在0.31%至0.46%之间）。这两日的周换手率也分别升至0.4201%和0.4753%，月换手率升至0.3888%和0.4114%，显示短期交投活跃度提升。</p>
-<p><strong>图表解读</strong>：请参考 <code>charts/600519_multi_agent_report/price_volume.png</code> 图表，该图展示了600519.XSHG的收盘价与成交量的对应关系，可直观验证放量上涨与缩量下跌的形态。</p>
-<h3>量价关系特征（600519.XSHG）</h3>
-<p>近期600519.XSHG的量价关系呈现以下特征：</p>
-<ul><li><strong>下跌缩量</strong>：在5月14日至5月26日的持续下跌过程中，除5月22日（成交量4,915,714股）外，多数交易日成交量低于500万股，如5月21日仅3,886,838股，显示下跌过程中抛压并未持续放大。</li><li><strong>反弹放量</strong>：5月27日和5月29日的两次反弹均伴随成交量显著放大，表明低位有资金介入意愿，但反弹后的次日（5月28日）成交量迅速回落至4,588,998股，显示追高意愿不足。</li></ul>
-<h3>技术指标状态（600519.XSHG）</h3>
-<p>截至5月29日，600519.XSHG的14日相对强弱指标（RSI14）为41.04，处于50下方的弱势区域，但已脱离30以下的超卖区间。结合价格走势，RSI从5月22日后的低位回升，与价格反弹形成一定程度的底背离迹象，但尚未进入强势区域。</p>
-<h3>短期收益表现（600519.XSHG）</h3>
-<p>600519.XSHG近20个交易日收益率为-5.36%，近60个交易日收益率为-7.03%，显示短期与中期均处于负收益状态。近期价格虽有反弹，但尚未扭转中期下行趋势。</p>
-<h3>数据局限说明</h3>
-<p>本部分分析仅基于提供的600519.XSHG价格、成交量、换手率及均线、RSI等数据。未包含资金流向、持仓结构、衍生品市场（如期权、期货）等量价信息，也未涉及市场微观结构或订单簿数据。对于量价关系的更深层解读，如量价背离的确认、筹码分布变化等，受限于数据范围无法展开。</p></section>
-<h2>基本面与估值</h2>
-<section class="section-body"><h3>盈利能力与成长性</h3>
-<p>根据贵州茅台（600519.XSHG）2023年至2025年年度报告数据，其营业总收入从2024年的1708.99亿元下降至2025年的1688.38亿元，降幅约为1.2%。归属于母公司股东的净利润也从2024年的862.28亿元降至2025年的823.20亿元，降幅约为4.5%。这一盈利规模收缩的趋势在成长性指标上得到印证：截至最新报告期（2025q4），贵州茅台（600519.XSHG）的净利润（TTM）同比增长率为-7.09%，营业利润（TTM）同比增长率为-6.68%。</p>
-<p>尽管收入与利润规模有所下滑，但贵州茅台（600519.XSHG）的利润率依然强劲。最新TTM毛利率为90.50%，净利率为49.78%，均维持在极高水平。这表明，作为食品饮料行业的龙头企业，贵州茅台（600519.XSHG）在成本控制和定价能力上仍具显著优势，其高利润率的商业模式并未因短期收入波动而动摇。</p>
-<h3>资产质量与偿债能力</h3>
-<p>贵州茅台（600519.XSHG）的财务结构极为稳健。截至2025年末，其资产负债率仅为12.12%，处于极低水平，显示公司几乎没有长期偿债压力。流动比率为7.06，速动比率为5.48，均远高于1，表明短期偿债能力非常充裕。此外，应收账款周转率（TTM）高达6994.51次，反映出贵州茅台（600519.XSHG）对下游客户的议价能力极强，回款速度极快，几乎不存在坏账风险。</p>
-<h3>现金流与股东回报</h3>
-<p>经营活动产生的现金流量净额是衡量公司盈利质量的关键指标。贵州茅台（600519.XSHG）2025年经营活动现金流净额为615.22亿元，较2024年的924.64亿元有所下降，但仍能覆盖当年的净利润（823.20亿元），显示出健康的现金流状况。</p>
-<p>在股东回报方面，贵州茅台（600519.XSHG）保持了稳定的分红政策。根据最近四次分红记录，每股税前现金分红分别为308.76元、238.82元、276.73元和239.57元。以最新总股本12.50亿股计算，最新TTM股息率为3.89%。</p>
-<p><strong>分红历史</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>分红历史</figcaption><img src="charts/600519_multi_agent_report/dividend_history.png" alt="分红历史" loading="lazy" /></figure></div>
-<h3>估值水平</h3>
-<p>截至2026年5月29日，贵州茅台（600519.XSHG）总市值为1.66万亿元。基于TTM数据的估值指标如下： - <strong>市盈率（PE TTM）</strong>：20.04倍 - <strong>市净率（PB TTM）</strong>：6.56倍 - <strong>市销率（PS TTM）</strong>：9.63倍</p>
-<p><strong>估值因子走势</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>估值因子走势</figcaption><img src="charts/600519_multi_agent_report/valuation_factors.png" alt="估值因子走势" loading="lazy" /></figure></div>
-<p>这些估值倍数反映了市场对贵州茅台（600519.XSHG）当前盈利能力和资产价值的定价。与历史数据相比，当前估值水平处于何种区间，需结合更长时间序列进行判断，但本报告未提供相关历史估值数据。</p>
-<h3>数据局限</h3>
-<ul><li>本部分所有财务数据均来源于贵州茅台（600519.XSHG）2023年至2025年的年度报告（2023q4、2024q4、2025q4），未包含更早期的历史数据或季度环比数据。</li><li>成长性指标（如净利润增长率）仅基于TTM数据，无法反映更长周期的增长趋势。</li><li>估值指标仅提供最新时点的静态数据，未包含行业对比或历史分位数信息。</li><li>未提供任何外部机构（如券商）对贵州茅台（600519.XSHG）的盈利预测或目标价数据。</li></ul></section>
-<h2>资金与交易结构</h2>
-<section class="section-body"><h3>融资融券交易概况（600519.XSHG）</h3>
-<p>基于米筐数据 <code>securities_margin_recent</code> 字段，统计区间为2026年5月13日至5月28日，目标股票 <strong>600519.XSHG（贵州茅台）</strong> 的融资融券交易呈现以下特征：</p>
-<ul><li><strong>融资余额持续增长</strong>：融资余额（<code>margin_balance</code>）从5月13日的约190.62亿元上升至5月28日的约200.48亿元，期间累计增加约9.86亿元。其中，5月27日融资余额单日增幅最大，达到约3.95亿元（从197.31亿元增至201.26亿元），对应当日融资买入额（<code>buy_on_margin_value</code>）约14.66亿元，为统计期内最高单日买入额。</li><li><strong>融资买入与偿还波动</strong>：融资买入额在5月13日至5月28日期间波动较大，最低为5月19日的约3.71亿元，最高为5月27日的约14.66亿元。融资偿还额（<code>margin_repayment</code>）同样呈现波动，5月27日偿还额约10.71亿元，为统计期内最高。</li><li><strong>融券余额先升后降</strong>：融券余额（<code>short_balance</code>）从5月13日的约1.31亿元上升至5月20日的约1.73亿元，随后回落至5月28日的约1.63亿元。融券余量（<code>short_balance_quantity</code>）在5月20日达到统计期内最高值131,738股，之后逐步减少。</li><li><strong>融资融券总余额</strong>：融资融券总余额（<code>total_balance</code>，即融资余额+融券余额）从5月13日的约191.93亿元增长至5月28日的约202.12亿元，整体呈上升趋势。</li></ul>
-<p><strong>融资买入与融券卖出</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>融资买入与融券卖出</figcaption><img src="charts/600519_multi_agent_report/margin_activity.png" alt="融资买入与融券卖出" loading="lazy" /></figure></div>
-<p><strong>融资融券余额</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>融资融券余额</figcaption><img src="charts/600519_multi_agent_report/margin_balances.png" alt="融资融券余额" loading="lazy" /></figure></div>
-<p><strong>图表参考</strong>：报告中提供了与资金与交易结构相关的可视化图表，包括 <code>margin_balances.png</code>（展示融资余额与融券余额的时序变化）和 <code>margin_activity.png</code>（展示融资买入、偿还及融券交易活动的动态）。这些图表可辅助观察目标股票 <strong>600519.XSHG</strong> 融资融券交易的趋势与波动，但具体数值分析已在上文基于表格数据完成。</p>
-<h3>资金流向数据局限</h3>
-<p>本次报告中的资金流向数据（<code>capital_flow</code>）未提供有效记录（<code>row_count</code>为0，<code>net_buy_value_sum</code>为null，<code>recent_rows</code>为空）。因此，无法基于该数据集分析目标股票 <strong>600519.XSHG</strong> 的主力资金净流入/流出、大单交易方向或资金博弈情况。如需评估资金流向，需补充更完整的数据源。</p></section>
-<h2>技术因素</h2>
-<section class="section-body"><h3>价格走势与近期表现（600519.XSHG）</h3>
-<p><strong>回撤曲线</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>回撤曲线</figcaption><img src="charts/600519_multi_agent_report/drawdown.png" alt="回撤曲线" loading="lazy" /></figure></div>
-<p>截至2026年5月29日，贵州茅台（600519.XSHG）最新收盘价为1326.0元。回顾2026年5月14日至5月29日共12个交易日的价格走势，该标的整体呈现震荡下行态势。具体来看，5月14日开盘价为1338.0元，收盘于1342.17元；随后价格逐步走低，在5月22日跌破1300元关口，收盘于1290.2元；5月26日进一步下探至1273.38元；5月27日出现反弹，收盘于1303.0元；但5月28日再度回落至1275.98元；最终在5月29日回升至1326.0元。</p>
-<p>从日涨跌幅数据看，该期间内共有9个交易日录得负收益，3个交易日录得正收益。其中，5月22日跌幅最大，为-1.59%；5月27日涨幅最大，为2.33%；5月29日涨幅为3.92%，为近期单日最大涨幅。<strong>图表解读</strong>：请参考 <code>charts/600519_multi_agent_report/price_volume.png</code>，该图表直观展示了上述价格波动与成交量变化的关系。</p>
-<h3>短期与中期收益（600519.XSHG）</h3>
-<p>从收益率角度看，贵州茅台（600519.XSHG）近20日收益率为-5.36%，近60日收益率为-7.03%。这表明在过去一个月和两个月的时间维度内，价格均呈现下跌趋势，且中期跌幅略大于短期跌幅，显示下行压力持续。<strong>数据局限</strong>：此处收益率仅基于过去20个和60个交易日的收盘价计算，未包含分红或送股等除权除息因素，因此与投资者实际账户收益率可能存在差异。</p>
-<h3>均线系统分析（600519.XSHG）</h3>
-<p>均线数据显示，贵州茅台（600519.XSHG）的20日移动平均线（MA20）为1333.39元，60日移动平均线（MA60）为1397.84元。当前最新收盘价1326.0元，低于MA20和MA60，呈现空头排列格局。具体而言，价格位于MA20下方约0.55%，位于MA60下方约5.14%，显示短期和中期均线均构成上方阻力。<strong>图表解读</strong>：请参考 <code>charts/600519_multi_agent_report/moving_averages.png</code>，该图表清晰展示了价格与MA20、MA60两条均线的相对位置关系。<strong>数据局限</strong>：本分析仅基于20日和60日移动平均线，未纳入120日、250日等更长周期均线数据，因此无法判断长期趋势的支撑或压力位。</p>
-<h3>相对强弱指标（RSI）（600519.XSHG）</h3>
-<p>贵州茅台（600519.XSHG）的14日相对强弱指标（RSI14）为41.04。该数值位于50的中性分界线下方，表明近期价格动能偏弱，市场处于相对弱势区域，但尚未进入超卖区间（通常以30为阈值）。<strong>数据局限</strong>：RSI为单一技术指标，未结合MACD、布林带等其他指标进行交叉验证，其信号的有效性需结合其他分析工具综合判断。</p>
-<p><strong>RSI 与 MACD</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>RSI 与 MACD</figcaption><img src="charts/600519_multi_agent_report/technical_indicators.png" alt="RSI 与 MACD" loading="lazy" /></figure></div>
-<h3>成交量分析（600519.XSHG）</h3>
-<p>贵州茅台（600519.XSHG）近20日平均成交量为5,066,895股。观察近期单日成交量，5月27日成交量为8,272,791股，5月29日成交量为7,647,805股，这两个交易日的成交量显著高于平均水平，且均对应价格出现较大幅度上涨（5月27日涨2.33%，5月29日涨3.92%），显示上涨伴随放量。相比之下，下跌日的成交量多数低于平均水平，例如5月21日成交量为3,886,838股，5月26日为4,593,162股。<strong>图表解读</strong>：请参考 <code>charts/600519_multi_agent_report/price_volume.png</code>，该图表将价格走势与成交量柱状图结合，便于观察量价配合关系。<strong>数据局限</strong>：此处仅分析了成交量绝对值，未计算成交量衍生指标（如OBV、量比等），也未分析成交量的趋势变化（如缩量下跌或放量滞涨等形态）。</p>
-<h3>数据局限总结</h3>
-<p>本技术分析仅基于提供的JSON数据，未纳入其他技术指标（如MACD、布林带等）、成交量衍生指标（如OBV）、或更长期均线（如120日、250日）的数据。图表文件（如价格成交量图、移动平均线图、技术指标图等）虽已列出，但未提供具体数值内容，因此无法进行更深入的图形形态或指标交叉分析。</p></section>
-<h2>宏观利率背景</h2>
-<section class="section-body"><h3>银行间市场利率：短期资金面波动，中长端利率平稳</h3>
-<p>根据提供的银行间质押式回购利率数据（2026年5月20日至5月29日），短期资金利率呈现一定波动，而中长端利率则保持相对稳定。这些利率变动会通过影响<strong>600519.XSHG（贵州茅台）</strong> 的融资成本与市场整体流动性环境，间接作用于其估值。</p>
-<p><strong>Shibor 利率</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>Shibor 利率</figcaption><img src="charts/600519_multi_agent_report/shibor_rates.png" alt="Shibor 利率" loading="lazy" /></figure></div>
-<ul><li><strong>隔夜（ON）利率</strong>：在5月20日为1.286%，随后逐步上行，在5月25日达到1.327%的区间高点，之后小幅回落至5月29日的1.324%。整体波动区间为1.286%至1.327%。</li><li><strong>7天（1W）利率</strong>：走势与隔夜利率相似，从5月20日的1.339%上升至5月25日的1.401%，随后回落至5月29日的1.387%。波动区间为1.331%至1.401%。</li><li><strong>14天（2W）利率</strong>：同样呈现先升后降的态势，从5月20日的1.344%升至5月25日的1.407%，后回落至5月29日的1.387%。</li><li><strong>中长端利率（1M至1Y）</strong>：各期限利率在此期间波动极小。例如，1个月期（1M）利率在1.3855%至1.392%之间窄幅波动；1年期（1Y）利率则稳定在1.4655%至1.4685%之间。</li></ul>
-<p><strong>小结</strong>：数据显示，在观察期内，银行间市场短期资金面在5月下旬经历了一轮小幅收紧，但中长端资金成本保持平稳。对于<strong>600519.XSHG（贵州茅台）</strong> 而言，其作为消费品行业龙头，通常现金流充裕，短期资金利率的波动对其直接融资成本影响有限，但中长端利率的稳定有助于维持其估值模型中无风险利率假设的稳定性。</p>
-<p><strong>收益率曲线快照</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>收益率曲线快照</figcaption><img src="charts/600519_multi_agent_report/yield_curve_snapshot.png" alt="收益率曲线快照" loading="lazy" /></figure></div>
-<h3>国债收益率曲线：整体下移，期限利差收窄</h3>
-<p>从国债收益率曲线数据（2026年5月20日至5月29日）来看，各期限收益率普遍下行，且短端下行幅度大于长端，导致期限利差有所收窄。国债收益率作为无风险利率的基准，其变动是<strong>600519.XSHG（贵州茅台）</strong> 估值模型中的关键参数。</p>
-<ul><li><strong>短端收益率（1年及以内）</strong>：下行明显。以1年期（1Y）收益率为例，从5月20日的1.1785%下降至5月29日的1.1578%，累计下行2.07个基点。3个月期（3M）收益率从1.0953%降至1.0605%，下行3.48个基点。</li><li><strong>中长端收益率（2年至10年）</strong>：同样呈现下行趋势，但幅度相对较小。2年期（2Y）收益率从1.2552%降至1.2256%，下行2.96个基点。10年期（10Y）收益率从1.7382%降至1.7090%，下行2.92个基点。</li><li><strong>超长端收益率（15年至50年）</strong>：收益率亦有所下行。30年期（30Y）收益率从2.2311%降至2.2050%，下行2.61个基点。50年期（50Y）收益率从2.4625%降至2.4225%，下行4.00个基点。</li><li><strong>期限利差变化</strong>：以10年期与1年期利差为例，5月20日为55.97个基点（1.7382% - 1.1785%），至5月29日收窄至55.12个基点（1.7090% - 1.1578%），利差收窄0.85个基点。</li></ul>
-<p><strong>小结</strong>：数据显示，在观察期内，国债收益率曲线整体下移，短端下行幅度更大，导致曲线形态趋于平坦化。对于<strong>600519.XSHG（贵州茅台）</strong> 而言，其作为消费品行业（归属于食品饮料行业）的龙头企业，其估值对无风险利率变动较为敏感。国债收益率的整体下行，理论上会降低其估值模型中的折现率，从而对其内在价值构成支撑。期限利差的收窄则可能反映了市场对短期经济及货币政策预期的调整。</p>
-<h3>数据局限</h3>
-<p>本部分分析完全基于提供的银行间利率和国债收益率曲线数据，未纳入其他宏观经济指标、央行公开市场操作细节、海外利率环境或市场参与者预期等外部信息。因此，对利率变动的归因分析存在局限性。这些利率数据仅作为<strong>600519.XSHG（贵州茅台）</strong> 估值模型中无风险利率的参考基准，其最终估值还需结合公司自身的现金流、增长预期及风险溢价等因素综合判断。</p></section>
-<h2>图表解读</h2>
-<section class="section-body"><p>以下图表未在正文中嵌入，供补充参考。</p>
-<h3>累计收益率</h3>
-<p>区间内累计收益，可与正文收益率表述对照。</p>
-<p><strong>累计收益率</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>累计收益率</figcaption><img src="charts/600519_multi_agent_report/cumulative_return.png" alt="累计收益率" loading="lazy" /></figure></div>
-<h3>换手率</h3>
-<p>换手率。</p>
-<p><strong>换手率</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>换手率</figcaption><img src="charts/600519_multi_agent_report/turnover_rate.png" alt="换手率" loading="lazy" /></figure></div>
-<h3>股本结构</h3>
-<p>股本结构。</p>
-<p><strong>股本结构</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>股本结构</figcaption><img src="charts/600519_multi_agent_report/share_structure.png" alt="股本结构" loading="lazy" /></figure></div>
-<h3>最新质量因子快照</h3>
-<p>盈利与偿债类因子快照。</p>
-<p><strong>最新质量因子快照</strong></p>
-<div class="chart-grid"><figure class="chart-figure"><figcaption>最新质量因子快照</figcaption><img src="charts/600519_multi_agent_report/latest_quality_snapshot.png" alt="最新质量因子快照" loading="lazy" /></figure></div></section>
-<h2>综合风险与数据局限</h2>
-<section class="section-body"><h3>1. 近期交易状态与流动性风险</h3>
-<ul><li><strong>交易状态正常</strong>：根据米筐数据，目标股票 <strong>600519.XSHG</strong> 在 2026 年 5 月 20 日至 5 月 29 日期间，每日的 <code>suspended_recent</code> 和 <code>st_recent</code> 字段均为 <code>false</code>。这表明在该数据覆盖的 8 个交易日内，该标的未发生暂停交易或特别处理（ST）情况，常规交易功能正常。</li><li><strong>数据局限</strong>：该判断仅基于上述 8 个交易日的数据，无法评估更长时间范围内的交易中断风险。</li></ul>
-<h3>2. 技术面与价格趋势风险</h3>
-<ul><li><strong>短期价格表现</strong>：截至 2026 年 5 月 29 日，目标股票 <strong>600519.XSHG</strong> 的米筐数据 <code>latest_close</code> 为 1326.0 元。近 20 个交易日回报率（<code>return_20d</code>）为 -5.36%，近 60 个交易日回报率（<code>return_60d</code>）为 -7.03%，显示近期价格呈下行趋势。</li><li><strong>均线系统</strong>：当前收盘价（1326.0 元）低于 20 日均线（<code>ma20</code>，1333.39 元）和 60 日均线（<code>ma60</code>，1397.84 元），表明短期和中期价格均处于均线下方，存在技术性压力。</li><li><strong>相对强弱指标</strong>：14 日 RSI 值（<code>rsi14</code>）为 41.04，处于 30-70 的中性偏弱区间，未进入超卖区域（通常低于 30），但已接近该阈值，提示价格动能偏弱。</li><li><strong>成交量</strong>：近 20 日平均成交量（<code>avg_volume_20d</code>）为 5,066,895 股。数据未提供成交量与历史均值的对比，无法判断当前成交量是否异常。</li><li><strong>图表解读</strong>：<code>price_volume</code> 图表（<code>charts/600519_multi_agent_report/price_volume.png</code>）和 <code>moving_averages</code> 图表（<code>charts/600519_multi_agent_report/moving_averages.png</code>）直观展示了上述价格、成交量及均线关系，但图表本身未提供超出上述数值的额外风险信息。</li></ul>
-<h3>3. 基本面与财务风险</h3>
-<ul><li><strong>盈利能力下滑</strong>：根据米筐财务数据，目标股票 <strong>600519.XSHG</strong> 所属行业为“食品饮料”。2025 年第四季度（2025q4）的净利润（归属于母公司，<code>net_profit_parent_company</code>）为 823.2 亿元，较 2024 年第四季度的 862.28 亿元下降约 4.53%。TTM 净利润增长率（<code>net_profit_parent_company_growth_ratio_ttm</code>）为 -7.07%，营业利润增长率（<code>operating_profit_growth_ratio_ttm</code>）为 -6.68%，均为负值，显示盈利增长出现下滑。</li><li><strong>现金流收缩</strong>：2025 年第四季度经营活动现金流净额（<code>cash_flow_from_operating_activities</code>）为 615.22 亿元，较 2024 年同期的 924.64 亿元下降约 33.46%，现金流收缩幅度大于净利润降幅，需关注盈利质量。</li><li><strong>估值水平</strong>：TTM 市盈率（<code>pe_ratio_ttm</code>）为 20.04 倍，市净率（<code>pb_ratio_ttm</code>）为 6.56 倍，市销率（<code>ps_ratio_ttm</code>）为 9.63 倍。数据未提供行业或历史估值对比，无法判断当前估值是否处于合理区间。</li><li><strong>财务结构</strong>：资产负债率（<code>debt_to_asset_ratio</code>）为 12.12%，流动比率（<code>current_ratio</code>）为 7.06，速动比率（<code>quick_ratio</code>）为 5.48，显示短期偿债能力较强，财务杠杆较低。应收账款周转率（<code>account_receivable_turnover_rate_ttm</code>）为 6994.51 次/年，数值极高，可能与“食品饮料”行业特性有关，但数据未提供可比基准。</li></ul>
-<h3>4. 数据局限与未覆盖信息</h3>
-<ul><li><strong>时间范围</strong>：财务数据（<code>pit_financials</code>）仅覆盖 2023 年至 2025 年三个完整财年，且仅包含第四季度数据，缺乏季度间趋势和更长期的历史对比。</li><li><strong>风险指标缺失</strong>：米筐数据中未提供波动率、最大回撤、Beta 系数、夏普比率等常用风险度量指标，无法量化目标股票 <strong>600519.XSHG</strong> 的价格波动风险或与市场整体的相关性。</li><li><strong>行业与宏观背景</strong>：目标股票所属行业为“食品饮料”，但数据未包含行业平均估值、竞争格局、监管政策或宏观经济指标（如利率、通胀），因此无法评估行业系统性风险或外部冲击对 <strong>600519.XSHG</strong> 的影响。</li><li><strong>事件与新闻</strong>：未提供公司公告、管理层变动、诉讼、分红政策变化等事件信息，无法评估非财务风险。</li><li><strong>图表数据</strong>：米筐数据中列出了多个图表文件路径（如 <code>cumulative_return</code>、<code>drawdown</code>、<code>technical_indicators</code> 等），但未包含图表中的具体数值或分析结论，因此无法从这些图表中提取额外风险信息。</li><li><strong>未来预测</strong>：数据不包含任何盈利预测、目标价或券商分析观点，无法评估市场预期与当前价格的偏离程度。</li></ul>
-<h3>5. 综合风险提示</h3>
-<p>基于现有米筐数据，目标股票 <strong>600519.XSHG</strong> 在近期未出现交易异常，但价格呈下行趋势，盈利增长和现金流出现下滑。由于数据局限，无法全面评估估值合理性、行业风险或外部事件影响。</p></section>
-<h2>数据与工具说明</h2>
+<h2 id="量价与技术面">量价与技术面</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026年5月29日，贵州茅台收盘价1326.0元，近60日下跌7.0%，RSI为41.0，价格持续运行于MA60（1397.8元）下方，技术面呈弱势格局。</p>
+<h3>图 · RSI 与 MACD</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/technical_indicators.png" alt="RSI 与 MACD" loading="lazy" /></figure>
+<p class="figure-note">RSI 位于弱势区间；MACD 位于信号线下方，动能偏弱。</p>
+<h3>表 · 技术指标快照</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>最新收盘价</td><td>1326</td></tr><tr><td>MA20</td><td>1333.3915</td></tr><tr><td>MA60</td><td>1397.8362</td></tr><tr><td>20 日收益率</td><td>-5.36%</td></tr><tr><td>60 日收益率</td><td>-7.03%</td></tr><tr><td>RSI14</td><td>41.0425</td></tr><tr><td>20 日均量</td><td>506.69 万</td></tr></tbody></table>
+<p><strong>趋势概览</strong></p>
+<h3>图 · 收盘价与 MA20/MA60</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/moving_averages.png" alt="收盘价与 MA20/MA60" loading="lazy" /></figure>
+<p class="figure-note">价格运行在均线之下，短中期趋势偏弱。</p>
+<p>截至2026年5月29日，贵州茅台（600519.XSHG）收盘价1326.0元，近20日下跌5.4%，近60日下跌7.0%。当前价格低于20日均线（1333.4元）0.6%，低于60日均线（1397.8元）5.1%，均线系统呈空头排列。14日RSI为41.0，处于偏弱区间，未进入超卖区域（通常低于30）。如图1（moving_averages图）所示，价格自2026年2月高点1565.0元以来持续下行，MA60（1397.8元）与MA20（1333.4元）形成死叉后持续发散，压制价格反弹空间。</p>
+<h3>图 · 回撤曲线</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/drawdown.png" alt="回撤曲线" loading="lazy" /></figure>
+<p class="figure-note">回撤经历加深后有所修复。</p>
+<table><thead><tr><th>指标</th><th>数值</th><th>日期</th></tr></thead><tbody><tr><td>最新收盘价</td><td>1326.0元</td><td>2026-05-29</td></tr><tr><td>MA20</td><td>1333.4元</td><td>2026-05-29</td></tr><tr><td>MA60</td><td>1397.8元</td><td>2026-05-29</td></tr><tr><td>20日收益率</td><td>-5.4%</td><td>2026-04-29至2026-05-29</td></tr><tr><td>60日收益率</td><td>-7.0%</td><td>2026-03-02至2026-05-29</td></tr><tr><td>RSI14</td><td>41.0</td><td>2026-05-29</td></tr></tbody></table>
+<p><strong>近期异动</strong></p>
+<p>在2026年5月25日至5月29日的5个交易日内，股价从1285.9元反弹至1326.0元，涨幅3.1%，成交量从463.5万股增至764.8万股，增幅65.0%。其中，2026年5月27日出现显著放量，当日成交量827.3万股，远高于20日均量（506.7万股），当日股价从1273.4元低开高走收于1303.0元，涨幅2.3%。2026年5月29日成交量764.8万股，同样高于均量，当日股价从1270.6元低开收于1326.0元，涨幅3.9%。</p>
+<table><thead><tr><th>交易日</th><th>收盘价（元）</th><th>涨跌幅（%）</th><th>成交量（股）</th><th>较20日均量偏离（%）</th></tr></thead><tbody><tr><td>2026-05-22</td><td>1290.2</td><td>-1.6</td><td>4,915,714</td><td>-3.0</td></tr><tr><td>2026-05-25</td><td>1285.9</td><td>-0.3</td><td>4,635,276</td><td>-8.5</td></tr><tr><td>2026-05-26</td><td>1273.4</td><td>-1.0</td><td>4,593,162</td><td>-9.4</td></tr><tr><td>2026-05-27</td><td>1303.0</td><td>+2.3</td><td>8,272,791</td><td>+63.3</td></tr><tr><td>2026-05-28</td><td>1276.0</td><td>-2.1</td><td>4,588,998</td><td>-9.5</td></tr><tr><td>2026-05-29</td><td>1326.0</td><td>+3.9</td><td>7,647,805</td><td>+51.0</td></tr></tbody></table>
+<p><strong>量价关系</strong></p>
+<h3>图 · 收盘价与成交量</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/price_volume.png" alt="收盘价与成交量" loading="lazy" /></figure>
+<p class="figure-note">价格先扬后抑，成交量先抑后扬。</p>
+<p>如图2（price_volume图）所示，贵州茅台（600519.XSHG）在2026年5月下旬的量价配合呈现以下特征：</p>
+<ul><li><strong>放量反弹</strong>：2026年5月27日，股价在触及区间低点1270.0元（2026-05-26）后放量反弹，当日成交量827.3万股（较20日均量高63.3%），收盘上涨2.3%，显示低位有资金介入。</li><li><strong>缩量下跌</strong>：2026年5月22日至5月26日，股价连续3日下跌，累计跌幅1.2%，期间日均成交量约471.5万股，低于20日均量，表明下跌过程中抛压未显著放大。</li><li><strong>放量突破</strong>：2026年5月29日，成交量764.8万股（较20日均量高51.0%），收盘价1326.0元突破5日均线（1285.9元），短期量价配合积极。</li></ul>
+<p><strong>区间极值与融资动态</strong></p>
+<ul><li><strong>区间高点</strong>：2026年2月5日，股价触及1565.0元（当日收盘1555.0元），为统计区间内最高价。</li><li><strong>区间低点</strong>：2026年5月26日，股价下探至1270.0元（当日收盘1273.4元），为统计区间内最低价。</li><li><strong>融资余额</strong>：融资余额从2025年9月11日的165.1亿元增至2026年5月28日的200.5亿元，增幅21.5%，融资买入峰值出现在2026年1月29日（单日融资买入额21.1亿元），显示杠杆资金在股价高位区域参与积极。</li></ul>
+<p><strong>数据局限</strong></p>
+<ul><li>未提供MACD、布林带、KDJ等常用技术指标数据，无法进行多指标交叉验证。</li><li>未提供行业或板块相对强弱（如相对食品饮料指数的超额收益），无法评估个股在行业内的相对表现。</li><li>未提供融券余额数据，无法评估市场做空力量的变化。</li></ul></section>
+<h2 id="基本面与估值">基本面与估值</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026-05-29，贵州茅台TTM PE为20.04倍，较2025-09-11的21.21倍下降，但盈利与现金流均出现下滑，估值支撑减弱。</p>
+<p><strong>盈利与成长</strong></p>
+<h3>表 · 最新盈利质量因子</h3>
+<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>毛利率(TTM)</td><td>90.50%</td></tr><tr><td>净利率(TTM)</td><td>49.78%</td></tr></tbody></table>
+<p>2025年全年营收1720.54亿元，归母净利润823.20亿元，同比分别下降1.2%和4.5%（基于2024年数据计算）。TTM口径下，截至2026-05-29，归母净利润增速为-7.09%，营业利润增速为-6.68%，成长性转弱。报表显示，2025年收入下滑主要受酱香系列酒产品结构调整影响（MD&amp;A提及），而营业成本上涨8.0%进一步挤压利润空间。</p>
+<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>1505.60</td><td>1741.44</td><td>1720.54</td></tr><tr><td>营收同比增速</td><td>-</td><td>+15.66%</td><td>-1.20%</td></tr><tr><td>归母净利润（亿元）</td><td>747.34</td><td>862.28</td><td>823.20</td></tr><tr><td>归母净利润同比增速</td><td>-</td><td>+15.38%</td><td>-4.53%</td></tr><tr><td>毛利率（TTM）</td><td>-</td><td>91.69%</td><td>90.50%</td></tr><tr><td>净利率（TTM）</td><td>-</td><td>52.22%</td><td>49.78%</td></tr></tbody></table>
+<p><strong>盈利质量与现金流勾稽</strong></p>
+<p>2025年经营现金流净额为615.22亿元，同比下降33.46%，净现比（经营现金流/归母净利润）仅为0.72，显著低于1，表明利润转化为现金的效率偏弱。报表显示，经营现金流减少主要系控股子公司贵州茅台集团财务有限公司吸收集团公司成员单位存款减少及不可随时支取的同业存款增加（MD&amp;A解释）。2024年净现比为1.07，2025年大幅下滑，利润现金含量恶化。</p>
+<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>经营现金流（亿元）</td><td>665.93</td><td>924.64</td><td>615.22</td></tr><tr><td>归母净利润（亿元）</td><td>747.34</td><td>862.28</td><td>823.20</td></tr><tr><td>净现比</td><td>0.89</td><td>1.07</td><td>0.72</td></tr></tbody></table>
+<p><strong>估值水平</strong></p>
+<h3>图 · 估值因子走势</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/valuation_factors.png" alt="估值因子走势" loading="lazy" /></figure>
+<p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
+<h3>图 · PE/PB 历史分位</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/valuation_percentile.png" alt="PE/PB 历史分位" loading="lazy" /></figure>
+<p>截至2026-05-29，PE（TTM）为20.04倍，PB为6.56倍，PS为9.63倍，股息率为3.89%。与2025-09-11相比，PE从21.21倍降至20.04倍，PB从7.89倍降至6.56倍，PS从10.70倍降至9.63倍，估值水平整体下移。股息率从3.38%升至3.89%，主要因股价下跌及分红总额创历史新高（MD&amp;A提及2025年度累计派发现金红利650.33亿元）。</p>
+<h3>表 · 近期分红记录</h3>
+<table><thead><tr><th>除权除息日</th><th>每股税前分红(元)</th></tr></thead><tbody><tr><td>2024-06-19T00:00:00</td><td>308.76</td></tr><tr><td>2024-12-20T00:00:00</td><td>238.82</td></tr><tr><td>2025-06-26T00:00:00</td><td>276.73</td></tr><tr><td>2025-12-19T00:00:00</td><td>239.57</td></tr></tbody></table>
+<table><thead><tr><th>估值指标</th><th>2025-09-11</th><th>2026-05-29</th></tr></thead><tbody><tr><td>PE（TTM）</td><td>21.21</td><td>20.04</td></tr><tr><td>PB（TTM）</td><td>7.89</td><td>6.56</td></tr><tr><td>PS（TTM）</td><td>10.70</td><td>9.63</td></tr><tr><td>股息率（TTM）</td><td>3.38%</td><td>3.89%</td></tr></tbody></table>
+<ul><li><strong>数据局限</strong></li><li>未提供2023年及2024年TTM毛利率、净利率等数据，无法进行更完整的多年对比。</li><li>缺少ROE杜邦分解图，无法进一步拆解盈利能力变化驱动因素。</li><li>估值部分缺少历史百分位带，无法判断当前PE/PB在历史区间中的相对位置。</li></ul></section>
+<h2 id="资金与交易结构">资金与交易结构</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026-05-29，贵州茅台近20日日均成交506.69万股，融资余额升至200.48亿元，区间内股价下跌7.0%，资金面呈现量缩价跌特征。</p>
+<h3>图 · 融资融券余额</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/margin_balances.png" alt="融资融券余额" loading="lazy" /></figure>
+<p class="figure-note">融资余额曲线整体上行。</p>
+<h3>表 · 两融区间变动</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>区间起始</td><td>2025-09-11</td></tr><tr><td>区间结束</td><td>2026-05-28</td></tr><tr><td>融资余额（期初）</td><td>165.11 亿</td></tr><tr><td>融资余额（期末）</td><td>200.48 亿</td></tr><tr><td>融资余额变动</td><td>35.37 亿</td></tr><tr><td>变动幅度</td><td>21.42%</td></tr><tr><td>融券余额（期初）</td><td>1.01 亿</td></tr><tr><td>融券余额（期末）</td><td>1.63 亿</td></tr><tr><td>融资买入峰值</td><td>21.14 亿（2026-01-29）</td></tr></tbody></table>
+<p><strong>成交与活跃度</strong></p>
+<h3>表 · 成交活跃度</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>20 日均量</td><td>506.69 万</td></tr><tr><td>近12日日均成交额</td><td>69.68 亿</td></tr><tr><td>近12日最高成交额</td><td>105.87 亿（2026-05-27）</td></tr><tr><td>近12日最低成交额</td><td>51.13 亿（2026-05-21）</td></tr><tr><td>近12日换手率区间</td><td>31.04% ~ 66.06%</td></tr><tr><td>主力资金流向</td><td>数据缺失</td></tr></tbody></table>
+<p>2025-09-11至2026-05-29区间内，贵州茅台（600519.XSHG）股价从1401.17元（2026-04-29）跌至1326.00元（2026-05-29），60日跌幅-7.02%。近20日日均成交量为5,066,895股，区间内成交量波动显著：2026-05-27单日成交量达8,272,791股，为近期峰值；2026-05-21成交量仅3,886,838股，为区间低点。价格方面，区间最高价1565.00元出现在2026-02-05，最低价1270.01元出现在2026-05-26，价格中枢持续下移。</p>
+<p>RSI14为41.04，处于偏弱区域，股价低于20日均线（1333.39元）0.55%，低于60日均线（1397.84元）5.14%。换手率数据未提供，无法评估成交活跃度变化（如图表turnover_rate所示，若数据可用可补充）。</p>
+<p><strong>融资融券</strong></p>
+<h3>图 · 融资余额与买卖额</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/margin_enhanced.png" alt="融资余额与买卖额" loading="lazy" /></figure>
+<h3>表 · 融资融券快照</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-28</td></tr><tr><td>融资余额</td><td>200.48 亿</td></tr><tr><td>融券余额</td><td>1.63 亿</td></tr><tr><td>融资买入额</td><td>6.63 亿</td></tr><tr><td>融资偿还额</td><td>7.41 亿</td></tr><tr><td>融券余量</td><td>12.81 万</td></tr><tr><td>两融余额合计</td><td>202.12 亿</td></tr></tbody></table>
+<p>融资余额从2025-09-11的165.11亿元增至2026-05-28的200.48亿元，增幅21.4%。期间峰值买入日为2026-01-29，当日融资买入额达21.14亿元，显示该时点杠杆资金集中入场。融券余额数据缺失，无法评估融券端变化（如图表margin_balances所示，若融券数据可用可补充双轴图）。</p>
+<table><thead><tr><th>指标</th><th>2025-09-11</th><th>2026-05-28</th><th>变化</th></tr></thead><tbody><tr><td>融资余额（元）</td><td>16,510,992,453</td><td>20,048,411,631</td><td>+21.4%</td></tr><tr><td>峰值买入日（2026-01-29）</td><td>-</td><td>2,114,218,153</td><td>-</td></tr></tbody></table>
+<p><strong>股东与股本</strong></p>
+<h3>表 · 股本结构快照</h3>
+<table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-29</td></tr><tr><td>总股本</td><td>12.50 亿</td></tr><tr><td>流通 A 股</td><td>12.50 亿</td></tr><tr><td>自由流通股本</td><td>4.80 亿</td></tr><tr><td>自由流通占比</td><td>38.4%</td></tr><tr><td>非自由流通占比</td><td>61.6%</td></tr></tbody></table>
+<p>截至2026-05-29，贵州茅台（600519.XSHG）总市值约1.66万亿元，流通股本未提供具体数据，无法计算流通市值占比。股东户数及机构持仓数据缺失，无法分析股东结构变化。</p>
+<p><strong>分红与资金成本</strong></p>
+<p>TTM股息率为3.89%（2026-05-29），较2025-09-11的3.38%上升0.51个百分点。2025年度累计派发现金红利650.33亿元（含年度分红预案），分红总额创历史新高。公司资产负债率12.12%（2026-05-29），较2025-09-11的14.75%下降2.63个百分点；流动比率7.06，速动比率5.48，短期偿债能力充裕。财务费用为-8.15亿元（2025年），主要因银行存款利率下降及规模结构变化，利息收入覆盖利息支出有余。MD&amp;A中提及“本期商业银行存款利率下降、规模及结构变化”解释了财务费用变动原因。</p>
+<p><strong>数据局限</strong> - 融券余额、股东户数、机构持仓、股本结构等数据未提供，无法进行完整的两融及股东分析。 - 资金流向（主力净流入/流出）数据缺失，无法评估短期资金博弈方向。 - 回购进展仅提及首次60亿元回购完成及第二轮启动，具体执行金额与时间节点未在数据中体现。</p></section>
+<h2 id="宏观利率背景">宏观利率背景</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026年5月29日，贵州茅台股息率3.89%高于1Y国债收益率1.45%和10Y国债收益率1.68%，但盈利增速转负与期限利差收窄共同压制估值扩张空间。</p>
+<p><strong>短端利率与股息率对比</strong></p>
+<p>截至2026年5月29日，Shibor 1W为1.55%，较20日前（2026年5月9日）的1.60%下行5bp，资金面维持宽松。同期贵州茅台（600519.XSHG）股息率（<code>dividend_yield_ttm</code>）为3.89%，高于Shibor 1W达234bp，高股息提供相对价值支撑。但需注意，股息率基于TTM分红数据，未来分红可持续性取决于盈利与现金流。</p>
+<h3>图 · Shibor 利率</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/shibor_rates.png" alt="Shibor 利率" loading="lazy" /></figure>
+<p class="figure-note">短端利率整体下行，波动相对平稳。</p>
+<p><strong>收益率曲线与估值逻辑</strong></p>
+<h3>图 · 国债收益率走势</h3>
+<figure class="report-figure"><img src="charts/600519_multi_agent_report/gov_yield_trend.png" alt="国债收益率走势" loading="lazy" /></figure>
+<p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
+<p>截至2026年5月29日，关键期限国债收益率如下：</p>
+<table><thead><tr><th>期限</th><th>收益率（%）</th></tr></thead><tbody><tr><td>1Y</td><td>1.45</td></tr><tr><td>10Y</td><td>1.68</td></tr><tr><td>30Y</td><td>1.85</td></tr></tbody></table>
+<p>期限利差（10Y-1Y）为23bp，处于历史低位，反映市场对长期经济预期偏谨慎。低利率环境理论上利好权益估值（DCF折现率下降），但贵州茅台PE_TTM为20.04倍（<code>pe_ratio_ttm</code>），较2025年9月11日的21.21倍下降5.5%，同期归母净利润增速转负（2025年归母净利润同比-4.5%），盈利下滑抵消了利率下行对估值的提振作用。</p>
+<p><strong>盈利与现金流对股息可持续性的影响</strong></p>
+<p>2025年贵州茅台归母净利润82,320,067,101.68元，经营现金流61,522,204,989.35元，净现比0.72，利润现金转化效率偏低。MD&amp;A解释经营现金流减少主要系“控股子公司贵州茅台集团财务有限公司吸收集团公司成员单位存款减少及不可随时支取的同业存款增加”。净现比低于1，削弱了高股息的可持续性预期，需关注未来分红政策是否调整。</p>
+<p><strong>数据局限</strong> - 未提供Shibor 20日前具体数值，仅能基于最新值1.55%与趋势描述判断。 - 未提供国债收益率历史对比数据，无法计算期限利差变动幅度。 - 未提供无风险利率与股权风险溢价的直接关联数据，DCF折现率变动无法精确量化。</p></section>
+<h2 id="综合风险与数据局限">综合风险与数据局限</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026年5月29日，贵州茅台（600519）面临盈利下滑、库存高企与现金流偏弱三重压力，2025年归母净利润同比下降4.5%，净现比仅0.72。</p>
+<p><strong>价格与波动</strong> - 截至2026年5月29日，贵州茅台（600519）收盘价1326.0元，较20日均线（1333.39元）折价0.55%，较60日均线（1397.84元）折价5.14%，价格持续运行于均线下方，RSI为41.04，处于弱势区间。 - 近20日（2026-04-29至2026-05-29）累计下跌5.36%，同期成交量从348.13万股增至764.78万股，增幅119.68%，显示下跌伴随放量，抛压加重。</p>
+<p>近5日（2026-05-25至2026-05-29）价格反弹3.12%，但成交量从463.53万股增至764.78万股，增幅64.99%，反弹放量但未突破均线压制，短期动能仍偏弱。</p>
+<p><strong>基本面与估值</strong> - 2025年贵州茅台（600519）营收1720.54亿元，同比下降1.2%（2024年营收1741.44亿元）；归母净利润823.20亿元，同比下降4.5%（2024年归母净利润862.28亿元），盈利增速由正转负。MD&amp;A显示，收入下滑主要因酒类业务收入同比下降1.08%，其中其他系列酒收入下降9.76%。 - 2025年毛利率91.3%，较2024年下降0.8个百分点；净利率49.78%，较2025年9月11日的52.22%下降2.44个百分点，盈利能力持续收缩。</p>
+<p>MD&amp;A指出，毛利率下降因营业成本增速（8.0%）快于收入增速（-1.21%），且销售费用率从3.24%升至4.22%。 - 截至2026年5月29日，PE（TTM）为20.04倍，较2025年9月11日的21.21倍下降5.5%，但盈利下滑更快，估值性价比未明显改善。2025年净现比仅0.72（归母净利润823.20亿元 vs 经营现金流615.22亿元），MD&amp;A解释为控股子公司吸收存款减少及不可随时支取的同业存款增加。</p>
+<table><thead><tr><th>指标</th><th>2025年9月11日</th><th>2026年5月29日</th><th>变化</th></tr></thead><tbody><tr><td>PE（TTM）</td><td>21.21</td><td>20.04</td><td>-5.5%</td></tr><tr><td>PB（TTM）</td><td>7.89</td><td>6.56</td><td>-16.9%</td></tr><tr><td>净利率（TTM）</td><td>52.22%</td><td>49.78%</td><td>-2.44pct</td></tr><tr><td>毛利率（TTM）</td><td>91.69%</td><td>90.50%</td><td>-1.19pct</td></tr></tbody></table>
+<p><strong>杠杆与流动性</strong> - 截至2026年5月29日，贵州茅台（600519）资产负债率12.12%，较2025年9月11日的14.75%下降2.63个百分点；流动比率7.06，速动比率5.48，短期偿债能力充裕。 - 融资余额从2025年9月11日的165.11亿元增至2026年5月28日的200.48亿元，增幅21.4%，杠杆资金持续加仓，但同期股价下跌，融资盘面临浮亏风险。近20日平均成交量506.69万股，较2025年9月11日水平显著放大，但价格下行，流动性改善未转化为价格支撑。</p>
+<p><strong>宏观与利率</strong> - 无宏观或利率相关数据，无法评估外部环境对贵州茅台（600519）的影响。</p>
+<p><strong>数据局限</strong></p>
+<ul><li>的影响</li><li>在食品饮料行业中的相对估值水平</li></ul></section>
+<h2 id="数据与工具说明">数据与工具说明</h2>
 <ul class="meta-list">
 <li>数据区间：2025-09-11 至 2026-05-29</li>
 <li>计划使用的米筐函数：get_price, get_price_change_rate, get_turnover_rate, get_capital_flow, get_factor, get_securities_margin, get_dividend, get_shares, get_instrument_industry, is_suspended, is_st_stock, get_interbank_offered_rate, get_yield_curve, get_pit_financials_ex</li>
-<li>数据执行日志：<code>outputs\600519_XSHG_data_agent.log</code></li>
-<li>数据质量：8 项可用；缺失 资金流向</li>
-<li>生成时间：2026-05-30 00:51</li>
+<li>数据质量：10 项可用；缺失 基准指数, 资金流向, 大宗交易</li>
+<li>生成时间：2026-05-31 14:50</li>
 </ul>
-<section class="disclaimer"><h2>免责声明</h2><p>本报告仅供课程研究与信息展示，不构成投资建议。</p></section></main>
+<section class="disclaimer" id="免责声明"><h2>免责声明</h2><p>本报告仅供课程研究与信息展示，不构成投资建议。</p></section></main>
 </body>
 </html>

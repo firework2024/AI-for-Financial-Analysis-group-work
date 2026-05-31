@@ -1,10 +1,78 @@
 from __future__ import annotations
 
+import os
+import platform
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
+
+def resolve_xelatex() -> Path | None:
+    """定位 xelatex：XELATEX_PATH 环境变量，或 PATH 中的 xelatex。"""
+    configured = os.environ.get("XELATEX_PATH", "").strip().strip('"')
+    if configured:
+        path = Path(configured).expanduser()
+        if path.is_file():
+            return path.resolve()
+        binary = "xelatex.exe" if platform.system().lower().startswith("win") else "xelatex"
+        candidate = path / binary if path.is_dir() else path
+        if candidate.is_file():
+            return candidate.resolve()
+
+    which = shutil.which("xelatex")
+    if which:
+        return Path(which).resolve()
+    return None
+
+
+def _tex_subprocess_env(xelatex: Path) -> dict[str, str]:
+    """确保 xelatex 能找到同目录下的 miktex/texlive 工具链。"""
+    env = os.environ.copy()
+    bin_dir = str(xelatex.parent)
+    path = env.get("PATH", "")
+    if bin_dir not in path.split(os.pathsep):
+        env["PATH"] = bin_dir + os.pathsep + path
+    return env
+
+
+def _latex_cjk_font_lines() -> str:
+    """Windows 用系统字体；Linux 服务器用 TeX Live 自带的 Fandol 字体包。"""
+    if platform.system().lower().startswith("win"):
+        return (
+            "\\setCJKmainfont{SimSun}\n"
+            "\\setCJKsansfont{SimHei}\n"
+            "\\setCJKmonofont{FangSong}\n"
+        )
+    return (
+        "\\setCJKmainfont{FandolSong}\n"
+        "\\setCJKsansfont{FandolHei}\n"
+        "\\setCJKmonofont{FandolFang}\n"
+    )
+
+
+def _latex_preamble(*, title: str, author: str) -> str:
+    cjk = _latex_cjk_font_lines()
+    return f"""\\documentclass[12pt,a4paper]{{article}}
+\\usepackage{{geometry}}
+\\geometry{{margin=2.54cm}}
+\\usepackage{{graphicx}}
+\\usepackage{{booktabs}}
+\\usepackage{{grffile}}
+\\usepackage{{xcolor}}
+\\usepackage{{hyperref}}
+\\hypersetup{{colorlinks=true, linkcolor=blue, urlcolor=blue}}
+\\usepackage{{xeCJK}}
+{cjk}\\title{{{escape_latex(title)}}}
+\\author{{{escape_latex(author)}}}
+\\date{{\\today}}
+\\begin{{document}}
+\\maketitle
+\\tableofcontents
+\\newpage
+\\sloppy
+"""
 
 def escape_latex(text: str) -> str:
     replacements = {
@@ -145,28 +213,7 @@ def export_latex(
     author: str = "FinAgent",
     compile_pdf: bool = False,
 ) -> Path:
-    preamble = f"""\\documentclass[12pt,a4paper]{{article}}
-\\usepackage{{geometry}}
-\\geometry{{margin=2.54cm}}
-\\usepackage{{graphicx}}
-\\usepackage{{booktabs}}
-\\usepackage{{grffile}}
-\\usepackage{{xcolor}}
-\\usepackage{{hyperref}}
-\\hypersetup{{colorlinks=true, linkcolor=blue, urlcolor=blue}}
-\\usepackage{{xeCJK}}
-\\setCJKmainfont{{SimSun}}
-\\setCJKsansfont{{SimHei}}
-\\setCJKmonofont{{FangSong}}
-\\title{{{escape_latex(title)}}}
-\\author{{{escape_latex(author)}}}
-\\date{{\\today}}
-\\begin{{document}}
-\\maketitle
-\\tableofcontents
-\\newpage
-\\sloppy
-"""
+    preamble = _latex_preamble(title=title, author=author)
     body = markdown_to_latex(markdown_text)
     postamble = "\\end{document}\n"
     full_tex = preamble + body + postamble
@@ -176,23 +223,33 @@ def export_latex(
 
     if compile_pdf:
         tex_dir = output_tex_path.parent
+        xelatex = resolve_xelatex()
+        if not xelatex:
+            print(
+                "未找到 xelatex。请安装 TeX Live / MiKTeX，或在 .env 中设置 XELATEX_PATH=完整路径\\xelatex.exe"
+            )
+            return output_tex_path
         try:
+            cmd = [str(xelatex), "-interaction=nonstopmode", output_tex_path.name]
+            env = _tex_subprocess_env(xelatex)
             result = subprocess.run(
-                ["xelatex", "-interaction=nonstopmode", output_tex_path.name],
+                cmd,
                 cwd=tex_dir,
                 capture_output=True,
                 text=True,
-                encoding='utf-8',
-                timeout=120,
+                encoding="utf-8",
+                timeout=180,
+                env=env,
             )
             if result.returncode == 0:
                 subprocess.run(
-                    ["xelatex", "-interaction=nonstopmode", output_tex_path.name],
+                    cmd,
                     cwd=tex_dir,
                     capture_output=True,
                     text=True,
-                    encoding='utf-8',
-                    timeout=120,
+                    encoding="utf-8",
+                    timeout=180,
+                    env=env,
                 )
                 print(f"PDF 生成成功: {output_tex_path.with_suffix('.pdf')}")
             else:
@@ -200,8 +257,6 @@ def export_latex(
                 print(result.stdout[-2000:] if result.stdout else "")
                 print(result.stderr[-2000:] if result.stderr else "")
                 print("=========================")
-        except FileNotFoundError:
-            print("未找到 xelatex 命令，请安装 TeX Live 或 MiKTeX 并确保 xelatex 在 PATH 中。")
         except Exception as e:
             print(f"编译异常: {e}")
     return output_tex_path

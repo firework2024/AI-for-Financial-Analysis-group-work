@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>000002 万科A 多智能体研究报告</title>
+  <style>
+:root {
+  color-scheme: light;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #2563eb;
+  --bg-soft: #f9fafb;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text);
+  background: #fff;
+}
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  font-size: 1rem;
+}
+h1 {
+  margin: 0 0 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 3px solid var(--accent);
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+h2 {
+  margin: 2.25rem 0 1rem;
+  color: #1e40af;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+h3 {
+  margin: 1.35rem 0 0.65rem;
+  color: #111827;
+  font-size: 1.12rem;
+  font-weight: 600;
+}
+h4 {
+  margin: 1.1rem 0 0.55rem;
+  color: #111827;
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+h5, h6 {
+  margin: 1rem 0 0.5rem;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.section-body {
+  font-size: 1rem;
+}
+.section-body h3, .section-body h4, .section-body h5, .section-body h6 {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+h3.chart-group {
+  margin-top: 1.5rem;
+  font-size: 1.08rem;
+  color: #374151;
+}
+.draft-banner {
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  border-left: 4px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+.draft-banner p { margin: 0; }
+.report-toc {
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.report-toc-details { margin: 0; }
+.report-toc-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #374151;
+  user-select: none;
+}
+.report-toc-details > summary::-webkit-details-marker { display: none; }
+.report-toc-details > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.35rem;
+  transition: transform 0.15s ease;
+  color: #64748b;
+}
+.report-toc-details[open] > summary::before { transform: rotate(90deg); }
+.report-toc-count {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 0.35rem;
+}
+.report-toc ul {
+  margin: 0;
+  padding: 0.35rem 0.85rem 0.65rem 1.35rem;
+  columns: 2;
+  column-gap: 1.5rem;
+  border-top: 1px solid var(--border);
+  background: #fff;
+}
+.report-toc li {
+  margin: 0.15rem 0;
+  break-inside: avoid;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.report-toc a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.report-toc a:hover {
+  text-decoration: underline;
+}
+@media (max-width: 720px) {
+  .report-toc { margin-bottom: 0.85rem; }
+  .report-toc-details > summary { padding: 0.5rem 0.75rem; font-size: 0.82rem; }
+  .report-toc ul { columns: 1; padding: 0.3rem 0.65rem 0.55rem 1.1rem; }
+  .report-toc li { font-size: 0.8rem; margin: 0.1rem 0; }
+}
+ul, ol { margin: 0.75rem 0; padding-left: 1.4rem; font-size: 1rem; }
+li { margin: 0.35rem 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.75rem;
+  vertical-align: top;
+}
+th { background: var(--bg-soft); text-align: left; }
+.metrics td:last-child { text-align: right; white-space: nowrap; }
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin: 1rem 0 1.5rem;
+}
+.chart-figure {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  text-align: center;
+}
+.chart-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 6px;
+  background: #fff;
+}
+.chart-figure figcaption {
+  margin-bottom: 0.65rem;
+  font-weight: 600;
+  color: #111827;
+}
+.section-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5rem auto 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.report-figure {
+  margin: 0.75rem 0 0.25rem;
+  text-align: center;
+}
+.report-figure img {
+  margin: 0 auto;
+}
+.figure-note {
+  margin: 0 0 1.75rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-soft);
+  font-size: 0.94rem;
+  color: #374151;
+  line-height: 1.6;
+}
+.figure-note strong { color: #1e40af; }
+.meta-list { color: var(--muted); }
+.disclaimer {
+  margin-top: 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.disclaimer h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .page { padding: 1.25rem 1rem 2rem; }
+  h1 { font-size: 1.45rem; }
+}
+</style>
+</head>
+<body>
+  <main class="page"><h1>000002 万科A 多智能体研究报告</h1>
+<aside class="draft-banner"><p>&gt; <strong>草稿状态</strong>：验证评分 65，结论 <code>revise</code>。 本报告尚未通过验证 Agent 复核，请勿对外发布。</p></aside>
+<nav class="report-toc"><details class="report-toc-details"><summary>目录 <span class="report-toc-count">9 节</span></summary><ul><li><a href="#执行摘要">执行摘要</a></li><li><a href="#核心指标速览">核心指标速览</a></li><li><a href="#量价与技术面">量价与技术面</a></li><li><a href="#基本面与估值">基本面与估值</a></li><li><a href="#资金与交易结构">资金与交易结构</a></li><li><a href="#宏观利率背景">宏观利率背景</a></li><li><a href="#综合风险与数据局限">综合风险与数据局限</a></li><li><a href="#数据与工具说明">数据与工具说明</a></li><li><a href="#免责声明">免责声明</a></li></ul></details></nav>
+<h2 id="执行摘要">执行摘要</h2>
+<section class="section-body prose-lead"><p>万科A最新收盘价3.55元，近20日下跌8.27%、近60日跌幅达23.98%，但5月29日单日放量上涨7.25%，换手率升至4.65%。公司当前市净率仅0.28倍，然而TTM市盈率为负（-0.48），2025年归母净利润亏损88.56亿元，资产负债率仍高达77.13%。两融余额约25.78亿元，短期偿债压力下流动比率1.22、速动比率0.56。</p></section>
+<h2 id="核心指标速览">核心指标速览</h2>
+<table class="metrics"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>中信一级行业</td><td>42</td></tr><tr><td>最新收盘价</td><td>3.55</td></tr><tr><td>MA20</td><td>3.7295</td></tr><tr><td>MA60</td><td>4.027</td></tr><tr><td>20 日收益率</td><td>-8.27%</td></tr><tr><td>60 日收益率</td><td>-23.98%</td></tr><tr><td>RSI14</td><td>26.7241</td></tr><tr><td>20 日均量</td><td>1.50 亿</td></tr><tr><td>PE(TTM)</td><td>-0.4799</td></tr><tr><td>PB(TTM)</td><td>0.2849</td></tr><tr><td>PS(TTM)</td><td>0.1888</td></tr><tr><td>股息率(TTM)</td><td>0.00%</td></tr><tr><td>总市值</td><td>423.54 亿</td></tr><tr><td>融资余额</td><td>25.72 亿</td></tr><tr><td>融资买入额</td><td>3598.03 万</td></tr></tbody></table>
+<h2 id="量价与技术面">量价与技术面</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026-05-29，万科A（000002.XSHE）收盘3.55元，近60日下跌23.98%，RSI 14为26.72，处于超卖区域，但量价背离显示反弹动能不足。</p>
+<h3>图 · RSI 与 MACD</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/technical_indicators.png" alt="RSI 与 MACD" loading="lazy" /></figure>
+<p class="figure-note">RSI 处于超卖区域；MACD 位于信号线下方，动能偏弱。</p>
+<h3>表 · 技术指标快照</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>最新收盘价</td><td>3.55</td></tr><tr><td>MA20</td><td>3.7295</td></tr><tr><td>MA60</td><td>4.027</td></tr><tr><td>20 日收益率</td><td>-8.27%</td></tr><tr><td>60 日收益率</td><td>-23.98%</td></tr><tr><td>RSI14</td><td>26.7241</td></tr><tr><td>20 日均量</td><td>1.50 亿</td></tr></tbody></table>
+<p><strong>趋势概览</strong></p>
+<h3>图 · 收盘价与 MA20/MA60</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/moving_averages.png" alt="收盘价与 MA20/MA60" loading="lazy" /></figure>
+<p class="figure-note">价格运行在均线之下，短中期趋势偏弱。</p>
+<p>截至2026-05-29，万科A（000002.XSHE）收盘价3.55元，已跌破MA20（3.73元）和MA60（4.03元），分别低于均线4.81%和11.85%。近20日收益率为-8.27%，近60日收益率为-23.98%，呈现持续下跌趋势。14日RSI为26.72，进入技术性超卖区间（低于30），表明短期卖压可能过度释放，但价格仍受中长期均线压制。该股票所属房地产行业（行业代码42）同期整体承压，但本节仅聚焦个股技术面。</p>
+<table><thead><tr><th>指标</th><th>数值</th><th>日期</th></tr></thead><tbody><tr><td>最新收盘价</td><td>3.55元</td><td>2026-05-29</td></tr><tr><td>MA20</td><td>3.73元</td><td>2026-05-29</td></tr><tr><td>MA60</td><td>4.03元</td><td>2026-05-29</td></tr><tr><td>20日收益率</td><td>-8.27%</td><td>2026-04-29至2026-05-29</td></tr><tr><td>60日收益率</td><td>-23.98%</td><td>2026-03-02至2026-05-29</td></tr><tr><td>RSI 14</td><td>26.72</td><td>2026-05-29</td></tr></tbody></table>
+<p><strong>近期异动</strong></p>
+<p>2026-05-29，万科A（000002.XSHE）单日上涨7.25%（收盘价从3.31元升至3.55元），成交量达4.51亿股，是20日均量（1.50亿股）的3.01倍，成交额16.13亿元，为近10个交易日最高。此前一日（2026-05-28）股价创下区间低点3.27元（收盘3.31元），成交量1.21亿股。该放量反弹发生在创低点后次日，显示有资金在低位介入。</p>
+<table><thead><tr><th>日期</th><th>收盘价</th><th>涨跌幅</th><th>成交量</th><th>20日均量倍数</th><th>备注</th></tr></thead><tbody><tr><td>2026-05-28</td><td>3.31元</td><td>-0.60%</td><td>1.21亿股</td><td>0.81倍</td><td>区间最低收盘价</td></tr><tr><td>2026-05-29</td><td>3.55元</td><td>+7.25%</td><td>4.51亿股</td><td>3.01倍</td><td>放量反弹，成交额16.13亿元</td></tr><tr><td>2026-05-22</td><td>3.46元</td><td>-0.29%</td><td>0.87亿股</td><td>0.58倍</td><td>缩量下跌，成交额3.01亿元</td></tr></tbody></table>
+<h3>图 · 回撤曲线</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/drawdown.png" alt="回撤曲线" loading="lazy" /></figure>
+<p class="figure-note">回撤经历加深后有所修复。</p>
+<p><strong>量价关系</strong></p>
+<h3>图 · 收盘价与成交量</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/price_volume.png" alt="收盘价与成交量" loading="lazy" /></figure>
+<p class="figure-note">价格整体下行，成交量先抑后扬。</p>
+<p>近20日（2026-04-29至2026-05-29），万科A（000002.XSHE）价格从3.87元下跌至3.55元，跌幅8.27%，而同期成交量从1.45亿股放大至4.51亿股，增幅210.89%，呈现“价跌量增”的弱势格局。近5日（2026-05-25至2026-05-29），价格从3.49元微涨至3.55元，涨幅1.72%，但成交量从0.95亿股激增至4.51亿股，增幅375.21%，显示反弹伴随显著放量，但价格涨幅有限，表明上方抛压较重。</p>
+<p>区间高点出现在2025-09-17（7.08元），低点出现在2026-05-28（3.27元），价格自高点累计下跌53.67%，整体处于长期下降通道中。</p>
+<p><strong>融资余额变化</strong></p>
+<p>融资余额从2025-09-11的34.63亿元下降至2026-05-28的25.72亿元，降幅25.73%，期间峰值出现在2025-12-10（40.87亿元）。融资余额持续下降，反映杠杆资金在价格下跌过程中逐步离场，市场情绪偏谨慎。</p>
+<p><strong>数据局限</strong></p>
+<ul><li>未提供融券余额数据，无法评估做空力量变化。</li><li>未提供20日均量以外的更长周期均量（如60日均量），无法判断成交量异动的历史分位。</li><li>未提供区间内每日价格与成交量的完整序列，仅覆盖近10个交易日，无法进行更细致的量价形态分析。</li></ul></section>
+<h2 id="基本面与估值">基本面与估值</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026年5月29日，万科A连续三年亏损致PE为负，PB仅0.28倍，资产负债率升至77.1%，盈利质量与偿债能力均承压。</p>
+<h3>表 · 最新偿债与流动性</h3>
+<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>流动比率</td><td>1.22 倍</td></tr><tr><td>速动比率</td><td>0.56 倍</td></tr><tr><td>资产负债率</td><td>77.13%</td></tr></tbody></table>
+<p><strong>盈利与成长</strong></p>
+<h3>表 · 最新盈利质量因子</h3>
+<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>毛利率(TTM)</td><td>9.99%</td></tr><tr><td>净利率(TTM)</td><td>-40.78%</td></tr></tbody></table>
+<p>2023年至2025年，万科A（000002.XSHE）营收与归母净利润持续下滑，2024年转为亏损，2025年亏损进一步扩大。具体数据如下：</p>
+<table><thead><tr><th>年份</th><th>营收（元）</th><th>营收同比增速</th><th>归母净利润（元）</th><th>归母净利润同比增速</th><th>营业利润（元）</th></tr></thead><tbody><tr><td>2023</td><td>465,739,076,702.23</td><td>-</td><td>12,162,684,368.86</td><td>-</td><td>29,251,702,064.41</td></tr><tr><td>2024</td><td>343,176,440,712.96</td><td>-26.3%</td><td>-49,478,429,211.96</td><td>-506.8%</td><td>-45,643,796,280.61</td></tr><tr><td>2025</td><td>233,432,768,960.43</td><td>-32.0%</td><td>-88,556,470,495.64</td><td>亏损扩大79.0%</td><td>-70,999,044,405.37</td></tr></tbody></table>
+<p>2025年营收同比下降32.0%，归母净利润亏损扩大79.0%。MD&amp;A解释称，业绩亏损主要因房地产开发项目结算规模显著下降、毛利率仍处低位，以及新增计提了信用减值和资产减值。TTM口径下，截至2026年5月29日，毛利率为9.99%，净利率为-40.78%，毛利率同比增速为-27.85%，显示盈利能力持续恶化。</p>
+<p><strong>现金流与勾稽</strong></p>
+<p>2023年至2025年，万科A（000002.XSHE）经营现金流净额逐年下降，并于2025年转负，与利润表现严重背离。</p>
+<table><thead><tr><th>年份</th><th>经营现金流（元）</th><th>经营现金流同比增速</th><th>归母净利润（元）</th><th>净现比</th></tr></thead><tbody><tr><td>2023</td><td>3,912,323,920.11</td><td>-</td><td>12,162,684,368.86</td><td>0.32</td></tr><tr><td>2024</td><td>3,799,847,632.35</td><td>-2.9%</td><td>-49,478,429,211.96</td><td>-0.08</td></tr><tr><td>2025</td><td>-988,124,860.96</td><td>-126.0%</td><td>-88,556,470,495.64</td><td>0.01</td></tr></tbody></table>
+<p>2025年归母净利润亏损扩大，但经营现金流由正转负，净现比仅0.01，利润几乎未转化为现金。MD&amp;A指出，全年经营活动产生的现金流量为净支出9.9亿元，主要因经营活动现金流入（同比下降36.18%）降幅大于现金流出（同比下降34.59%）。此外，2025年收现比（经营现金流/营收）为0.53，表明收入中有相当比例尚未转化为销售回款，MD&amp;A提及公司面临公开债务集中兑付，流动性压力加大。</p>
+<p><strong>估值水平</strong></p>
+<h3>图 · 估值因子走势</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/valuation_factors.png" alt="估值因子走势" loading="lazy" /></figure>
+<p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
+<h3>图 · PE/PB 历史分位</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/valuation_percentile.png" alt="PE/PB 历史分位" loading="lazy" /></figure>
+<p>截至2026年5月29日，万科A（000002.XSHE）估值指标如下：</p>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>PE (TTM)</td><td>-0.48</td></tr><tr><td>PB (TTM)</td><td>0.28</td></tr><tr><td>PS (TTM)</td><td>0.19</td></tr><tr><td>股息率 (TTM)</td><td>0.0%</td></tr></tbody></table>
+<p>PE为负值，反映公司处于亏损状态。PB为0.28倍，处于破净状态。PS为0.19倍。股息率为0%，公司未进行现金分红。与2025年9月11日相比，PE从-1.58升至-0.48（亏损幅度变化），PB从0.40降至0.28，PS从0.27降至0.19，估值水平随基本面恶化而进一步压缩。</p>
+<p><strong>数据局限</strong> - 未提供2023年及之前的财务数据，无法进行更长期趋势分析。 - 未提供2025年及之后的盈利预测数据。 - 未提供分业务板块的收入与利润明细。</p></section>
+<h2 id="资金与交易结构">资金与交易结构</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026年5月29日，万科A融资余额较区间起点下降25.7%至25.72亿元，资金面持续承压，股价较60日均线折价11.8%。</p>
+<h3>图 · 融资融券余额</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/margin_balances.png" alt="融资融券余额" loading="lazy" /></figure>
+<p class="figure-note">融资余额曲线整体下行。</p>
+<h3>表 · 两融区间变动</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>区间起始</td><td>2025-09-11</td></tr><tr><td>区间结束</td><td>2026-05-28</td></tr><tr><td>融资余额（期初）</td><td>34.63 亿</td></tr><tr><td>融资余额（期末）</td><td>25.72 亿</td></tr><tr><td>融资余额变动</td><td>-8.91 亿</td></tr><tr><td>变动幅度</td><td>-25.73%</td></tr><tr><td>融券余额（期初）</td><td>0.19 亿</td></tr><tr><td>融券余额（期末）</td><td>0.06 亿</td></tr><tr><td>融资买入峰值</td><td>4.09 亿（2025-12-10）</td></tr></tbody></table>
+<p><strong>成交与活跃度</strong></p>
+<h3>表 · 成交活跃度</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>20 日均量</td><td>1.50 亿</td></tr><tr><td>近12日日均成交额</td><td>5.29 亿</td></tr><tr><td>近12日最高成交额</td><td>16.13 亿（2026-05-29）</td></tr><tr><td>近12日最低成交额</td><td>3.01 亿（2026-05-22）</td></tr><tr><td>近12日换手率区间</td><td>89.18% ~ 4.65%</td></tr><tr><td>主力资金流向</td><td>数据缺失</td></tr></tbody></table>
+<p>截至2026年5月29日，万科A（000002.XSHE）最新收盘价3.55元，较20日均线（3.73元）折价4.8%，较60日均线（4.03元）折价11.8%。近20日（2026-04-29至2026-05-29）股价累计下跌8.3%，同期日均成交量为1.50亿股。区间内（2025-09-11至2026-05-29），股价从高点7.08元（2025-09-17）跌至低点3.27元（2026-05-28），累计跌幅达53.8%。</p>
+<p>近5个交易日（2026-05-25至2026-05-29），万科A股价从3.49元反弹至3.55元，涨幅1.7%，但成交量从9501万股放大至4.51亿股，增幅达375.2%，显示低位换手活跃。如图1所示，融资余额与融券余额（双轴）趋势图可进一步验证资金面动向。</p>
+<p><strong>融资融券</strong></p>
+<h3>图 · 融资余额与买卖额</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/margin_enhanced.png" alt="融资余额与买卖额" loading="lazy" /></figure>
+<h3>表 · 融资融券快照</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-28</td></tr><tr><td>融资余额</td><td>25.72 亿</td></tr><tr><td>融券余额</td><td>0.06 亿</td></tr><tr><td>融资买入额</td><td>0.36 亿</td></tr><tr><td>融资偿还额</td><td>0.54 亿</td></tr><tr><td>融券余量</td><td>191.02 万</td></tr><tr><td>两融余额合计</td><td>25.78 亿</td></tr></tbody></table>
+<p>区间内（2025-09-11至2026-05-28），万科A融资余额从34.63亿元下降至25.72亿元，降幅25.7%。融资余额峰值出现在2025-12-10，当日买入额为4.09亿元。融券余额数据缺失。</p>
+<table><thead><tr><th>指标</th><th>起始日（2025-09-11）</th><th>最新日（2026-05-28）</th><th>变化</th></tr></thead><tbody><tr><td>融资余额</td><td>34.63亿元</td><td>25.72亿元</td><td>-25.7%</td></tr></tbody></table>
+<ul><li>数据局限：融券余额数据未提供，无法评估做空压力。</li></ul>
+<p><strong>股东与股本</strong></p>
+<h3>表 · 股本结构快照</h3>
+<table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-29</td></tr><tr><td>总股本</td><td>119.31 亿</td></tr><tr><td>流通 A 股</td><td>97.17 亿</td></tr><tr><td>自由流通股本</td><td>64.74 亿</td></tr><tr><td>自由流通占比</td><td>54.3%</td></tr><tr><td>非自由流通占比</td><td>45.7%</td></tr></tbody></table>
+<p>截至2026年5月29日，万科A总市值为423.54亿元，较区间起始日（2025-09-11）的814.87亿元下降48.0%。市净率（PB）从0.40倍降至0.28倍，市盈率（PE TTM）为-0.48倍，反映公司处于亏损状态。</p>
+<p><strong>分红与资金成本</strong></p>
+<p>截至2026年5月29日，万科A的股息率（TTM）为0.0%，表明近12个月未进行现金分红。根据MD&amp;A披露，万科A存量融资综合成本为3.02%，较上年末下降85个基点。</p>
+<p><strong>杠杆与现金流压力</strong></p>
+<p>根据财务数据，万科A资产负债率从2023年的73.1%上升至2025年的77.1%，同期经营现金流从39.12亿元降至-9.88亿元。MD&amp;A解释称，2025年经营活动现金流净流出9.9亿元，主要因销售回款减少及公开债务集中兑付导致流动性压力加大。利润增长与经营现金流变动背离：2025年归母净利润同比改善79.0%，但经营现金流同比下滑126.0%，利润质量存疑。</p>
+<table><thead><tr><th>年份</th><th>资产负债率</th><th>经营现金流（亿元）</th><th>归母净利润（亿元）</th></tr></thead><tbody><tr><td>2023</td><td>73.1%</td><td>39.12</td><td>121.63</td></tr><tr><td>2024</td><td>76.9%</td><td>37.99</td><td>-494.78</td></tr><tr><td>2025</td><td>77.1%</td><td>-9.88</td><td>-885.56</td></tr></tbody></table>
+<ul><li>数据局限：融券余额、股东户数、大宗交易、机构持仓、限售股解禁、回购数据未提供。</li></ul></section>
+<h2 id="宏观利率背景">宏观利率背景</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026-05-29，万科A（000002.XSHE）资产负债率77.1%、PE TTM -0.48倍、股息率0.0%，利率环境对估值传导路径断裂。</p>
+<p><strong>短端利率与资金成本</strong> - 数据局限：JSON未提供Shibor、LPR等短期市场利率数据，无法计算短端利率变动对万科A融资成本的影响。 - 万科A 2025年存量融资综合成本为3.02%（MD&amp;A数据），较上年末下降85个基点，但该成本为历史数据，无法与当前短端利率对比。 - 万科A 2025年末有息负债中，一年内到期占比44.8%，一年以上占比55.2%（MD&amp;A数据），债务期限结构偏短，但缺乏市场利率数据评估再融资成本压力。</p>
+<h3>图 · Shibor 利率</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/shibor_rates.png" alt="Shibor 利率" loading="lazy" /></figure>
+<p class="figure-note">短端利率整体下行，波动相对平稳。</p>
+<p><strong>收益率曲线与期限利差</strong> - 数据局限：JSON未提供国债1Y/10Y/30Y收益率或期限利差数据，无法分析收益率曲线形态变化对万科A的影响。</p>
+<h3>图 · 国债收益率走势</h3>
+<figure class="report-figure"><img src="charts/000002_multi_agent_report/gov_yield_trend.png" alt="国债收益率走势" loading="lazy" /></figure>
+<p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
+<p><strong>利率环境与估值的逻辑联系</strong> - 股息率视角：万科A最新股息率TTM为0.0%（<code>factor_snapshot</code>），无股息回报，利率变动无法通过股息贴现模型影响估值。 - 估值倍数视角：PE TTM为-0.48倍（因归母净利润连续两年亏损），PB TTM为0.28倍（<code>factor_snapshot</code>）。在利率下行环境中，低PB通常意味着资产价值重估潜力，但万科A资产负债率高达77.1%（<code>factor_snapshot</code>），且2025年经营现金流为负（-9.9亿元，MD&amp;A数据），高杠杆与负现金流削弱了利率下行对资产价值的正面传导。</p>
+<ul><li>财务数据对比：2023-2025年营收与归母净利润持续恶化，经营现金流由正转负，表明公司基本面压力远大于利率环境变动的影响。</li></ul>
+<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>4657.4</td><td>3431.8</td><td>2334.3</td></tr><tr><td>归母净利润（亿元）</td><td>121.6</td><td>-494.8</td><td>-885.6</td></tr><tr><td>经营现金流（亿元）</td><td>39.1</td><td>38.0</td><td>-9.9</td></tr><tr><td>资产负债率（%）</td><td>73.1</td><td>76.9</td><td>77.1</td></tr></tbody></table>
+<ul><li>数据来源：<code>pit_financials_table</code>（2023-2025年财务数据），<code>factor_trend</code>（资产负债率2025-09-11为73.1%，2026-05-29为77.1%）。</li></ul>
+<p><strong>数据局限</strong> - JSON未提供Shibor、国债收益率、期限利差等宏观利率数据，无法完成短端利率与收益率曲线的定量分析。 - 无行业平均利率或可比公司融资成本数据，无法进行横向对比。 - 无利率预测或政策利率变动信息，无法评估未来利率走势对万科A的影响。</p></section>
+<h2 id="综合风险与数据局限">综合风险与数据局限</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>截至2026-05-29，万科A股价3.55元，较60日均线折价11.8%，资产负债率77.1%，经营现金流连续两年为负，综合风险偏高。</p>
+<p><strong>价格与波动</strong> - 截至2026-05-29，万科A（000002.XSHE）收盘价3.55元，较20日均线（3.73元）折价4.8%，较60日均线（4.03元）折价11.8%，价格持续低于均线系统，反映市场持续看空。 - 近60日累计下跌24.0%，RSI为26.7，处于超卖区域；近5日（2026-05-25至2026-05-29）股价反弹1.7%，但成交量放大375.2%，显示短期博弈加剧，多空分歧显著。 - 区间极值：2025-09-17最高价7.08元，2026-05-28最低价3.27元，区间最大回撤53.8%，股价已腰斩。</p>
+<p><strong>基本面与估值</strong> - 2025年营收2334.3亿元，同比下降32.0%（2024年营收3431.8亿元，同比降26.3%），归母净利润-885.6亿元，连续两年亏损且亏损扩大79.0%，盈利能力持续恶化。 - 估值指标：PE（TTM）为-0.48倍（亏损），PB为0.28倍，PS为0.19倍，均处于历史低位，反映市场对资产质量和盈利前景的悲观预期。 - 盈利能力恶化：毛利率从2025-09-11的11.1%降至2026-05-29的10.0%，净利率从-16.7%降至-40.8%，降幅显著。</p>
+<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>4657.4</td><td>3431.8</td><td>2334.3</td></tr><tr><td>归母净利润（亿元）</td><td>121.6</td><td>-494.8</td><td>-885.6</td></tr><tr><td>经营现金流（亿元）</td><td>39.1</td><td>38.0</td><td>-9.9</td></tr></tbody></table>
+<p><strong>杠杆与流动性</strong> - 资产负债率从2025-09-11的73.1%升至2026-05-29的77.1%，MD&amp;A披露2025年末净负债率123.5%，较2024年末提高42.9个百分点，杠杆压力持续加大。 - 流动比率1.22，速动比率0.56，均低于安全阈值；短期偿债压力大，MD&amp;A显示一年内到期有息负债1605.6亿元，占比44.8%，流动性风险突出。 - 融资余额从2025-09-11的34.6亿元降至2026-05-28的25.7亿元，降幅25.7%，杠杆资金持续流出，反映市场避险情绪。</p>
+<p><strong>宏观与利率</strong> - 无直接宏观或利率数据可用，无法评估外部环境对万科A（000002.XSHE）的影响。</p>
+<p><strong>数据局限</strong> - 宏观与利率数据缺失，无法量化外部环境对万科A（000002.XSHE）的影响。 - 股息率TTM为0.0%，无法评估股东回报。 - 归母净利润增速、营收增速等关键增长指标数据缺失，无法进行完整的成长性分析。</p></section>
+<h2 id="数据与工具说明">数据与工具说明</h2>
+<ul class="meta-list">
+<li>数据区间：2025-09-11 至 2026-05-29</li>
+<li>计划使用的米筐函数：get_price, get_price_change_rate, get_turnover_rate, get_capital_flow, get_factor, get_securities_margin, get_dividend, get_shares, get_instrument_industry, is_suspended, is_st_stock, get_interbank_offered_rate, get_yield_curve, get_pit_financials_ex</li>
+<li>数据质量：9 项可用；缺失 基准指数, 资金流向, 大宗交易, 分红</li>
+<li>生成时间：2026-05-31 14:46</li>
+</ul>
+<section class="disclaimer" id="免责声明"><h2>免责声明</h2><p>本报告仅供课程研究与信息展示，不构成投资建议。</p></section></main>
+</body>
+</html>

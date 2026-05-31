@@ -182,6 +182,26 @@ def save_data_snapshot(
         return snapshot_id
 
 
+def persist_market_snapshot(
+    data: dict[str, Any],
+    *,
+    lookback_days: int | None = None,
+    source: str = "data_executor",
+) -> int | None:
+    """将 data_executor 返回的 dict 写入 SQLite；失败时返回 None，不中断主流程。"""
+    stock_code = str(data.get("stock_code") or "").strip()
+    if not stock_code:
+        order_book_id = str(data.get("order_book_id") or "").strip()
+        if order_book_id:
+            stock_code = order_book_id.split(".")[0]
+    if not stock_code:
+        return None
+    try:
+        return save_data_snapshot(data, stock_code=stock_code, lookback_days=lookback_days, source=source)
+    except Exception:
+        return None
+
+
 def save_pit_financials(
     result: FinancialFetchResult | Any,
     *,

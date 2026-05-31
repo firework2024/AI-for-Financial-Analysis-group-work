@@ -9,6 +9,7 @@ from .cninfo import default_as_of, download_report, latest_annual_report
 from .env import load_dotenv
 from .fallback import apply_financial_fallbacks
 from .financial_analysis import analyze_financials
+from .mda_analysis import enrich_financial_analysis_with_mda
 from .llm import investment_director_analysis, mda_summary_agent
 from .pdf_text import extract_mda, extract_pdf_text
 from .report import build_annual_json_payload, render_markdown
@@ -49,6 +50,7 @@ def run(options: WorkflowOptions) -> dict[str, Any]:
         "quarters": fetched.quarters,
     }
     financial_analysis = analyze_financials(financial_data, metric_factor_values, company_context)
+    financial_analysis = enrich_financial_analysis_with_mda(financial_analysis, mda.mda_text)
     mda_brief = mda_summary_agent(mda.mda_text, company_context)
     director = investment_director_analysis(mda.mda_text, financial_analysis, company_context)
 

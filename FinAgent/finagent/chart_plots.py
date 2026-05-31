@@ -23,6 +23,7 @@ from .chart_style import (
     factor_to_chart_scale,
     label,
     new_figure,
+    plot_category_bars,
     plot_line,
     prepare_date_index,
     save_chart,
@@ -31,6 +32,7 @@ from .chart_style import (
     style_axes,
     style_legend,
     style_twin_axes,
+    to_percent_points,
 )
 from .technical import enrich_price_frame, numeric_value_column, resolve_close_column, safe_float
 
@@ -268,6 +270,58 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             charts["valuation_factors"] = str(path)
         close_figure(fig)
 
+        window = min(252, len(factor_history))
+        for col in ("pe_ratio_ttm", "pb_ratio_ttm"):
+            if col in factor_history.columns:
+                factor_history[f"{col}_pct"] = factor_history[col].rolling(window).apply(
+                    lambda x: (x.iloc[-1] - x.min()) / (x.max() - x.min()) if x.max() != x.min() else 0.5,
+                    raw=False,
+                )
+        if "pe_ratio_ttm" in factor_history.columns and factor_history["pe_ratio_ttm"].notna().any():
+            fig, ax1 = new_figure()
+            plot_line(
+                ax1,
+                factor_history["date"],
+                factor_history["pe_ratio_ttm"],
+                color=PALETTE["secondary"],
+                linewidth=1.8,
+                label=label("pe_ratio_ttm"),
+            )
+            if "pb_ratio_ttm" in factor_history.columns and factor_history["pb_ratio_ttm"].notna().any():
+                ax2 = ax1.twinx()
+                plot_line(
+                    ax2,
+                    factor_history["date"],
+                    factor_history["pb_ratio_ttm"],
+                    color=PALETTE["accent"],
+                    linewidth=1.8,
+                    label=label("pb_ratio_ttm"),
+                )
+                style_twin_axes(ax2)
+                ax2.set_ylabel(label("pb_ratio_ttm"), color="#475569", fontsize=9)
+                style_legend(ax2, loc="upper right")
+            if "pe_ratio_ttm_pct" in factor_history.columns and not factor_history["pe_ratio_ttm_pct"].isna().all():
+                last_pct = float(factor_history["pe_ratio_ttm_pct"].iloc[-1])
+                ax1.annotate(
+                    f"PE 分位 {last_pct:.0%}",
+                    xy=(len(factor_history) - 1, factor_history["pe_ratio_ttm"].iloc[-1]),
+                    xytext=(8, 8),
+                    textcoords="offset points",
+                    fontsize=8,
+                    color=PALETTE["secondary"],
+                )
+            style_axes(
+                ax1,
+                title=chart_title(stock, "valuation_percentile", extra=f"rolling {window}d"),
+                ylabel=label("pe_ratio_ttm"),
+                date_index=factor_history["date"],
+            )
+            style_legend(ax1, loc="upper left")
+            path = output_dir / "valuation_percentile.png"
+            save_chart(fig, path)
+            close_figure(fig)
+            charts["valuation_percentile"] = str(path)
+
         growth_cols = (
             "net_profit_growth_ratio_ttm",
             "operating_profit_growth_ratio_ttm",
@@ -421,6 +475,48 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             charts["margin_activity"] = str(path)
         close_figure(fig)
 
+        if "margin_balance" in margin.columns and margin["margin_balance"].notna().any():
+            fig, ax1 = new_figure()
+            plot_line(
+                ax1,
+                margin["date"],
+                margin["margin_balance"],
+                color=PALETTE["secondary"],
+                linewidth=1.8,
+                label=label("margin_balance"),
+            )
+            ax2 = ax1.twinx()
+            x_idx, dt_idx = prepare_date_index(margin["date"])
+            if "buy_on_margin_value" in margin.columns and margin["buy_on_margin_value"].notna().any():
+                ax2.bar(
+                    x_idx,
+                    margin["buy_on_margin_value"],
+                    alpha=0.45,
+                    width=0.75,
+                    color=PALETTE["positive"],
+                    label=label("buy_on_margin_value"),
+                    zorder=2,
+                )
+            if "margin_repayment" in margin.columns and margin["margin_repayment"].notna().any():
+                ax2.bar(
+                    x_idx,
+                    -margin["margin_repayment"],
+                    alpha=0.45,
+                    width=0.75,
+                    color=PALETTE["negative"],
+                    label=label("margin_repayment"),
+                    zorder=2,
+                )
+            style_axes(ax1, title=chart_title(stock, "margin_enhanced"), ylabel=label("margin_balance"), date_index=margin["date"])
+            ax2.set_ylabel("日度流向", color="#94A3B8", fontsize=9)
+            style_twin_axes(ax2)
+            style_legend(ax1, loc="upper left")
+            style_legend(ax2, loc="upper right", ncol=2)
+            path = output_dir / "margin_enhanced.png"
+            save_chart(fig, path)
+            close_figure(fig)
+            charts["margin_enhanced"] = str(path)
+
     if not shares.empty and "date" in shares.columns:
         shares["date"] = pd.to_datetime(shares["date"])
         for col in ("total", "circulation_a", "free_circulation"):
@@ -440,6 +536,31 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             charts["share_structure"] = str(path)
         close_figure(fig)
 
+        latest = shares.iloc[-1]
+        total = safe_float(latest.get("total")) or 0
+        circ_a = safe_float(latest.get("circulation_a")) or 0
+        free_circ = safe_float(latest.get("free_circulation")) or 0
+        non_free = max(circ_a - free_circ, 0) if circ_a and free_circ else 0
+        other = max(total - circ_a, 0) if total else 0
+        pie_labels = ["自由流通股本", "限售流通股", "其他"]
+        pie_sizes = [free_circ, non_free, other]
+        if total and any(size > 0 for size in pie_sizes):
+            fig, ax = new_figure(figsize=(10.2, 4.8))
+            ax.pie(
+                pie_sizes,
+                labels=pie_labels,
+                autopct="%1.1f%%",
+                startangle=90,
+                colors=SERIES_COLORS[:3],
+                wedgeprops={"linewidth": 0.6, "edgecolor": "#FFFFFF"},
+                textprops={"color": PALETTE["text"], "fontsize": 9},
+            )
+            ax.set_title(chart_title(stock, "share_structure_pie"), loc="left", color=PALETTE["text"], fontsize=12.5, fontweight=600, pad=12)
+            path = output_dir / "share_structure_pie.png"
+            save_chart(fig, path)
+            close_figure(fig)
+            charts["share_structure_pie"] = str(path)
+
     if not dividend.empty:
         cash_col = "dividend_cash_before_tax"
         date_col = "declaration_announcement_date" if "declaration_announcement_date" in dividend.columns else "date"
@@ -457,6 +578,33 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
                 save_chart(fig, path)
                 close_figure(fig)
                 charts["dividend_history"] = str(path)
+
+    if factor_latest and not yield_curve.empty and "dividend_yield_ttm" in factor_latest:
+        dividend_raw = safe_float(factor_latest.get("dividend_yield_ttm"))
+        if dividend_raw is not None:
+            yield_curve["date"] = pd.to_datetime(yield_curve["date"])
+            for col in yield_curve.columns:
+                if col != "date":
+                    yield_curve[col] = pd.to_numeric(yield_curve[col], errors="coerce")
+            yc_1y = yield_curve.dropna(subset=["1Y"]).tail(1) if "1Y" in yield_curve.columns else pd.DataFrame()
+            if not yc_1y.empty:
+                dividend_pct = to_percent_points(dividend_raw)
+                risk_free_pct = to_percent_points(float(yc_1y["1Y"].iloc[0]))
+                if dividend_pct is not None and risk_free_pct is not None:
+                    spread_pct = dividend_pct - risk_free_pct
+                    fig, ax = new_figure(figsize=(10.2, 4.6))
+                    categories = ["股息率(TTM)", "1Y国债收益率", "利差"]
+                    values = [dividend_pct, risk_free_pct, spread_pct]
+                    colors = [PALETTE["positive"], PALETTE["accent"], PALETTE["secondary"]]
+                    if spread_pct < 0:
+                        colors[2] = PALETTE["negative"]
+                    plot_category_bars(ax, categories, values, colors=colors)
+                    add_zero_line(ax)
+                    style_axes(ax, title=chart_title(stock, "dividend_spread"), ylabel="收益率 (%)")
+                    path = output_dir / "dividend_spread.png"
+                    save_chart(fig, path)
+                    close_figure(fig)
+                    charts["dividend_spread"] = str(path)
 
     if not interbank_rate.empty and "date" in interbank_rate.columns:
         interbank_rate["date"] = pd.to_datetime(interbank_rate["date"])
@@ -490,6 +638,37 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
         tenor_cols = [col for col in ("1Y", "3Y", "5Y", "10Y", "30Y") if col in yield_curve.columns]
         for col in tenor_cols:
             yield_curve[col] = pd.to_numeric(yield_curve[col], errors="coerce")
+
+        trend_cols = [col for col in ("1Y", "10Y", "30Y") if col in yield_curve.columns]
+        plot_trend = yield_curve.dropna(subset=trend_cols, how="all")
+        if len(plot_trend) >= 2:
+            fig, ax = new_figure()
+            plotted = False
+            for idx, col in enumerate(trend_cols):
+                series = plot_trend[col].map(lambda v: to_percent_points(v) if pd.notna(v) else None)
+                if series.notna().sum() >= 2:
+                    plot_line(
+                        ax,
+                        plot_trend["date"],
+                        series,
+                        color=SERIES_COLORS[idx % len(SERIES_COLORS)],
+                        linewidth=1.8,
+                        label=f"{col} 国债",
+                    )
+                    plotted = True
+            if plotted:
+                style_axes(
+                    ax,
+                    title=chart_title(stock, "gov_yield_trend"),
+                    ylabel="收益率 (%)",
+                    date_index=plot_trend["date"],
+                )
+                style_legend(ax, ncol=3)
+                path = output_dir / "gov_yield_trend.png"
+                save_chart(fig, path)
+                close_figure(fig)
+                charts["gov_yield_trend"] = str(path)
+
         latest_curve = yield_curve.dropna(subset=tenor_cols, how="all").tail(1)
         if tenor_cols and not latest_curve.empty:
             snap_date = latest_curve["date"].dt.date.iloc[0]
@@ -510,7 +689,6 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
     if factor_latest:
         snapshot_specs = (
             ("latest_valuation_snapshot", ["market_cap", "pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm", "dividend_yield_ttm"]),
-            ("latest_quality_snapshot", ["gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm"]),
             ("latest_liquidity_snapshot", ["current_ratio", "quick_ratio", "debt_to_asset_ratio"]),
             (
                 "latest_growth_snapshot",

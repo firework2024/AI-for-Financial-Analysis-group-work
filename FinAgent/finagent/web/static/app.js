@@ -8,7 +8,7 @@ const state = {
   searchQuery: "",
   sidebar: "chat",
   view: "chat",
-  reportOutlineOpen: true,
+  reportOutlineOpen: typeof window !== "undefined" ? window.innerWidth > 900 : true,
   tocObserver: null,
   railCollapsed: localStorage.getItem("finagent_rail_collapsed") === "1",
 };
@@ -42,11 +42,10 @@ const els = {
   askReportBtn: document.getElementById("askReportBtn"),
   backToChatBtn: document.getElementById("backToChatBtn"),
   chatAttachReportBtn: document.getElementById("chatAttachReportBtn"),
-  summaryCard: document.getElementById("section-summary"),
-  summaryContent: document.getElementById("summaryContent"),
   reportToc: document.getElementById("reportToc"),
   reportBody: document.getElementById("reportBody"),
   reportOutline: document.getElementById("reportOutline"),
+  reportOutlineBackdrop: document.getElementById("reportOutlineBackdrop"),
   reportScroll: document.getElementById("reportScroll"),
   reportOutlineClose: document.getElementById("reportOutlineClose"),
   reportOutlineToggle: document.getElementById("reportOutlineToggle"),
@@ -65,9 +64,16 @@ const els = {
   railOverlay: document.getElementById("railOverlay"),
   railCollapseBtn: document.getElementById("railCollapseBtn"),
   railExpandBtn: document.getElementById("railExpandBtn"),
+  railSettingsBtn: document.getElementById("railSettingsBtn"),
 };
 
-marked.setOptions({ breaks: true, gfm: true });
+function initMarkdownLibs() {
+  if (typeof marked !== "undefined") {
+    marked.setOptions({ breaks: true, gfm: true });
+  }
+}
+
+initMarkdownLibs();
 
 function toast(message, type = "info") {
   if (!els.toastHost) return;
@@ -104,6 +110,7 @@ function syncRailCollapseUi() {
   const collapsed = state.railCollapsed && !isMobileLayout();
   els.shell?.classList.toggle("rail-collapsed", collapsed);
   els.railExpandBtn?.classList.toggle("hidden", !collapsed);
+  els.railSettingsBtn?.classList.toggle("hidden", !collapsed || !window.Auth?.state?.user);
 }
 
 function setRailCollapsed(collapsed) {
@@ -248,6 +255,10 @@ function tagFieldRefs(html) {
 
 function renderMarkdown(text, charts = null) {
   if (!text) return "<p>暂无内容</p>";
+  initMarkdownLibs();
+  if (typeof marked === "undefined") {
+    return escapeHtml(String(text)).replace(/\n/g, "<br>");
+  }
   const cleaned = cleanChartProse(polishFieldRefs(String(text)));
   const { stripped, figures } = extractMarkdownFigures(cleaned);
   let html = marked.parse(stripped.trim() || " ");
@@ -258,6 +269,7 @@ function renderMarkdown(text, charts = null) {
     '<p class="figure-note"><strong>图注</strong> $1</p>'
   );
   html = tagFieldRefs(html);
+  if (typeof DOMPurify === "undefined") return html;
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ["figure"],
     ADD_ATTR: ["src", "alt", "loading", "class", "target"],
@@ -527,7 +539,10 @@ function tocIdMap(entries) {
 function buildMultiTocFallback(report) {
   const sections = report.sections || {};
   const sectionOrder = getMultiSectionOrder(report);
-  const titles = ["执行摘要", "核心指标速览", ...sectionOrder, "免责声明"];
+  const summary = report.executive_summary || report.summary || "";
+  const titles = [];
+  if (summary.trim()) titles.push("执行摘要");
+  titles.push("核心指标速览", ...sectionOrder, "免责声明");
   const used = new Set();
   return titles.map((title) => ({ title, id: sectionAnchor(title, used) }));
 }
@@ -558,6 +573,7 @@ function resolveReportToc(report) {
 function setReportOutlineOpen(open) {
   state.reportOutlineOpen = open;
   els.reportBody?.classList.toggle("outline-collapsed", !open);
+  els.reportOutlineBackdrop?.setAttribute("aria-hidden", open ? "false" : "true");
   if (els.reportOutlineToggleHead) {
     els.reportOutlineToggleHead.textContent = open ? "收起目录" : "目录";
   }
@@ -576,6 +592,7 @@ function bindReportOutlineEvents() {
   const close = () => setReportOutlineOpen(false);
   els.reportOutlineClose?.addEventListener("click", close);
   els.reportOutlineToggle?.addEventListener("click", open);
+  els.reportOutlineBackdrop?.addEventListener("click", close);
   els.reportOutlineToggleHead?.addEventListener("click", () => setReportOutlineOpen(!state.reportOutlineOpen));
   setReportOutlineOpen(window.innerWidth > 900);
 }
@@ -613,7 +630,7 @@ function renderReportToc(report) {
     setReportOutlineOpen(false);
     return {};
   }
-  setReportOutlineOpen(window.innerWidth > 900 || state.reportOutlineOpen);
+  setReportOutlineOpen(window.innerWidth > 900 ? state.reportOutlineOpen : false);
   els.reportToc.innerHTML = entries
     .map(
       (item, index) =>
@@ -814,9 +831,17 @@ function renderAnnualReport(report, anchors = {}) {
   const metrics = report.metrics || analysis.metrics || [];
   const dataNotes = signals.data_notes || analysis.data_notes || [];
   const directorText = report.summary || report.investment_director || "";
+  const executiveSummary = report.executive_summary || extractExecutiveSummary(directorText) || "";
 
   els.multiSections.innerHTML = "";
   els.annualSections.innerHTML = [
+    executiveSummary
+      ? cardSection(
+          "执行摘要",
+          `<div class="prose prose-lead">${renderMarkdown(executiveSummary)}</div>`,
+          anchors["执行摘要"]
+        )
+      : "",
     cardSection("核心指标", renderAnnualMetricsTable(metrics), anchors["核心指标"]),
     cardSection(
       "审核后重点信号",
@@ -847,6 +872,14 @@ function renderAnnualReport(report, anchors = {}) {
     .join(" · ");
 }
 
+function resolveMultiSecName(report) {
+  const meta = report.meta || {};
+  const data = report.data || {};
+  const summary = report.data_summary || {};
+  const ui = report._ui || {};
+  return ui.sec_name || meta.sec_name || summary.sec_name || data.sec_name || "";
+}
+
 function renderMultiReport(report, anchors = {}) {
   els.annualSections.innerHTML = "";
   const sections = report.sections || {};
@@ -866,8 +899,17 @@ function renderMultiReport(report, anchors = {}) {
     )
     .join("");
 
+  const executiveSummary = report.executive_summary || report.summary || "";
+
   els.multiSections.innerHTML = [
     `<div class="report-block report-block-validation"><div class="validation-banner ${validationClass}">${validationText}</div></div>`,
+    executiveSummary
+      ? cardSection(
+          "执行摘要",
+          `<div class="prose prose-lead">${renderMarkdown(executiveSummary)}</div>`,
+          anchors["执行摘要"]
+        )
+      : "",
     cardSection("核心指标速览", renderMultiCoreMetrics(dataSummary), anchors["核心指标速览"]),
     sectionBlocks,
   ].join("");
@@ -881,7 +923,11 @@ function renderMultiReport(report, anchors = {}) {
     els.openHtmlBtn.classList.add("hidden");
   }
 
-  els.reportSubtitle.textContent = [meta.order_book_id, meta.start_date && meta.end_date ? `${meta.start_date} ~ ${meta.end_date}` : ""]
+  els.reportSubtitle.textContent = [
+    resolveMultiSecName(report),
+    meta.order_book_id || report.data?.order_book_id,
+    meta.start_date && meta.end_date ? `${meta.start_date} ~ ${meta.end_date}` : "",
+  ]
     .filter(Boolean)
     .join(" · ");
 }
@@ -895,19 +941,15 @@ function renderReportDetail(report) {
     <span class="tag ${reportType === "multi_analyze" ? "multi" : "annual"}">${reportTypeLabel(reportType)}</span>
     <span class="tag">${formatDate(ui.generated_at || report.meta?.generated_at) || "—"}</span>
   `;
-  els.reportTitle.textContent = ui.title || report.meta?.stock_code || "分析报告";
+  els.reportTitle.textContent =
+    ui.title ||
+    (reportType === "multi_analyze"
+      ? [report.meta?.stock_code || ui.stock_code, resolveMultiSecName(report), "多智能体报告"].filter(Boolean).join(" ")
+      : report.meta?.stock_code) ||
+    "分析报告";
   els.reportDisclaimer.textContent = report._disclaimer || state.disclaimer;
   if (anchors["免责声明"] && els.reportDisclaimer?.closest("section")) {
     els.reportDisclaimer.closest("section").id = anchors["免责声明"];
-  }
-
-  const directorText = report.summary || report.investment_director || "";
-  const executiveSummary =
-    report.executive_summary || (reportType === "annual_analyze" ? extractExecutiveSummary(directorText) : report.summary) || "";
-  els.summaryContent.innerHTML = renderMarkdown(executiveSummary);
-  if (els.summaryCard) {
-    els.summaryCard.classList.toggle("hidden", !executiveSummary);
-    if (anchors["执行摘要"]) els.summaryCard.id = anchors["执行摘要"];
   }
 
   if (reportType === "multi_analyze") {
@@ -1025,12 +1067,14 @@ async function bootstrap() {
   });
   document.querySelectorAll("[data-sidebar]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      setSidebarPanel(btn.dataset.sidebar);
-      if (btn.dataset.sidebar === "reports") {
-        if (state.view === "chat") return;
+      const panel = btn.dataset.sidebar;
+      setSidebarPanel(panel);
+      if (panel === "reports") {
         navigate(state.activeReportId ? "report" : "report-empty");
+        if (isMobileLayout()) openMobileRail();
+        return;
       }
-      if (btn.dataset.sidebar === "chat") {
+      if (panel === "chat") {
         navigate("chat");
       }
     });
@@ -1065,6 +1109,7 @@ async function bootstrap() {
   els.welcomeReportsBtn?.addEventListener("click", () => {
     setSidebarPanel("reports");
     navigate(state.activeReportId ? "report" : "report-empty");
+    if (isMobileLayout()) openMobileRail();
   });
   els.askReportBtn?.addEventListener("click", () => {
     if (typeof window.openChatWithReport === "function") window.openChatWithReport();
@@ -1124,6 +1169,7 @@ window.App = {
   updateMobileBarForView,
   isMobileLayout,
   setRailCollapsed,
+  syncRailCollapseUi,
 };
 
 bootstrap();
