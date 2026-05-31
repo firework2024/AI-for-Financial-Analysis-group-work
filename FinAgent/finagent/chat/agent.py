@@ -246,11 +246,14 @@ def _guess_report_year(filename: str, text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _hits_from_data_api(data_api: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _hits_from_data_api(data_api: dict[str, Any] | None, query: str = "") -> list[dict[str, Any]]:
     if not data_api or data_api.get("error"):
         return []
     stored = data_api.get("stored") or {}
+    if not stored:
+        return []
     stock = data_api.get("stock_code")
+    matched_keys = list(stored.get("matched_keys") or [])
     hits: list[dict[str, Any]] = []
 
     annual = stored.get("annual_report") or {}
@@ -263,35 +266,65 @@ def _hits_from_data_api(data_api: dict[str, Any] | None) -> list[dict[str, Any]]
         hits.append(
             {
                 "source": "datastore:annual_mda",
-                "score": 0.96 - index * 0.01,
+                "score": 0.78 - index * 0.02,
                 "text": text[:900],
                 "meta": {"kind": "mda", "stock_code": stock, "priority": "local_db"},
             }
         )
 
-    pit = stored.get("pit_financials_cache") or {}
-    for index, row in enumerate((pit.get("rows") or [])[-3:]):
+    if "pit_financials" in matched_keys or _query_mentions_financials(query):
+        pit = stored.get("pit_financials_cache") or {}
+        for index, row in enumerate((pit.get("rows") or [])[-2:]):
+            hits.append(
+                {
+                    "source": "datastore:pit_financials",
+                    "score": 0.72 - index * 0.02,
+                    "text": json.dumps(row, ensure_ascii=False)[:900],
+                    "meta": {"kind": "pit_financials", "stock_code": stock, "priority": "local_db"},
+                }
+            )
+
+    meta_scores = {
+        "technical": 0.68,
+        "factor": 0.66,
+        "industry": 0.6,
+        "benchmark_index": 0.58,
+    }
+    for key, base_score in meta_scores.items():
+        block = stored.get(key)
+        if not isinstance(block, dict) or not block:
+            continue
+        if matched_keys and not _meta_key_relevant(key, matched_keys):
+            continue
         hits.append(
             {
-                "source": "datastore:pit_financials",
-                "score": 0.92 - index * 0.01,
-                "text": json.dumps(row, ensure_ascii=False)[:900],
-                "meta": {"kind": "pit_financials", "stock_code": stock, "priority": "local_db"},
+                "source": f"datastore:{key}",
+                "score": base_score,
+                "text": json.dumps(block, ensure_ascii=False)[:900],
+                "meta": {"kind": key, "stock_code": stock, "priority": "local_db"},
             }
         )
 
-    for key in ("technical", "factor"):
-        block = stored.get(key) or data_api.get(key)
-        if isinstance(block, dict) and block:
-            hits.append(
-                {
-                    "source": f"datastore:{key}",
-                    "score": 0.88,
-                    "text": json.dumps(block, ensure_ascii=False)[:900],
-                    "meta": {"kind": key, "stock_code": stock, "priority": "local_db"},
-                }
-            )
     return hits
+
+
+def _query_mentions_financials(query: str) -> bool:
+    q = str(query or "").lower()
+    hints = (
+        "营收", "利润", "净利", "资产", "负债", "现金流", "财务", "三表", "毛利率", "roe",
+        "pe", "pb", "估值", "融资", "股价", "收盘", "涨跌", "换手",
+    )
+    return any(h in q for h in hints)
+
+
+def _meta_key_relevant(meta_key: str, matched_keys: list[str]) -> bool:
+    mapping = {
+        "technical": {"price", "price_change_rate", "turnover", "capital_flow"},
+        "factor": {"factor", "factor_history"},
+        "industry": {"industry"},
+        "benchmark_index": {"index_benchmark"},
+    }
+    return bool(mapping.get(meta_key, set()) & set(matched_keys))
 
 
 def _merge_retrieved_hits(
@@ -377,13 +410,15 @@ def _llm_answer(
 
     system = (
         "你是 FinAgent 研究助手，像同事聊天一样回答，口语自然、别写成研报八股。"
+        "必须直接回答 question 本身；不要每次重复同一套行情/估值/财务摘要。"
         "可以分段，但不要用过多小标题和编号列表；需要数字时引用上下文里的数据，别编造。"
         "回答优先级（必须遵守）："
-        "1) tools.data_api 本地 SQLite（pit_financials、annual_report.mda_hits、technical/factor 等）；"
-        "2) retrieved_chunks 绑定报告/PDF 片段；"
-        "3) tools.live_data 米筐实时快照；"
-        "4) tools.web_search 网页检索（已按 authority_score 排序）。"
-        "若 data_api 或 retrieved_chunks 里已有数字/表述，必须优先引用，禁止先说「报告里没有」或「未找到」。"
+        "1) 先理解 question 意图，再选用最相关的来源；"
+        "2) retrieved_chunks 绑定报告/PDF 片段（解读报告、风险、业务问题时优先）；"
+        "3) tools.data_api 本地 SQLite（仅在与问题相关的 matched_keys / mda_hits 出现时引用）；"
+        "4) tools.live_data 米筐实时快照（用户问最新行情/估值时）；"
+        "5) tools.web_search 网页检索（已按 authority_score 排序）。"
+        "若 question 与财务指标无关，不要机械罗列 PE/PB/收盘价；若与报告解读有关，优先用 retrieved_chunks。"
         "只有上述来源都确实没有该字段时，才说明缺失并建议下一步。"
         "引用新闻时优先 source_tier 为 official / financial_data 的结果，并注明标题；社区来源仅作参考。"
         "session.binding_warnings 若有内容，说明上下文曾切换股票/报告，勿混用其它公司数据。"
@@ -405,6 +440,17 @@ def _llm_answer(
     return llm_text(system, json.dumps(payload, ensure_ascii=False)[:18000])
 
 
+def sync_session_stock(session: ChatSession, stock_code: str | None) -> None:
+    code = str(stock_code or "").strip()
+    if not re.fullmatch(r"\d{6}", code):
+        return
+    if session.stock_code == code:
+        return
+    if session.stock_code and session.stock_code != code:
+        session.binding_warnings.append(f"会话股票已从 {session.stock_code} 更新为 {code}")
+    session.stock_code = code
+
+
 def chat_turn(session: ChatSession, message: str) -> ChatMessage:
     query = str(message or "").strip()
     if not query:
@@ -418,7 +464,7 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
     graph_hits = query_graph(session.knowledge_graph, query, limit=8)
 
     tools_payload, tool_calls = gather_tool_context(query, session)
-    data_hits = _hits_from_data_api(tools_payload.get("data_api"))
+    data_hits = _hits_from_data_api(tools_payload.get("data_api"), query)
     hits = _merge_retrieved_hits(rag_hits, data_hits, max_total=8)
 
     try:

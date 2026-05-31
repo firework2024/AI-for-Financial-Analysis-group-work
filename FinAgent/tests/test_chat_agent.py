@@ -76,7 +76,30 @@ def test_search_finds_total_assets_with_synonym():
 
 
 def test_merge_retrieved_hits_prefers_local_db():
-    rag = [{"source": "summary", "score": 0.4, "text": "报告片段", "meta": {}}]
-    data = [{"source": "datastore:pit_financials", "score": 0.92, "text": "pit row", "meta": {"priority": "local_db"}}]
+    rag = [{"source": "summary", "score": 0.82, "text": "报告核心风险是库存与渠道压力", "meta": {}}]
+    data = [{"source": "datastore:pit_financials", "score": 0.72, "text": "pit row", "meta": {"priority": "local_db"}}]
     merged = _merge_retrieved_hits(rag, data, max_total=2)
-    assert merged[0]["source"] == "datastore:pit_financials"
+    assert merged[0]["source"] == "summary"
+
+
+def test_hits_from_data_api_skips_unrelated_blocks():
+    from finagent.chat.agent import _hits_from_data_api
+
+    data_api = {
+        "stock_code": "600519",
+        "stored": {
+            "matched_keys": [],
+            "technical": {"latest_close": 1700},
+            "factor": {"pe_ratio_ttm": 25},
+        },
+    }
+    hits = _hits_from_data_api(data_api, "这份报告的核心风险是什么")
+    assert hits == []
+
+
+def test_query_needs_stored_data_only_when_relevant():
+    from finagent.datastore.query import query_needs_stored_data
+
+    assert query_needs_stored_data("这份报告的核心风险是什么") is False
+    assert query_needs_stored_data("最近估值水平如何") is True
+    assert query_needs_stored_data("查一下最新融资余额") is True

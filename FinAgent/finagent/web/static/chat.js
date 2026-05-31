@@ -14,6 +14,7 @@ function initChatElements() {
   Object.assign(chatEls, {
     chatView: document.getElementById("chatView"),
     chatTitle: document.getElementById("chatTitle"),
+    chatHeadSub: document.getElementById("chatHeadSub"),
     chatSessions: document.getElementById("chatSessions"),
     chatMessages: document.getElementById("chatMessages"),
     chatInput: document.getElementById("chatInput"),
@@ -100,6 +101,32 @@ function formatChatMessageBody(msg) {
   return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
+function scrollChatToBottom() {
+  const scroller = chatEls.chatDropZone || chatEls.chatMessages;
+  if (scroller) scroller.scrollTop = scroller.scrollHeight;
+}
+
+function chatThinkingHtml() {
+  return `
+    <div class="chat-msg chat-msg-assistant chat-msg-pending" id="chatThinking">
+      <div class="chat-avatar" aria-hidden="true"><img src="/assets/logo.png" alt="" class="chat-avatar-img"></div>
+      <div class="chat-bubble-wrap">
+        <div class="chat-bubble chat-thinking" aria-label="正在思考">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function setChatThinking(active) {
+  if (!chatEls.chatMessages) return;
+  chatEls.chatMessages.querySelector("#chatThinking")?.remove();
+  if (active) {
+    chatEls.chatMessages.insertAdjacentHTML("beforeend", chatThinkingHtml());
+    scrollChatToBottom();
+  }
+}
+
 function renderChatMessages(session) {
   if (!chatEls.chatMessages) return;
   const messages = session?.messages || [];
@@ -108,11 +135,20 @@ function renderChatMessages(session) {
       <div class="chat-welcome-card">
         <img class="chat-welcome-icon" src="/assets/logo.png" alt="">
         <h3>有什么可以帮你？</h3>
-        <p>上传 PDF、绑定报告，或直接提问。也可以试试下面的快捷问题。</p>
+        <p>上传 PDF、绑定历史报告，或直接提问。FinAgent 会结合上下文给出可追溯的分析。</p>
         <div class="chat-suggestions">
-          <button class="chat-suggestion" type="button" data-prompt="这份报告的核心风险是什么？">解读报告核心风险</button>
-          <button class="chat-suggestion" type="button" data-prompt="最近估值水平如何？">分析当前估值水平</button>
-          <button class="chat-suggestion" type="button" data-prompt="查一下最新融资余额">查询最新融资数据</button>
+          <button class="chat-suggestion" type="button" data-prompt="这份报告的核心风险是什么？">
+            <span class="chat-suggestion-label">解读报告核心风险</span>
+            <span class="chat-suggestion-hint">基于已绑定报告快速摘要</span>
+          </button>
+          <button class="chat-suggestion" type="button" data-prompt="最近估值水平如何？">
+            <span class="chat-suggestion-label">分析当前估值水平</span>
+            <span class="chat-suggestion-hint">PE、PB 与历史分位</span>
+          </button>
+          <button class="chat-suggestion" type="button" data-prompt="查一下最新融资余额">
+            <span class="chat-suggestion-label">查询最新融资数据</span>
+            <span class="chat-suggestion-hint">自动调用行情工具</span>
+          </button>
         </div>
       </div>`;
     chatEls.chatMessages.querySelectorAll(".chat-suggestion").forEach((btn) => {
@@ -128,7 +164,10 @@ function renderChatMessages(session) {
   chatEls.chatMessages.innerHTML = messages
     .map((msg) => {
       const role = msg.role === "user" ? "user" : "assistant";
-      const avatar = role === "user" ? "你" : "F";
+      const avatar =
+        role === "user"
+          ? "你"
+          : '<img src="/assets/logo.png" alt="" class="chat-avatar-img">';
       const body = formatChatMessageBody(msg);
       const bubbleClass = role === "assistant" ? "chat-bubble prose chat-prose" : "chat-bubble";
       const tools =
@@ -144,7 +183,7 @@ function renderChatMessages(session) {
         </div>`;
     })
     .join("");
-  chatEls.chatMessages.scrollTop = chatEls.chatMessages.scrollHeight;
+  scrollChatToBottom();
 }
 
 function updateChatHeader(session) {
@@ -160,6 +199,10 @@ function updateChatHeader(session) {
     chatEls.chatContextPill.innerHTML = `<span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>`;
   } else {
     chatEls.chatContextPill.innerHTML = bits.map((bit) => `<span class="context-pill">${escapeHtml(bit)}</span>`).join("");
+  }
+  const subText = bits.length ? bits.join(" · ") : "上传 PDF 或绑定报告后开始提问";
+  if (chatEls.chatHeadSub) {
+    chatEls.chatHeadSub.textContent = subText;
   }
   if (chatEls.chatDeleteBtn) {
     chatEls.chatDeleteBtn.disabled = !chatState.activeSessionId;
@@ -234,10 +277,15 @@ async function sendChatMessage() {
   chatState.activeSession = chatState.activeSession || { messages: [] };
   chatState.activeSession.messages = [...(chatState.activeSession.messages || []), { role: "user", content: pending }];
   renderChatMessages(chatState.activeSession);
+  setChatThinking(true);
   try {
+    const stock = String(chatEls.chatStockInput?.value || "").trim();
     const payload = await api(`/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/messages`, {
       method: "POST",
-      body: JSON.stringify({ message: pending }),
+      body: JSON.stringify({
+        message: pending,
+        ...( /^\d{6}$/.test(stock) ? { stock_code: stock } : {}),
+      }),
     });
     chatState.activeSession = payload.session;
     renderChatMessages(payload.session);
@@ -246,6 +294,7 @@ async function sendChatMessage() {
   } catch (error) {
     App.toast(error.message || "发送失败", "error");
   } finally {
+    setChatThinking(false);
     chatState.sending = false;
     chatEls.chatSendBtn.disabled = false;
     chatEls.chatInput?.focus();

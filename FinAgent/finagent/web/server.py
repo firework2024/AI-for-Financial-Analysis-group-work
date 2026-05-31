@@ -18,7 +18,7 @@ from ..auth.owners import ReportOwnerStore
 from ..auth.tokens import TOKEN_TTL_SECONDS, create_access_token
 from ..auth.user_settings import UserSettingsStore
 from ..auth.users import UserStore
-from ..chat.agent import chat_turn, index_pdf, index_report
+from ..chat.agent import chat_turn, index_pdf, index_report, sync_session_stock
 from ..chat.store import SessionStore
 from ..llm import llm_text
 from ..llm_settings import activate_llm_settings, has_llm_api_key, reset_llm_settings, use_llm_settings
@@ -127,6 +127,7 @@ class ChatCreateRequest(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=8000)
+    stock_code: str | None = Field(default=None, pattern=r"^\d{6}$")
 
 
 class AttachReportRequest(BaseModel):
@@ -602,6 +603,7 @@ def create_app() -> FastAPI:
     @app.post("/api/chat/sessions/{session_id}/messages")
     def post_chat_message(session_id: str, request: ChatMessageRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
         session = _get_session(user, session_id)
+        sync_session_stock(session, request.stock_code)
         reply = chat_turn(session, request.message)
         session_store.save(session)
         return {"reply": reply.to_dict(), "session": session.to_dict()}

@@ -31,9 +31,27 @@ _QUERY_HINTS: dict[str, tuple[str, ...]] = {
 }
 
 _DEFAULT_KEYS = ("price", "factor", "securities_margin", "pit_financials", "turnover")
-
+_OVERVIEW_HINTS = ("概况", "总结", "怎么样", "概览", "整体", "介绍", "基本面", "综合分析")
 
 _ANNUAL_HINTS = ("年报", "mda", "管理层", "经营情况", "董事会", "讨论与分析", "/pdf")
+
+_META_FOR_KEYS: dict[str, tuple[str, ...]] = {
+    "technical": ("price", "price_change_rate", "turnover", "capital_flow"),
+    "factor": ("factor", "factor_history"),
+    "industry": ("industry",),
+    "industry_l2": ("industry",),
+    "benchmark_index": ("index_benchmark",),
+}
+
+
+def query_needs_stored_data(query: str) -> bool:
+    """问题是否应触发本地数据库检索（避免仅绑定代码就每次灌入同一套默认序列）。"""
+    q = str(query or "").strip()
+    if not q:
+        return False
+    if _select_data_keys(q):
+        return True
+    return _mentions_financials(q) or _mentions_annual(q)
 
 
 def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[str, Any] | None:
@@ -63,12 +81,14 @@ def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[st
         }
         meta = snapshot.get("meta") or {}
         for key in META_KEYS:
-            if key in meta:
+            if key not in meta:
+                continue
+            if not selected_keys or _meta_relevant(key, selected_keys):
                 payload[key] = meta[key]
 
-        series = load_series(int(snapshot["id"]), selected_keys, tail=tail)
-        payload["series"] = series
-        payload["available_series"] = list(COLLECTED_SERIES.keys())
+        if selected_keys:
+            payload["series"] = load_series(int(snapshot["id"]), selected_keys, tail=tail)
+            payload["available_series"] = list(COLLECTED_SERIES.keys())
 
     if pit and ("pit_financials" in selected_keys or _mentions_financials(query)):
         payload["pit_financials_cache"] = {
@@ -79,10 +99,33 @@ def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[st
             "fetched_at": pit["fetched_at"],
         }
 
-    if annual and (_mentions_annual(query) or _mentions_financials(query) or snapshot is None):
-        payload["annual_report"] = _annual_payload(annual, query, tail=tail)
+    if annual:
+        annual_payload = _annual_payload(annual, query, tail=tail)
+        if _mentions_annual(query) or _mentions_financials(query) or annual_payload.get("mda_hits"):
+            payload["annual_report"] = annual_payload
+
+    if not _payload_has_content(payload):
+        return None
 
     return payload
+
+
+def _payload_has_content(payload: dict[str, Any]) -> bool:
+    if payload.get("series"):
+        return True
+    if payload.get("pit_financials_cache"):
+        return True
+    if payload.get("annual_report"):
+        return True
+    for key in META_KEYS:
+        if key in payload:
+            return True
+    return bool(payload.get("matched_keys"))
+
+
+def _meta_relevant(meta_key: str, selected_keys: list[str]) -> bool:
+    triggers = _META_FOR_KEYS.get(meta_key, ())
+    return any(key in selected_keys for key in triggers)
 
 
 def _annual_payload(annual: dict[str, Any], query: str, *, tail: int) -> dict[str, Any]:
@@ -98,7 +141,7 @@ def _annual_payload(annual: dict[str, Any], query: str, *, tail: int) -> dict[st
         "title": annual.get("title"),
         "pdf_path": annual.get("pdf_path"),
         "fetched_at": annual.get("fetched_at"),
-        "financial_data": financial,
+        "financial_data": financial if (_mentions_financials(query) or _mentions_annual(query)) else [],
         "mda_hits": mda_hits,
         "mda_extraction": {
             "confidence": mda_meta.get("confidence"),
@@ -132,7 +175,9 @@ def _select_data_keys(query: str) -> list[str]:
             normalized.append("factor_history")
 
     if not normalized:
-        return list(_DEFAULT_KEYS)
+        if any(h in q for h in _OVERVIEW_HINTS):
+            return list(_DEFAULT_KEYS)
+        return []
     return normalized
 
 

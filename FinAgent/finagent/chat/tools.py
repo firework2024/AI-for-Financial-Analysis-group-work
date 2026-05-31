@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..datastore.query import query_needs_stored_data
 from .data_tools import extract_stock_code, fetch_market_snapshot, needs_live_data
 from .store import ChatSession
 from .web_search import (
@@ -26,7 +27,7 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
         "web_search": None,
     }
 
-    if stock:
+    if stock and query_needs_stored_data(query):
         data_api = query_data_api(stock, query)
         if data_api:
             payload["data_api"] = data_api
@@ -78,6 +79,13 @@ def query_data_api(stock_code: str, query: str) -> dict[str, Any] | None:
                 "snapshots": [],
                 "stored": None,
                 "hint": "本地数据库暂无该股票数据，可先运行多智能体/年报分析。",
+            }
+        if stored is None:
+            return {
+                "stock_code": stock_code,
+                "snapshots": snapshots,
+                "stored": None,
+                "hint": "该问题与本地行情/财务序列关联不大，已优先使用绑定报告或 PDF 片段作答。",
             }
         return {
             "stock_code": stock_code,
