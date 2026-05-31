@@ -8,7 +8,7 @@ from finagent.chart_catalog import CHART_CAPTIONS, MARKET_TECH_SECTION
 
 
 def _sample_data():
-    dates = pd.date_range("2025-01-02", periods=30, freq="B")
+    dates = pd.date_range("2025-01-02", periods=80, freq="B")
     rows = [
         {
             "date": d.strftime("%Y-%m-%d"),
@@ -132,3 +132,65 @@ def test_parametric_line_chart(tmp_path: Path):
     path = execute_parametric_chart(spec, data=data, output_dir=tmp_path)
     assert path is not None
     assert Path(path).exists()
+
+
+def test_technical_indicator_plot_skips_warmup():
+    import pandas as pd
+
+    from finagent.chart_style import compute_rsi
+    from finagent.technical import enrich_price_frame, technical_indicator_plot_frame, technical_indicator_warmup_bars
+
+    dates = pd.date_range("2025-01-02", periods=80, freq="B")
+    frame = pd.DataFrame({"date": dates, "close": 100 + pd.Series(range(80), dtype=float)})
+    enriched = enrich_price_frame(frame)
+    warmup = technical_indicator_warmup_bars()
+    assert warmup == 34
+    assert pd.isna(enriched["rsi14"].iloc[0])
+    assert pd.isna(compute_rsi(frame["close"]).iloc[0])
+
+    plot = technical_indicator_plot_frame(enriched)
+    assert len(plot) == len(enriched) - warmup
+    assert plot["rsi14"].notna().iloc[0]
+    assert plot["macd"].notna().iloc[0]
+    assert plot["macd_signal"].notna().iloc[0]
+
+
+def test_moving_average_and_volatility_plot_skip_warmup():
+    import pandas as pd
+
+    from finagent.technical import (
+        MA_SLOW,
+        VOL_WINDOW,
+        enrich_price_frame,
+        moving_average_plot_frame,
+        rolling_volatility_plot_frame,
+    )
+
+    dates = pd.date_range("2025-01-02", periods=100, freq="B")
+    frame = pd.DataFrame({"date": dates, "close": 100 + pd.Series(range(100), dtype=float)})
+    enriched = enrich_price_frame(frame)
+    ma = moving_average_plot_frame(enriched)
+    vol = rolling_volatility_plot_frame(enriched)
+    assert len(ma) == len(enriched) - (MA_SLOW - 1)
+    assert len(vol) == len(enriched) - VOL_WINDOW
+    assert ma["ma20"].notna().iloc[0]
+    assert ma["ma60"].notna().iloc[0]
+    assert vol["vol20"].notna().iloc[0]
+
+
+def test_technical_indicators_chart_uses_trimmed_window(tmp_path: Path):
+    data = _sample_data()
+    dates = pd.date_range("2025-01-02", periods=80, freq="B")
+    data["price"]["rows"] = [
+        {
+            "date": d.strftime("%Y-%m-%d"),
+            "close": 100 + i * 0.8,
+            "volume": 1_000_000 + i * 10_000,
+            "total_turnover": 50_000_000 + i * 100_000,
+        }
+        for i, d in enumerate(dates)
+    ]
+    data["price"]["row_count"] = len(data["price"]["rows"])
+    charts = chart_agent(data=data, output_dir=tmp_path, only_keys={"technical_indicators"})
+    assert "technical_indicators" in charts
+    assert Path(charts["technical_indicators"]).stat().st_size > 500

@@ -16,7 +16,7 @@ REPORT_STYLES = """
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Noto Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 16px;
   line-height: 1.65;
   color: var(--text);
@@ -147,15 +147,38 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
-  font-size: 0.95rem;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.report-table-wrap {
+  margin: 1rem 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  background: #fff;
 }
 th, td {
-  border: 1px solid var(--border);
-  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.65rem 0.8rem;
   vertical-align: top;
 }
-th { background: var(--bg-soft); text-align: left; }
+th {
+  background: var(--bg-soft);
+  text-align: left;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.metrics-table-wide th:not(:first-child),
+.metrics-table-wide td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+.metrics-table-compact td:last-child,
+.metrics-table-compact th:last-child {
+  text-align: right;
+}
 .metrics td:last-child { text-align: right; white-space: nowrap; }
 .chart-grid {
   display: grid;
@@ -244,6 +267,9 @@ def wrap_html_document(*, title: str, body_html: str) -> str:
         "<head>\n"
         '  <meta charset="utf-8" />\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1" />\n'
+        '  <link rel="preconnect" href="https://fonts.googleapis.com" />\n'
+        '  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n'
+        '  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />\n'
         f"  <title>{safe_title}</title>\n"
         f"  <style>{REPORT_STYLES}</style>\n"
         "</head>\n"
@@ -399,7 +425,9 @@ def _markdown_table_to_html(lines: list[str]) -> str:
         return ""
     head = rows[0]
     body = rows[1:]
-    html_parts = ["<table><thead><tr>"]
+    col_count = len(head)
+    table_class = "metrics-table metrics-table-wide" if col_count >= 4 else "metrics-table metrics-table-compact"
+    html_parts = [f'<div class="report-table-wrap"><table class="{table_class}"><thead><tr>']
     html_parts.extend(f"<th>{_inline_markdown(cell)}</th>" for cell in head)
     html_parts.append("</tr></thead>")
     if body:
@@ -409,5 +437,5 @@ def _markdown_table_to_html(lines: list[str]) -> str:
             html_parts.extend(f"<td>{_inline_markdown(cell)}</td>" for cell in row)
             html_parts.append("</tr>")
         html_parts.append("</tbody>")
-    html_parts.append("</table>")
+    html_parts.append("</table></div>")
     return "".join(html_parts)

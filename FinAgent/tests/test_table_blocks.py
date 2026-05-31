@@ -90,6 +90,48 @@ def test_funding_cost_table():
     assert "股息率 − 1Y国债" in block
 
 
+def test_technical_snapshot_table_is_wide():
+    data = {
+        "technical": {
+            "latest_close": 1326,
+            "ma20": 1333.39,
+            "ma60": 1397.84,
+            "return_20d": -0.0536,
+            "return_60d": -0.0703,
+            "rsi14": 41.04,
+            "macd": -12.3,
+            "macd_signal": -10.1,
+            "volatility_20d": 0.18,
+            "latest_drawdown": -0.15,
+            "max_drawdown": -0.22,
+            "avg_volume_20d": 5066895,
+        }
+    }
+    block = format_table_block("technical_snapshot_table", data)
+    assert block is not None
+    assert "技术指标快照" in block
+    assert "MACD" in block
+    assert "| 维度 |" in block
+    assert block.count("|") >= 12
+
+
+def test_valuation_snapshot_table_is_wide():
+    data = {
+        "factor": {
+            "pe_ratio_ttm": 20.04,
+            "pb_ratio_ttm": 6.55,
+            "ps_ratio_ttm": 9.62,
+            "dividend_yield_ttm": 0.0389,
+            "market_cap": 1_657_608_000_000,
+        }
+    }
+    block = format_table_block("latest_valuation_snapshot", data)
+    assert block is not None
+    assert "PE(TTM)" in block
+    assert "| 维度 |" in block
+    assert "最新" in block
+
+
 def test_table_data_available_for_new_keys():
     data = _capital_section_data()
     for key in (

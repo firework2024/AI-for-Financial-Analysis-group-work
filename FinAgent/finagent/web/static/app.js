@@ -253,6 +253,24 @@ function tagFieldRefs(html) {
   return html.replace(/<code>([^<]+)<\/code>/g, '<code class="field-ref">$1</code>');
 }
 
+function enhanceReportTables(html) {
+  return String(html || "").replace(/<table(\s[^>]*)?>[\s\S]*?<\/table>/gi, (block) => {
+    const thCount = (block.match(/<th[\s>]/gi) || []).length;
+    const colClass =
+      thCount >= 4 ? "metrics-table metrics-table-wide" : "metrics-table metrics-table-compact";
+    let table = block;
+    if (/class="/i.test(table)) {
+      table = table.replace(/class="([^"]*)"/i, (_m, cls) => {
+        const cleaned = cls.replace(/\bmetrics-table(?:-\w+)?\b/g, "").trim();
+        return `class="${colClass}${cleaned ? ` ${cleaned}` : ""}"`;
+      });
+    } else {
+      table = table.replace(/<table/i, `<table class="${colClass}"`);
+    }
+    return `<div class="report-table-wrap">${table}</div>`;
+  });
+}
+
 function renderMarkdown(text, charts = null) {
   if (!text) return "<p>暂无内容</p>";
   initMarkdownLibs();
@@ -269,6 +287,7 @@ function renderMarkdown(text, charts = null) {
     '<p class="figure-note"><strong>图注</strong> $1</p>'
   );
   html = tagFieldRefs(html);
+  html = enhanceReportTables(html);
   if (typeof DOMPurify === "undefined") return html;
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ["figure"],
@@ -677,6 +696,7 @@ function renderAnnualMetricsTable(metrics) {
     )
     .join("");
   return `
+    <div class="report-table-wrap">
     <table class="metrics-table metrics-table-wide">
       <thead>
         <tr>
@@ -686,6 +706,7 @@ function renderAnnualMetricsTable(metrics) {
       </thead>
       <tbody>${rows}</tbody>
     </table>
+    </div>
   `;
 }
 
@@ -805,10 +826,12 @@ function renderMultiCoreMetrics(dataSummary) {
     .map(([label, value]) => `<tr><td>${label}</td><td>${value}</td></tr>`)
     .join("");
   return `
+    <div class="report-table-wrap">
     <table class="metrics-table metrics-table-compact">
       <thead><tr><th>指标</th><th>数值</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
+    </div>
   `;
 }
 

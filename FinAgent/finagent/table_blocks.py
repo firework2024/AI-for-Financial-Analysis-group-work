@@ -70,16 +70,19 @@ def _format_factor_snapshot_table(table_key: str, data: dict[str, Any]) -> str |
     if not keys:
         return None
     factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
-    rows: list[tuple[str, str]] = []
+    headers = ("维度",) + tuple(label(key) for key in keys)
+    cells: list[str] = []
+    has_value = False
     for key in keys:
         display = format_factor_display(key, factor.get(key))
         if display is not None:
-            rows.append((label(key), display))
-    if not rows:
+            has_value = True
+        cells.append(display if display is not None else "—")
+    if not has_value:
         return None
     caption = table_caption(table_key)
     lines = [f"#### 表 · {caption}", ""]
-    lines.extend(_markdown_table(("指标", "最新值"), rows))
+    lines.extend(_markdown_table(headers, [("最新", *cells)]))
     return "\n".join(lines).strip()
 
 
@@ -87,17 +90,26 @@ def _format_technical_snapshot_table(data: dict[str, Any]) -> list[str]:
     technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
     if not technical:
         return []
-    rows = [
+    columns = [
         ("最新收盘价", fmt_num(technical.get("latest_close"))),
         ("MA20", fmt_num(technical.get("ma20"))),
         ("MA60", fmt_num(technical.get("ma60"))),
         ("20 日收益率", fmt_pct(technical.get("return_20d"))),
         ("60 日收益率", fmt_pct(technical.get("return_60d"))),
         ("RSI14", fmt_num(technical.get("rsi14"))),
+        ("MACD", fmt_num(technical.get("macd"))),
+        ("MACD 信号线", fmt_num(technical.get("macd_signal"))),
+        ("20 日波动率", fmt_pct(technical.get("volatility_20d"))),
+        ("最新回撤", fmt_pct(technical.get("latest_drawdown"))),
+        ("最大回撤", fmt_pct(technical.get("max_drawdown"))),
         ("20 日均量", fmt_num(technical.get("avg_volume_20d"))),
     ]
-    rows = [(name, value) for name, value in rows if value not in ("—", "-", "N/A", "数据缺失", "")]
-    return _markdown_table(("指标", "数值"), rows)
+    columns = [(name, value) for name, value in columns if value not in ("—", "-", "N/A", "数据缺失", "")]
+    if len(columns) < 3:
+        return []
+    headers = ("维度",) + tuple(name for name, _ in columns)
+    row = ("最新",) + tuple(value for _, value in columns)
+    return _markdown_table(headers, [row])
 
 
 def _format_margin_snapshot_table(data: dict[str, Any]) -> list[str]:
@@ -105,20 +117,27 @@ def _format_margin_snapshot_table(data: dict[str, Any]) -> list[str]:
     if not margin:
         return []
     date_label = str(margin.get("date") or "最新")
-    rows = [
-        ("统计日期", date_label),
-        ("融资余额", fmt_money(margin.get("margin_balance"))),
-        ("融券余额", fmt_money(margin.get("short_balance"))),
-        ("融资买入额", fmt_money(margin.get("buy_on_margin_value"))),
-        ("融资偿还额", fmt_money(margin.get("margin_repayment"))),
-        ("融券余量", fmt_num(margin.get("short_balance_quantity"))),
-    ]
-    if margin.get("total_balance") is not None:
-        rows.append(("两融余额合计", fmt_money(margin.get("total_balance"))))
-    rows = [(name, value) for name, value in rows if value not in ("—", "-", "N/A", "数据缺失", "")]
-    if len(rows) <= 1:
+    headers = (
+        "统计日期",
+        "融资余额",
+        "融券余额",
+        "两融余额",
+        "融资买入额",
+        "融资偿还额",
+        "融券余量",
+    )
+    row = (
+        date_label,
+        fmt_money(margin.get("margin_balance")),
+        fmt_money(margin.get("short_balance")),
+        fmt_money(margin.get("total_balance")),
+        fmt_money(margin.get("buy_on_margin_value")),
+        fmt_money(margin.get("margin_repayment")),
+        fmt_num(margin.get("short_balance_quantity")),
+    )
+    if sum(1 for value in row[1:] if value not in ("—", "-", "N/A", "数据缺失", "")) < 2:
         return []
-    return _markdown_table(("指标", "数值"), rows)
+    return _markdown_table(headers, [row])
 
 
 def _format_margin_period_table(data: dict[str, Any]) -> list[str]:
@@ -147,10 +166,14 @@ def _format_margin_period_table(data: dict[str, Any]) -> list[str]:
     sb0 = _safe_float(first.get("short_balance"))
     sb1 = _safe_float(last.get("short_balance"))
     if sb0 is not None and sb1 is not None:
+        sb_change = sb1 - sb0
+        sb_pct = (sb_change / sb0 * 100) if sb0 else None
         table_rows.extend(
             [
                 ("融券余额（期初）", fmt_money(sb0)),
                 ("融券余额（期末）", fmt_money(sb1)),
+                ("融券余额变动", fmt_money(sb_change)),
+                ("融券变动幅度", f"{sb_pct:.2f}%" if sb_pct is not None else "—"),
             ]
         )
     peak_date = None

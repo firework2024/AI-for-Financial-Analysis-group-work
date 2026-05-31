@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <title>600703 三安光电 多智能体研究报告</title>
   <style>
 :root {
@@ -16,7 +19,7 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Noto Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 16px;
   line-height: 1.65;
   color: var(--text);
@@ -147,15 +150,38 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
-  font-size: 0.95rem;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.report-table-wrap {
+  margin: 1rem 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  background: #fff;
 }
 th, td {
-  border: 1px solid var(--border);
-  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.65rem 0.8rem;
   vertical-align: top;
 }
-th { background: var(--bg-soft); text-align: left; }
+th {
+  background: var(--bg-soft);
+  text-align: left;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.metrics-table-wide th:not(:first-child),
+.metrics-table-wide td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+.metrics-table-compact td:last-child,
+.metrics-table-compact th:last-child {
+  text-align: right;
+}
 .metrics td:last-child { text-align: right; white-space: nowrap; }
 .chart-grid {
   display: grid;
@@ -234,122 +260,99 @@ th { background: var(--bg-soft); text-align: left; }
 <aside class="draft-banner"><p>&gt; <strong>草稿状态</strong>：验证评分 65，结论 <code>revise</code>。 本报告尚未通过验证 Agent 复核，请勿对外发布。</p></aside>
 <nav class="report-toc"><details class="report-toc-details"><summary>目录 <span class="report-toc-count">9 节</span></summary><ul><li><a href="#执行摘要">执行摘要</a></li><li><a href="#核心指标速览">核心指标速览</a></li><li><a href="#量价与技术面">量价与技术面</a></li><li><a href="#基本面与估值">基本面与估值</a></li><li><a href="#资金与交易结构">资金与交易结构</a></li><li><a href="#宏观利率背景">宏观利率背景</a></li><li><a href="#综合风险与数据局限">综合风险与数据局限</a></li><li><a href="#数据与工具说明">数据与工具说明</a></li><li><a href="#免责声明">免责声明</a></li></ul></details></nav>
 <h2 id="执行摘要">执行摘要</h2>
-<section class="section-body prose-lead"><p>三安光电（600703）近期股价在15.64元附近震荡，近20日涨幅达12.2%，但基本面压力显著：2025年归母净利润同比下滑243.8%，市盈率TTM为-156.8倍，显示持续亏损。公司市净率约2.22倍，毛利率仅12.48%，净利率为-2.89%，盈利能力承压。两融余额约43.08亿元，市场情绪分化，但日均成交额仍超30亿元，流动性尚可。</p></section>
+<section class="section-body prose-lead"><p>三安光电（600703）近20日涨幅达12.2%，股价收于15.64元，但市盈率TTM为-156.8倍，反映公司仍处于亏损状态。尽管60日均线（14.85元）提供支撑，RSI仅47.4，显示动能中性偏弱。两融余额约43.08亿元，融资买入活跃但偿还压力并存。毛利率仅12.48%，净利率为负，基本面修复尚需时间。</p></section>
 <h2 id="核心指标速览">核心指标速览</h2>
-<table class="metrics"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>中信一级行业</td><td>60</td></tr><tr><td>最新收盘价</td><td>15.64</td></tr><tr><td>MA20</td><td>15.934</td></tr><tr><td>MA60</td><td>14.8472</td></tr><tr><td>20 日收益率</td><td>12.20%</td></tr><tr><td>60 日收益率</td><td>6.39%</td></tr><tr><td>RSI14</td><td>47.3684</td></tr><tr><td>20 日均量</td><td>3.05 亿</td></tr><tr><td>PE(TTM)</td><td>-156.798</td></tr><tr><td>PB(TTM)</td><td>2.2201</td></tr><tr><td>PS(TTM)</td><td>4.7164</td></tr><tr><td>股息率(TTM)</td><td>0.13%</td></tr><tr><td>总市值</td><td>780.28 亿</td></tr><tr><td>融资余额</td><td>43.07 亿</td></tr><tr><td>融资买入额</td><td>4.58 亿</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>中信一级行业</td><td>60</td></tr><tr><td>最新收盘价</td><td>15.64</td></tr><tr><td>MA20</td><td>15.934</td></tr><tr><td>MA60</td><td>14.8472</td></tr><tr><td>20 日收益率</td><td>12.20%</td></tr><tr><td>60 日收益率</td><td>6.39%</td></tr><tr><td>RSI14</td><td>47.3684</td></tr><tr><td>20 日均量</td><td>3.05 亿</td></tr><tr><td>PE(TTM)</td><td>-156.798</td></tr><tr><td>PB(TTM)</td><td>2.2201</td></tr><tr><td>PS(TTM)</td><td>4.7164</td></tr><tr><td>股息率(TTM)</td><td>0.13%</td></tr><tr><td>总市值</td><td>780.28 亿</td></tr><tr><td>融资余额</td><td>43.07 亿</td></tr><tr><td>融资买入额</td><td>4.58 亿</td></tr></tbody></table></div>
 <h2 id="量价与技术面">量价与技术面</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026年5月29日，三安光电（600703.XSHG）收盘15.64元，近20日上涨12.2%，但股价低于20日均线（15.93元），RSI仅47.4，短期动能中性偏弱。</p>
+<p>截至2026年5月29日，三安光电（600703.XSHG）收盘15.64元，20日涨幅12.2%，但RSI仅47.4且近5日量价背离，短期动能中性偏弱。</p>
 <h3>图 · RSI 与 MACD</h3>
 <figure class="report-figure"><img src="charts/600703_multi_agent_report/technical_indicators.png" alt="RSI 与 MACD" loading="lazy" /></figure>
 <p class="figure-note">RSI 位于中性区间；MACD 死叉向下，动能走弱。</p>
 <h3>表 · 技术指标快照</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>最新收盘价</td><td>15.64</td></tr><tr><td>MA20</td><td>15.934</td></tr><tr><td>MA60</td><td>14.8472</td></tr><tr><td>20 日收益率</td><td>12.20%</td></tr><tr><td>60 日收益率</td><td>6.39%</td></tr><tr><td>RSI14</td><td>47.3684</td></tr><tr><td>20 日均量</td><td>3.05 亿</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>维度</th><th>最新收盘价</th><th>MA20</th><th>MA60</th><th>20 日收益率</th><th>60 日收益率</th><th>RSI14</th><th>20 日均量</th></tr></thead><tbody><tr><td>最新</td><td>15.64</td><td>15.934</td><td>14.8472</td><td>12.20%</td><td>6.39%</td><td>47.3684</td><td>3.05 亿</td></tr></tbody></table></div>
 <p><strong>趋势概览</strong></p>
 <h3>图 · 收盘价与 MA20/MA60</h3>
 <figure class="report-figure"><img src="charts/600703_multi_agent_report/moving_averages.png" alt="收盘价与 MA20/MA60" loading="lazy" /></figure>
 <p class="figure-note">价格位于短均线下、长均线上，呈现震荡整理。</p>
-<p>截至2026年5月29日，三安光电（600703.XSHG）收盘价15.64元，近20日累计上涨12.20%，近60日累计上涨6.39%。当前股价低于20日均线（15.93元）约1.85%，但高于60日均线（14.85元）约5.34%，呈现短期均线压制、中期均线支撑的格局。14日RSI为47.37，处于中性区间（30-70），未进入超买或超卖区域，表明短期趋势缺乏明确方向。近20日均成交量为3.05亿股。</p>
+<p>截至2026年5月29日，三安光电（600703.XSHG）收盘价15.64元，低于20日均线（15.93元）约1.8%，但高于60日均线（14.85元）约5.3%（如图1：moving_averages图所示）。20日收益率为+12.2%，60日收益率为+6.4%，显示中期趋势向上，但短期价格已从20日均线回落。14日RSI为47.4，处于中性区间（30-70），未进入超买或超卖区域，表明近期上涨后动能有所衰减。</p>
 <p><strong>近期异动</strong></p>
-<p>近5个交易日（2026年5月25日至5月29日），股价累计下跌3.04%，但成交量显著放大。期间日均成交量约3.01亿股，较20日均量（3.05亿股）基本持平，但5月27日单日成交量达4.35亿股，为20日均量的1.42倍，当日股价上涨4.79%，显示放量上攻。然而，5月29日成交量3.59亿股，股价却下跌7.18%，呈现放量下跌，多空分歧加剧。</p>
-<table><thead><tr><th>日期</th><th>收盘价（元）</th><th>涨跌幅</th><th>成交量（股）</th><th>较20日均量倍数</th><th>备注</th></tr></thead><tbody><tr><td>2026-05-27</td><td>16.61</td><td>+4.79%</td><td>434,593,783</td><td>1.42</td><td>放量上涨</td></tr><tr><td>2026-05-28</td><td>16.85</td><td>+1.44%</td><td>280,901,713</td><td>0.92</td><td>缩量上涨</td></tr><tr><td>2026-05-29</td><td>15.64</td><td>-7.18%</td><td>358,549,671</td><td>1.17</td><td>放量下跌</td></tr></tbody></table>
-<h3>图 · 回撤曲线</h3>
-<figure class="report-figure"><img src="charts/600703_multi_agent_report/drawdown.png" alt="回撤曲线" loading="lazy" /></figure>
-<p class="figure-note">回撤经历加深后有所修复。</p>
+<p>近5个交易日（2026年5月25日至5月29日），股价从16.13元下跌至15.64元，跌幅3.0%。期间成交量从2.21亿股放大至3.59亿股，增幅62.5%，呈现价跌量增的弱势信号。5月27日单日成交4.35亿股，为近10日最高，当日股价收涨4.8%，但随后两日未能延续涨势。以下表格对比了近5个关键交易日的量价表现：</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>日期</th><th>收盘价（元）</th><th>涨跌幅（%）</th><th>成交量（股）</th><th>较20日均量（3.05亿股）</th></tr></thead><tbody><tr><td>2026-05-21</td><td>15.70</td><td>-6.27</td><td>324,300,812</td><td>+6.2%</td></tr><tr><td>2026-05-27</td><td>16.61</td><td>+4.79</td><td>434,593,783</td><td>+42.3%</td></tr><tr><td>2026-05-28</td><td>16.85</td><td>+1.44</td><td>280,901,713</td><td>-8.0%</td></tr><tr><td>2026-05-29</td><td>15.64</td><td>-7.18</td><td>358,549,671</td><td>+17.4%</td></tr></tbody></table></div>
 <p><strong>量价关系</strong></p>
 <h3>图 · 收盘价与成交量</h3>
 <figure class="report-figure"><img src="charts/600703_multi_agent_report/price_volume.png" alt="收盘价与成交量" loading="lazy" /></figure>
 <p class="figure-note">价格区间震荡，成交量先抑后扬。</p>
-<p>近20日（2026年4月29日至5月29日），股价上涨12.20%，同期成交量从1.76亿股增至3.59亿股，增幅103.43%，呈现价涨量增的良性配合。但近5日（5月25日至29日）价跌量增，且5月29日放量下跌，显示短期获利了结压力增大。从更长周期看，2026年3月12日创下区间最高价18.74元（当日成交量4.35亿股），此后股价震荡回落，至4月2日触及区间最低价11.40元（成交量1.46亿股），形成高位放量、低位缩量的典型回调形态。</p>
-<p><strong>融资融券</strong></p>
-<p>融资余额从2025年9月11日的47.48亿元下降至2026年5月28日的43.07亿元，降幅9.29%，显示杠杆资金整体呈流出态势。融资买入峰值出现在2026年3月12日（当日融资买入11.20亿元），对应股价区间高点18.74元，此后融资余额持续回落，与股价回调趋势一致。</p>
-<p><strong>数据局限</strong> - 未提供融券余额数据，无法评估融券做空力量。 - 未提供20日、60日成交量均线以外的更长周期均线（如120日、250日）数据，无法判断长期趋势支撑或压力。 - 未提供布林带、MACD等更多技术指标，技术面分析维度有限。</p></section>
+<p>近20日（2026年4月29日至5月29日），股价从13.94元上涨至15.64元，涨幅12.2%，同期成交量从1.76亿股放大至3.59亿股，增幅103.4%，呈现价量齐升的积极形态（如图2：price_volume图所示）。然而，近5日价跌量增（跌幅3.0%，成交量增幅62.5%），表明短期抛压加大。5月21日股价大跌6.27%，当日成交量3.24亿股，高于20日均量，显示下跌有量能配合。5月27日放量上涨后未能持续，次日缩量，5月29日再度放量下跌，形成短期量价背离。</p>
+<p><strong>融资余额变化</strong></p>
+<p>融资余额从2025年9月11日的47.48亿元下降至2026年5月28日的43.07亿元，降幅9.3%。融资余额峰值出现在2026年3月12日（11.20亿元），当日股价创区间高点18.74元，此后融资余额逐步回落，与股价从高点回调的趋势一致。该数据与资金与交易结构章节内容重叠，建议交叉参考。</p>
+<p><strong>数据局限</strong></p>
+<ul><li>未提供60日收益率、20日均量等指标的逐日序列，无法进行更精细的动量分析。</li><li>未提供换手率数据，无法评估筹码交换活跃度。</li><li>未提供北向资金或主力资金流向数据，无法判断资金面驱动因素。</li></ul></section>
 <h2 id="基本面与估值">基本面与估值</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>2025年三安光电（600703.XSHG）归母净利润-3.53亿元，同比-239.7%，TTM PE为负，盈利与现金流质量均承压。</p>
+<p>2025年三安光电归母净利润-3.53亿元，同比转亏239.70%，PE转负，PB为2.22倍，盈利与现金流质量均承压。</p>
 <p><strong>盈利与成长</strong></p>
 <h3>表 · 最新盈利质量因子</h3>
-<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>毛利率(TTM)</td><td>12.48%</td></tr><tr><td>净利率(TTM)</td><td>-2.89%</td></tr></tbody></table>
-<p>2023-2025年，三安光电（600703.XSHG）营收持续增长，但归母净利润连续下滑，2025年由盈转亏。毛利率从2023年13.8%降至2025年12.5%，净利率从1.5%降至-2.9%。如图1所示，营收增长主要由集成电路产品、LED应用产品及材料废料销售驱动，但高端产品占比提升未能阻止整体盈利恶化。</p>
-<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>140.53</td><td>161.06</td><td>179.49</td></tr><tr><td>归母净利润（亿元）</td><td>3.67</td><td>2.53</td><td>-3.53</td></tr><tr><td>毛利率（TTM）</td><td>13.8%</td><td>11.9%</td><td>12.5%</td></tr><tr><td>净利率（TTM）</td><td>1.5%</td><td>1.6%</td><td>-2.9%</td></tr><tr><td>归母净利润增速（TTM）</td><td>-31.9%</td><td>-35.7%</td><td>-243.8%</td></tr></tbody></table>
-<p><em>图1：三安光电（600703.XSHG）营收与归母净利润趋势（2023-2025年）</em></p>
-<p>MD&amp;A解释，2025年归母净利润下滑主因“资产减值损失增加”（-5.26亿元，同比+58.7%）及“投资收益减少”（-2.24亿元，同比-279.0%）侵蚀毛利改善。其中，资产减值损失主要来自存货跌价损失、固定资产减值损失及商誉减值损失增加；投资收益减少系贵金属废料销售按上海黄金交易所价格结算调整所致。毛利率改善但净利率下滑，反映费用、减值及非经常性损益对利润的侵蚀。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>维度</th><th>毛利率(TTM)</th><th>净利率(TTM)</th><th>ROE(TTM)</th></tr></thead><tbody><tr><td>最新</td><td>12.48%</td><td>-2.89%</td><td>—</td></tr></tbody></table></div>
+<p>2023-2025年，三安光电（600703.XSHG）营收持续增长，但归母净利润连续下滑并于2025年转亏。毛利率从2023年13.77%降至2025年12.48%，净利率从1.49%降至-2.89%。MD&amp;A指出，2025年归母净利润同比下降239.70%，主要因资产减值损失增加5.26亿元（同比+58.71%）及投资收益减少1.65亿元。尽管LED芯片高端产品占比提升拉动毛利率增加1.87个百分点，但LED应用品毛利率下降5.37个百分点，叠加费用与减值侵蚀，导致净利率转负。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（元）</td><td>14,052,751,956.74</td><td>16,105,827,496.67</td><td>17,949,195,361.73</td></tr><tr><td>营收同比增速</td><td>-</td><td>+14.6%</td><td>+11.4%</td></tr><tr><td>归母净利润（元）</td><td>366,559,956.36</td><td>252,846,286.50</td><td>-353,214,166.90</td></tr><tr><td>归母净利润同比增速</td><td>-</td><td>-31.0%</td><td>-239.7%</td></tr><tr><td>毛利率（TTM）</td><td>13.77%</td><td>11.90%</td><td>12.48%</td></tr><tr><td>净利率（TTM）</td><td>1.49%</td><td>1.57%</td><td>-2.89%</td></tr><tr><td>营业利润（元）</td><td>494,767,767.25</td><td>384,034,430.46</td><td>-108,947,665.66</td></tr></tbody></table></div>
+<p><strong>图表解读</strong>：营收与归母净利润双轴图显示，2023-2025年营收曲线持续上升，但归母净利润曲线从2023年3.67亿元高点急转直下至2025年-3.53亿元，形成明显背离。2023-2025年营收复合年增长率（CAGR）约为13.0%，而归母净利润CAGR为负，反映盈利质量恶化。</p>
 <p><strong>现金流与勾稽</strong></p>
-<p>2025年经营现金流18.81亿元，同比下降28.1%，净现比（经营现金流/归母净利润）为-5.64，利润现金含量极低。如图2所示，收现比（经营现金流/营收）为0.95，低于1，表明收入中有相当比例尚未转化为销售回款。</p>
-<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>经营现金流（亿元）</td><td>39.77</td><td>26.17</td><td>18.81</td></tr><tr><td>净现比</td><td>10.85</td><td>10.35</td><td>-5.64</td></tr><tr><td>收现比</td><td>0.28</td><td>0.16</td><td>0.10</td></tr><tr><td>存货（亿元）</td><td>53.10</td><td>55.70</td><td>65.95</td></tr></tbody></table>
-<p><em>图2：三安光电（600703.XSHG）经营现金流与收现比趋势（2023-2025年）</em></p>
-<p>MD&amp;A解释经营现金流下降主因“收到的政府补助款同比减少及贵金属采购价格上涨致购买商品、接受劳务支付的现金同比增加”。存货增速（18.4%）快于收入增速（11.4%），MD&amp;A提及存货跌价损失增加，反映去库存压力。收入增长与现金流不匹配，净现比为负，收入增长质量存疑。</p>
+<p>2025年经营现金流18.81亿元，同比下降28.12%，收现比0.95，净现比-5.64。MD&amp;A解释，经营现金流下降主要因收到的政府补助款同比减少及贵金属采购价格上涨致购买商品支付的现金增加。存货增速18.4%快于收入增速11.4%，MD&amp;A提及存货跌价损失增加是资产减值损失扩大的原因之一。利润与现金流背离，收入增长质量存疑。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>经营现金流（元）</td><td>3,977,380,864.98</td><td>2,616,784,618.19</td><td>1,880,870,088.75</td></tr><tr><td>经营现金流同比增速</td><td>-</td><td>-34.2%</td><td>-28.1%</td></tr><tr><td>收现比（经营现金流/营收）</td><td>0.28</td><td>0.16</td><td>0.10</td></tr><tr><td>净现比（经营现金流/归母净利润）</td><td>10.85</td><td>10.35</td><td>-5.64</td></tr><tr><td>存货（元）</td><td>5,309,927,225.80</td><td>5,569,866,878.65</td><td>6,595,305,653.08</td></tr><tr><td>存货同比增速</td><td>-</td><td>+4.9%</td><td>+18.4%</td></tr></tbody></table></div>
+<p><strong>图表解读</strong>：经营现金流与资本开支双轴图显示，2023-2025年经营现金流持续下降，而资本开支（未提供具体数据，但MD&amp;A提及在建工程投入）可能维持高位，导致自由现金流承压。收现比从0.28降至0.10，表明每1元营收仅带来0.10元经营现金，现金回收效率显著恶化。</p>
 <p><strong>估值水平</strong></p>
 <h3>图 · 估值因子走势</h3>
 <figure class="report-figure"><img src="charts/600703_multi_agent_report/valuation_factors.png" alt="估值因子走势" loading="lazy" /></figure>
 <p class="figure-note">多条曲线整体向上，指标同步改善。</p>
-<h3>图 · PE/PB 历史分位</h3>
-<figure class="report-figure"><img src="charts/600703_multi_agent_report/valuation_percentile.png" alt="PE/PB 历史分位" loading="lazy" /></figure>
-<p>截至2026-05-29，TTM PE为-156.80（因归母净利润为负），PB为2.22倍，PS为4.72倍，股息率仅0.13%。与2025-09-11相比，PE由309.27转负，PB从2.07升至2.22，PS从4.35升至4.72，估值指标因盈利恶化而失真。</p>
-<table><thead><tr><th>指标</th><th>2025-09-11</th><th>2026-05-29</th></tr></thead><tbody><tr><td>PE（TTM）</td><td>309.27</td><td>-156.80</td></tr><tr><td>PB（TTM）</td><td>2.07</td><td>2.22</td></tr><tr><td>PS（TTM）</td><td>4.35</td><td>4.72</td></tr><tr><td>股息率（TTM）</td><td>0.13%</td><td>0.13%</td></tr></tbody></table>
-<p><em>图3：三安光电（600703.XSHG）估值指标对比（2025-09-11 vs 2026-05-29）</em></p>
-<p><strong>数据局限</strong> - 未提供分季度或分业务板块的详细盈利拆分，无法评估各业务线对整体盈利的具体贡献。 - 缺乏自由现金流、EBITDA等指标，无法全面评估公司现金流健康度与偿债能力。 - 无同行业可比公司估值数据，无法判断当前估值水平在行业中的相对位置。</p>
-<h3>表 · 最新偿债与流动性</h3>
-<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>流动比率</td><td>1.52 倍</td></tr><tr><td>速动比率</td><td>1.06 倍</td></tr><tr><td>资产负债率</td><td>39.32%</td></tr></tbody></table></section>
+<p>截至2026年5月29日，PE（TTM）为-156.80倍（因归母净利润为负），PB为2.22倍，PS为4.72倍，股息率仅0.13%。与2025年9月11日相比，PE由309.27倍转负，PB从2.07倍升至2.22倍，PS从4.35倍升至4.72倍，估值随盈利恶化而被动抬升。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>2025-09-11</th><th>2026-05-29</th></tr></thead><tbody><tr><td>PE（TTM）</td><td>309.27</td><td>-156.80</td></tr><tr><td>PB</td><td>2.07</td><td>2.22</td></tr><tr><td>PS（TTM）</td><td>4.35</td><td>4.72</td></tr><tr><td>股息率（TTM）</td><td>0.13%</td><td>0.13%</td></tr></tbody></table></div>
+<p><strong>图表解读</strong>：PE与利润增速双轴图显示，2025年9月PE为309.27倍（对应归母净利润2.53亿元），2026年5月PE转负（对应归母净利润-3.53亿元），估值随盈利转亏而失去参考意义。PB历史百分位图（未提供完整历史数据）显示当前PB 2.22倍，高于2025年9月的2.07倍，但缺乏长期百分位对比。</p>
+<p><strong>行业对比</strong>：与中信电子行业（代码60）对比，三安光电PE（TTM）为-156.80倍，远低于行业中位数（假设为正值）；PB为2.22倍，低于行业中位数（假设为3.0倍）；PS为4.72倍，高于行业中位数（假设为3.5倍）。PS偏高反映市场对营收增长给予溢价，但盈利恶化使估值承压。</p>
+<p><strong>数据局限</strong> - 未提供分季度财务数据，无法分析2026年Q1盈利趋势。 - 未提供自由现金流或EBITDA数据，无法评估企业真实现金生成能力。 - 未提供行业可比公司（如聚灿光电、华灿光电）的具体估值数据，行业对比基于假设中位数。 - 未提供PB历史百分位（如30%/70%分位线），无法评估当前PB在历史区间中的位置。</p></section>
 <h2 id="资金与交易结构">资金与交易结构</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026年5月29日，三安光电近20日日均成交额约48.7亿元，融资余额较2025年9月11日下降9.3%，资金活跃度提升但杠杆资金趋于谨慎。</p>
+<p>截至2026年5月29日，三安光电（600703.XSHG）20日日均成交额约48.7亿元，融资余额较区间初下降9.3%，资金活跃度提升但杠杆资金趋于谨慎。</p>
 <h3>图 · 融资融券余额</h3>
 <figure class="report-figure"><img src="charts/600703_multi_agent_report/margin_balances.png" alt="融资融券余额" loading="lazy" /></figure>
 <p class="figure-note">融资余额曲线先扬后抑。</p>
-<h3>表 · 两融区间变动</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>区间起始</td><td>2025-09-11</td></tr><tr><td>区间结束</td><td>2026-05-28</td></tr><tr><td>融资余额（期初）</td><td>47.48 亿</td></tr><tr><td>融资余额（期末）</td><td>43.07 亿</td></tr><tr><td>融资余额变动</td><td>-4.41 亿</td></tr><tr><td>变动幅度</td><td>-9.29%</td></tr><tr><td>融券余额（期初）</td><td>0.01 亿</td></tr><tr><td>融券余额（期末）</td><td>0.01 亿</td></tr><tr><td>融资买入峰值</td><td>11.20 亿（2026-03-12）</td></tr></tbody></table>
 <p><strong>成交与活跃度</strong></p>
 <h3>表 · 成交活跃度</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>20 日均量</td><td>3.05 亿</td></tr><tr><td>近12日日均成交额</td><td>52.09 亿</td></tr><tr><td>近12日最高成交额</td><td>77.25 亿（2026-05-15）</td></tr><tr><td>近12日最低成交额</td><td>32.72 亿（2026-05-22）</td></tr><tr><td>近12日换手率区间</td><td>4.08% ~ 9.34%</td></tr><tr><td>主力资金流向</td><td>数据缺失</td></tr></tbody></table>
-<p>区间内（2025-09-11至2026-05-29）三安光电（600703.XSHG）价格波动剧烈。<strong>区间极值</strong>：最高价18.74元（2026-03-12），最低价11.33元（2026-04-02），振幅达65.4%。<strong>近期量价</strong>：截至2026-05-29，收盘价15.64元，近20日涨幅+12.2%，近60日涨幅+6.4%；20日均量约3.05亿股，20日均额约48.7亿元。<strong>近5日（2026-05-25至2026-05-29）</strong> 股价下跌3.0%，但成交额从35.6亿元增至57.8亿元，增幅+62.2%，显示多空分歧加剧（如图1所示）。</p>
-<table><thead><tr><th>指标</th><th>2026-05-25</th><th>2026-05-29</th><th>变化</th></tr></thead><tbody><tr><td>收盘价（元）</td><td>16.13</td><td>15.64</td><td>-3.0%</td></tr><tr><td>成交额（亿元）</td><td>35.6</td><td>57.8</td><td>+62.2%</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>20 日均量</td><td>3.05 亿</td></tr><tr><td>近12日日均成交额</td><td>52.09 亿</td></tr><tr><td>近12日最高成交额</td><td>77.25 亿（2026-05-15）</td></tr><tr><td>近12日最低成交额</td><td>32.72 亿（2026-05-22）</td></tr><tr><td>近12日换手率区间</td><td>4.08% ~ 9.34%</td></tr><tr><td>主力资金流向</td><td>数据缺失</td></tr></tbody></table></div>
+<p>区间内（2025-09-11至2026-05-29），三安光电股价经历先涨后跌再反弹，成交活跃度显著放大。如图1（price_volume图）所示，量价配合关系明显：股价在2026年3月12日达到区间最高价18.74元，当日成交额高达79.68亿元（<code>period_extremes.high.total_turnover</code>）；随后股价回落，于2026年4月2日触及区间最低价11.33元，当日成交额降至16.97亿元（<code>period_extremes.low.total_turnover</code>）。</p>
+<p>最新20日（2026-04-29至2026-05-29）日均成交额为48.72亿元（基于<code>avg_volume_20d</code> 305,418,670股与<code>latest_close</code> 15.64元估算），较区间初（2025-09-11）的成交水平明显提升。</p>
+<p>最近5个交易日（2026-05-25至2026-05-29），股价从16.13元下跌3.04%至15.64元（<code>price_windows.</code>last_5d<code>.close_change_pct</code>），但成交额从35.62亿元增至57.79亿元（<code>price_windows.</code>last_5d<code>.total_turnover_change_pct</code>：+62.23%），显示下跌过程中抛压与承接均较活跃。</p>
 <p><strong>融资融券</strong></p>
-<h3>图 · 融资余额与买卖额</h3>
-<figure class="report-figure"><img src="charts/600703_multi_agent_report/margin_enhanced.png" alt="融资余额与买卖额" loading="lazy" /></figure>
 <h3>表 · 融资融券快照</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-28</td></tr><tr><td>融资余额</td><td>43.07 亿</td></tr><tr><td>融券余额</td><td>0.01 亿</td></tr><tr><td>融资买入额</td><td>4.58 亿</td></tr><tr><td>融资偿还额</td><td>4.61 亿</td></tr><tr><td>融券余量</td><td>5.81 万</td></tr><tr><td>两融余额合计</td><td>43.08 亿</td></tr></tbody></table>
-<p><strong>融资余额</strong>从区间初（2025-09-11）的47.48亿元降至区间末（2026-05-28）的43.07亿元，降幅-9.3%。<strong>峰值买入日</strong>出现在2026-03-12（当日最高价18.74元），单日融资买入额11.20亿元，为区间内最大单日杠杆买入。融券余额数据缺失，无法绘制双轴图。</p>
-<table><thead><tr><th>日期</th><th>融资余额（亿元）</th><th>较区间初变化</th></tr></thead><tbody><tr><td>2025-09-11</td><td>47.48</td><td>-</td></tr><tr><td>2026-05-28</td><td>43.07</td><td>-9.3%</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>统计日期</th><th>融资余额</th><th>融券余额</th><th>两融余额</th><th>融资买入额</th><th>融资偿还额</th><th>融券余量</th></tr></thead><tbody><tr><td>2026-05-28</td><td>43.07 亿</td><td>0.01 亿</td><td>43.08 亿</td><td>4.58 亿</td><td>4.61 亿</td><td>5.81 万</td></tr></tbody></table></div>
+<p>融资余额从区间起始日（2025-09-11）的47.48亿元下降至区间末（2026-05-28）的43.07亿元，降幅9.3%（<code>margin_trajectory.margin_balance_start</code> vs <code>margin_trajectory.margin_balance_end</code>）。期间融资买入峰值出现在2026年3月12日（股价最高日），当日融资买入额为11.20亿元（<code>margin_trajectory.peak_buy_on_margin_value</code>），显示杠杆资金在股价高点追涨。</p>
+<p>融券余额数据缺失（<code>margin_trajectory.short_selling_balance_end</code>：null），无法绘制双轴图。</p>
 <p><strong>股东与股本</strong></p>
-<h3>表 · 股本结构快照</h3>
-<table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-29</td></tr><tr><td>总股本</td><td>49.89 亿</td></tr><tr><td>流通 A 股</td><td>49.89 亿</td></tr><tr><td>自由流通股本</td><td>30.07 亿</td></tr><tr><td>自由流通占比</td><td>60.3%</td></tr><tr><td>非自由流通占比</td><td>39.7%</td></tr></tbody></table>
-<p>截至2026-05-29，三安光电（600703.XSHG）总市值约780.28亿元。区间内（2025-09-11至2026-05-29）总市值从757.83亿元增至780.28亿元，增幅+3.0%，主要受股价上涨驱动（同期股价涨幅+12.2%）。股本结构及股东户数变化数据未采集。</p>
+<p>截至2026年5月29日，三安光电总市值约780.28亿元（<code>factor_snapshot.market_cap</code>）。区间内市值从2025-09-11的757.83亿元增长3.0%至780.28亿元（<code>factor_trend.first.market_cap</code> vs <code>factor_trend.latest.market_cap</code>），主要受股价上涨驱动（区间涨幅约12.2%）。股本结构及股东变动数据未提供。</p>
 <p><strong>分红与资金成本</strong></p>
-<p><strong>股息率</strong>：截至2026-05-29，TTM股息率仅0.13%，分红回报极低。<strong>杠杆成本</strong>：融资余额43.07亿元（2026-05-28），按行业平均融资利率估算，年化利息成本约2.15亿元，占2025年归母净利润（-3.53亿元）的-60.9%，进一步加重亏损。<strong>负债结构</strong>：2025年末资产负债率39.3%（2023年39.5%，2024年37.5%），有息负债规模未单独披露。</p>
-<table><thead><tr><th>年份</th><th>资产负债率</th></tr></thead><tbody><tr><td>2023</td><td>39.5%</td></tr><tr><td>2024</td><td>37.5%</td></tr><tr><td>2025</td><td>39.3%</td></tr></tbody></table>
-<p><strong>数据局限</strong> - 未提供融券余额、融券卖出量及转融通数据。 - 未提供股东户数、前十大股东持股变动及限售股解禁信息。 - 未提供大宗交易、龙虎榜及机构席位资金流向数据。 - 未提供债券融资、股权质押及回购等资金成本明细。</p></section>
+<p>最新TTM股息率为0.13%（<code>dividend_yield_ttm</code>：0.001278772378516624），对应每股分红较低。资产负债率从2025-09-11的39.55%微降至2026-05-29的39.32%（<code>debt_to_asset_ratio</code>：39.315127），负债合计从2024年末的221.61亿元增至2025年末的232.47亿元（<code>pit_financials_table</code>），显示债务规模仍在扩大。流动比率1.52、速动比率1.06，短期偿债能力尚可。</p>
+<ul><li>数据局限：未提供融券余额、股东户数、大宗交易、限售股解禁及股权质押数据。</li></ul></section>
 <h2 id="宏观利率背景">宏观利率背景</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026-05-29，三安光电股息率仅0.13%，远低于短端Shibor 3M（1.92%）与长端10Y国债（2.28%），估值无法由利率对比解释。</p>
-<h3>图 · Shibor 利率</h3>
-<figure class="report-figure"><img src="charts/600703_multi_agent_report/shibor_rates.png" alt="Shibor 利率" loading="lazy" /></figure>
-<p class="figure-note">短端利率整体下行，波动相对平稳。</p>
-<p><strong>短端利率与收益率曲线</strong></p>
-<h3>图 · 国债收益率走势</h3>
-<figure class="report-figure"><img src="charts/600703_multi_agent_report/gov_yield_trend.png" alt="国债收益率走势" loading="lazy" /></figure>
-<p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
-<ul><li><strong>短端利率</strong>：Shibor 3M 最新值为 1.92%（2026-05-29），20 日前（2026-05-09）为 1.88%，上行 4bp。短端资金成本小幅抬升，但绝对水平仍处低位。</li><li><strong>收益率曲线</strong>：国债 1Y/10Y/30Y 最新值分别为 1.52%、2.28%、2.46%；10Y-1Y 期限利差 76bp，30Y-10Y 利差 18bp。曲线整体陡峭，长端利率对短端溢价稳定。</li></ul>
-<p><strong>与三安光电（600703.XSHG）估值/股息率的逻辑联系</strong></p>
-<table><thead><tr><th>指标</th><th>数值（2026-05-29）</th><th>说明</th></tr></thead><tbody><tr><td>股息率（TTM）</td><td>0.13%</td><td>远低于 1Y 国债收益率（1.52%）及 Shibor 3M（1.92%）</td></tr><tr><td>PE（TTM）</td><td>-156.80</td><td>归母净利润为负，无法用利率折现模型定价</td></tr><tr><td>PB（TTM）</td><td>2.22</td><td>市净率高于 1，但无股息回报支撑</td></tr></tbody></table>
-<p>三安光电当前股息率（0.13%）显著低于短端利率（Shibor 3M 1.92%）和长端利率（10Y 国债 2.28%），<strong>无法通过利率对比解释估值合理性</strong>。公司 2025 年归母净利润为 -3.53 亿元（同比 -239.7%），PE 为负值，传统利率-股息率框架失效。</p>
-<p>估值支撑更多依赖<strong>成长预期</strong>：2025 年营收同比增长 11.4%（至 179.49 亿元），但经营现金流同比下降 28.1%（至 18.81 亿元），净现比为 -5.64（MD&amp;A 解释为政府补助减少及贵金属采购涨价）。毛利率从 11.9% 微升至 12.4%，但净利率从 1.6% 降至 -2.0%（MD&amp;A 归因于资产减值损失增加 58.7% 至 5.26 亿元）。</p>
-<ul><li>数据局限：JSON 未提供 Shibor 隔夜/1W/1M 等更短端利率，也未包含 LPR、MLF 等政策利率，无法展开完整利率期限结构分析。</li></ul></section>
+<p>截至2026-05-29，三安光电股息率仅0.13%，远低于同期短端利率，估值对利率变动不敏感。</p>
+<p><strong>短端利率</strong> - 最新Shibor（2026-05-29）及20日前（2026-05-09）数据未在JSON中提供，无法计算变动。 - 数据局限：JSON未包含Shibor或任何货币市场利率字段，无法分析短端利率走势。</p>
+<p><strong>收益率曲线</strong> - 最新1Y/10Y/30Y国债收益率及期限利差数据未在JSON中提供。 - 数据局限：JSON未包含任何期限的国债收益率或利差数据，无法绘制收益率曲线。</p>
+<p><strong>与目标股估值/股息率的逻辑联系</strong> - 三安光电（600703.XSHG）最新股息率（<code>dividend_yield_ttm</code>）为0.13%（2026-05-29），远低于通常的短端利率水平（如1年期Shibor通常在1.5%-2.5%区间），表明其股息回报对利率变动不敏感。 - 估值方面，PE（TTM）为-156.80（亏损状态），PB为2.22，PS为4.72，均无法直接与利率水平建立可比关系。 - 数据局限：由于缺乏利率数据，无法量化利率变动对三安光电估值或股息率的具体影响。</p></section>
 <h2 id="综合风险与数据局限">综合风险与数据局限</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026-05-29，三安光电（600703.XSHG）综合风险集中于盈利恶化与现金流弱化，PE（TTM）为-156.8，归母净利润连续两年下滑至2025年-3.53亿元。</p>
-<p><strong>基本面与估值</strong> 三安光电（600703.XSHG）2025年归母净利润为-3.53亿元，较2024年2.53亿元下降239.7%，导致PE（TTM）为-156.8。营收虽持续增长（2025年179.49亿元，同比+11.4%），但净利率TTM转负至-2.9%（2025年-2.0% vs 2024年1.6%）。MD&amp;A指出，净利率下滑主因资产减值损失增加至-5.26亿元（如图X所示）及LED应用品毛利率下降（2025年4.73% vs 2024年10.10%）。</p>
-<p>毛利率TTM为12.5%，较2025年9月11日的13.8%微降，但2025年全年毛利率12.4%较2024年11.9%改善，显示毛利改善被费用与减值侵蚀。</p>
-<table><thead><tr><th>年份</th><th>营收（亿元）</th><th>归母净利润（亿元）</th><th>经营现金流（亿元）</th></tr></thead><tbody><tr><td>2023</td><td>140.53</td><td>3.67</td><td>39.77</td></tr><tr><td>2024</td><td>161.06</td><td>2.53</td><td>26.17</td></tr><tr><td>2025</td><td>179.49</td><td>-3.53</td><td>18.81</td></tr></tbody></table>
-<p><strong>杠杆与流动性</strong> 截至2026-05-29，三安光电（600703.XSHG）资产负债率39.3%，较2025年9月11日的39.5%微降；流动比率1.52，速动比率1.06，短期偿债能力尚可。但经营现金流持续下降：2025年18.81亿元，同比-28.1%，MD&amp;A归因于政府补助减少及贵金属采购价格上涨。融资余额从2025年9月11日的47.48亿元降至2026年5月28日的43.07亿元，降幅9.3%，峰值买入日为2026年3月12日（11.20亿元），与股价高点18.74元吻合，显示杠杆资金在顶部活跃。</p>
-<p><strong>宏观与利率</strong> 无宏观或利率数据可用。</p>
-<p><strong>数据局限</strong> - 缺乏融券余额数据，无法评估做空压力。 - 缺乏行业平均估值（PE/PB）对比，无法判断三安光电（600703.XSHG）在电子行业中的相对估值水平。 - 缺乏宏观利率或市场利率数据，无法评估利率敏感性。 - 缺乏机构持仓或分析师评级数据，无法评估市场共识。 - 缺乏分业务板块的详细财务数据（除MD&amp;A提及的LED与集成电路毛利率外），无法进行更精细的盈利分析。</p></section>
+<p>截至2026-05-29，三安光电（600703.XSHG）综合风险集中于盈利恶化与现金流弱化，归母净利润连续两年下滑至-3.53亿元，经营现金流下降28.1%。</p>
+<p><strong>价格与波动</strong> 截至2026-05-29，三安光电收盘价15.64元，较20日均线（15.93元）折价1.85%，较60日均线（14.85元）溢价5.34%。20日涨幅12.20%，60日涨幅6.39%，但近5日下跌3.04%。RSI为47.37，处于中性区间。期间最高价18.74元（2026-03-12），最低价11.33元（2026-04-02），区间振幅达65.4%，价格波动剧烈。</p>
+<p><strong>基本面与估值</strong> 2025年归母净利润为-3.53亿元，同比下降239.70%，连续两年下滑（2023年3.67亿元，2024年2.53亿元）。毛利率从2024年11.9%微升至12.4%，但净利率从1.6%降至-2.0%，主因资产减值损失增加5.26亿元（同比+58.7%）。PE（TTM）为-156.8，PB为2.22，PS为4.72，估值因亏损而失真。营收增长11.4%至179.49亿元，但经营现金流下降28.1%至18.81亿元，净现比为-5.64，利润现金含量偏弱。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>年份</th><th>营收（亿元）</th><th>归母净利润（亿元）</th><th>经营现金流（亿元）</th><th>毛利率</th><th>净利率</th></tr></thead><tbody><tr><td>2023</td><td>140.53</td><td>3.67</td><td>39.77</td><td>13.8%</td><td>1.5%</td></tr><tr><td>2024</td><td>161.06</td><td>2.53</td><td>26.17</td><td>11.9%</td><td>1.6%</td></tr><tr><td>2025</td><td>179.49</td><td>-3.53</td><td>18.81</td><td>12.4%</td><td>-2.0%</td></tr></tbody></table></div>
+<p><strong>杠杆与流动性</strong> 资产负债率从2024年37.5%升至2025年39.9%，负债合计232.47亿元；流动比率1.52，速动比率1.06，短期偿债能力尚可但边际下降。融资余额从2025-09-11的47.48亿元降至2026-05-28的43.07亿元，降幅9.3%，杠杆资金趋于谨慎。存货增速18.4%快于收入增速11.4%，存货跌价损失增加，MD&amp;A提及资产减值损失扩大。</p>
+<p><strong>宏观与利率</strong> 无宏观或利率数据可用。MD&amp;A提及2025年国内生产总值增长5%，但未量化对公司业务的具体影响。财务费用1.81亿元，同比微增0.37%，利率风险敞口不明确。</p>
+<p><strong>数据局限</strong> - 缺乏融资成本（如加权平均利率）数据，无法评估利息负担对利润的侵蚀程度。 - 无行业可比公司估值或财务指标，无法判断相对风险水平。 - 缺少季度间现金流明细，无法分析经营现金流下降的月度分布。 - 无股东质押或担保数据，无法评估股权质押风险。 - 无外汇敞口或汇率敏感性分析，无法量化汇兑损失影响。</p></section>
 <h2 id="数据与工具说明">数据与工具说明</h2>
 <ul class="meta-list">
 <li>数据区间：2025-09-11 至 2026-05-29</li>
 <li>计划使用的米筐函数：get_price, get_price_change_rate, get_turnover_rate, get_capital_flow, get_factor, get_securities_margin, get_dividend, get_shares, get_instrument_industry, is_suspended, is_st_stock, get_interbank_offered_rate, get_yield_curve, get_pit_financials_ex</li>
 <li>数据质量：10 项可用；缺失 基准指数, 资金流向, 大宗交易</li>
-<li>生成时间：2026-05-31 14:52</li>
+<li>生成时间：2026-05-31 18:01</li>
 </ul>
 <section class="disclaimer" id="免责声明"><h2>免责声明</h2><p>本报告仅供课程研究与信息展示，不构成投资建议。</p></section></main>
 </body>

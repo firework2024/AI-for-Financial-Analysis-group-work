@@ -144,9 +144,85 @@ def compute_rsi(close: Any, *, period: int = 14) -> Any:
     loss = (-delta.clip(upper=0)).rolling(period).mean()
     rs = gain / loss.replace(0, pd.NA)
     rsi = 100 - 100 / (1 + rs)
-    return rsi.fillna(100)
+    bull = loss.eq(0) & gain.gt(0)
+    return rsi.where(~bull, 100)
 
 _setup_done = False
+
+CJK_FONT_CANDIDATES: tuple[str, ...] = (
+    "Microsoft YaHei",
+    "PingFang SC",
+    "SimHei",
+    "Noto Sans CJK SC",
+    "Noto Sans SC",
+    "Source Han Sans SC",
+    "Source Han Sans CN",
+    "WenQuanYi Micro Hei",
+    "WenQuanYi Zen Hei",
+    "Arial Unicode MS",
+    "Droid Sans Fallback",
+)
+
+CJK_FONT_KEYWORDS: tuple[str, ...] = (
+    "noto sans cjk",
+    "noto sans sc",
+    "source han sans",
+    "wenquanyi",
+    "wqy",
+    "simhei",
+    "yahei",
+    "pingfang",
+    "heiti",
+    "songti",
+    "fangsong",
+    "cjk",
+)
+
+
+def _register_font_from_path(font_manager: Any, font_path: str) -> str | None:
+    from pathlib import Path
+
+    path = Path(font_path)
+    if not path.is_file():
+        return None
+    try:
+        font_manager.fontManager.addfont(str(path))
+        prop = font_manager.FontProperties(fname=str(path))
+        return prop.get_name()
+    except Exception:
+        return None
+
+
+def pick_cjk_font(font_manager: Any) -> str:
+    """选择可用于中文/符号的 sans 字体；Linux 服务器需安装 Noto CJK 或文泉驿。"""
+    import os
+
+    for env_key in ("FINAGENT_CJK_FONT_PATH", "FINAGENT_CJK_FONT"):
+        custom = os.environ.get(env_key, "").strip()
+        if custom:
+            registered = _register_font_from_path(font_manager, custom)
+            if registered:
+                return registered
+
+    available = {getattr(entry, "name", "") for entry in font_manager.fontManager.ttflist}
+    for name in CJK_FONT_CANDIDATES:
+        if name in available:
+            return name
+
+    for entry in font_manager.fontManager.ttflist:
+        name = (getattr(entry, "name", "") or "").strip()
+        if not name:
+            continue
+        fname = (getattr(entry, "fname", "") or "").lower()
+        blob = f"{name} {fname}"
+        lower = blob.lower()
+        if "emoji" in lower or "symbol" in lower:
+            continue
+        if any(keyword in lower for keyword in CJK_FONT_KEYWORDS):
+            return name
+
+    return "DejaVu Sans"
+
 
 # 折线视觉：圆角连接/端点（非数据平滑，仅渲染更顺滑）
 LINE_STYLE: dict[str, Any] = {
@@ -154,6 +230,63 @@ LINE_STYLE: dict[str, Any] = {
     "solid_joinstyle": "round",
     "antialiased": True,
 }
+
+
+def setup_matplotlib() -> None:
+    global _setup_done
+    if _setup_done:
+        return
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+
+    chosen = pick_cjk_font(font_manager)
+    sans = [chosen]
+    for name in CJK_FONT_CANDIDATES:
+        if name != chosen and name not in sans:
+            sans.append(name)
+    sans.extend(["DejaVu Sans", "Arial", "sans-serif"])
+
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.sans-serif": sans,
+            "axes.unicode_minus": False,
+            "figure.facecolor": PALETTE["bg"],
+            "axes.facecolor": "#FFFFFF",
+            "axes.edgecolor": "#CBD5E1",
+            "axes.labelcolor": "#475569",
+            "axes.titleweight": "600",
+            "axes.titlesize": 12.5,
+            "axes.labelsize": 9.5,
+            "axes.titlepad": 14,
+            "xtick.color": "#64748B",
+            "ytick.color": "#64748B",
+            "xtick.labelsize": 8.5,
+            "ytick.labelsize": 8.5,
+            "grid.color": PALETTE["grid"],
+            "grid.linestyle": "-",
+            "grid.linewidth": 0.55,
+            "grid.alpha": 0.85,
+            "legend.frameon": False,
+            "legend.fontsize": 8.5,
+            "font.size": 9.5,
+            "figure.dpi": 100,
+            "savefig.dpi": 180,
+            "savefig.facecolor": PALETTE["bg"],
+            "savefig.edgecolor": "none",
+            "lines.linewidth": 1.75,
+            "lines.antialiased": True,
+            "lines.solid_capstyle": "round",
+            "lines.solid_joinstyle": "round",
+            "path.simplify": True,
+            "path.simplify_threshold": 0.3,
+            "patch.linewidth": 0,
+        }
+    )
+    _setup_done = True
 
 
 def prepare_date_index(dates: Any) -> tuple[Any, Any]:
@@ -228,63 +361,6 @@ def bar_on_dates(
     x, _ = prepare_date_index(dates)
     values = pd.to_numeric(pd.Series(y), errors="coerce").reset_index(drop=True)
     return ax.bar(x, values, color=color, alpha=alpha, width=width, zorder=zorder)
-
-
-def setup_matplotlib() -> None:
-    global _setup_done
-    if _setup_done:
-        return
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib import font_manager
-
-    chosen = "DejaVu Sans"
-    available = {getattr(entry, "name", "") for entry in font_manager.fontManager.ttflist}
-    for name in ("Microsoft YaHei", "PingFang SC", "SimHei", "Noto Sans CJK SC", "Arial Unicode MS"):
-        if name in available:
-            chosen = name
-            break
-
-    plt.rcParams.update(
-        {
-            "font.family": "sans-serif",
-            "font.sans-serif": [chosen, "DejaVu Sans", "Arial", "sans-serif"],
-            "axes.unicode_minus": False,
-            "figure.facecolor": PALETTE["bg"],
-            "axes.facecolor": "#FFFFFF",
-            "axes.edgecolor": "#CBD5E1",
-            "axes.labelcolor": "#475569",
-            "axes.titleweight": "600",
-            "axes.titlesize": 12.5,
-            "axes.labelsize": 9.5,
-            "axes.titlepad": 14,
-            "xtick.color": "#64748B",
-            "ytick.color": "#64748B",
-            "xtick.labelsize": 8.5,
-            "ytick.labelsize": 8.5,
-            "grid.color": PALETTE["grid"],
-            "grid.linestyle": "-",
-            "grid.linewidth": 0.55,
-            "grid.alpha": 0.85,
-            "legend.frameon": False,
-            "legend.fontsize": 8.5,
-            "font.size": 9.5,
-            "figure.dpi": 100,
-            "savefig.dpi": 180,
-            "savefig.facecolor": PALETTE["bg"],
-            "savefig.edgecolor": "none",
-            "lines.linewidth": 1.75,
-            "lines.antialiased": True,
-            "lines.solid_capstyle": "round",
-            "lines.solid_joinstyle": "round",
-            "path.simplify": True,
-            "path.simplify_threshold": 0.3,
-            "patch.linewidth": 0,
-        }
-    )
-    _setup_done = True
 
 
 def label(name: str) -> str:

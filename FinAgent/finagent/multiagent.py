@@ -482,7 +482,7 @@ def revise_sections_with_validation(
                     f"{analytical_writing_core()} "
                     f"{section_opening_conclusion_rule()} "
                     f"{section_writing_style_hint(name)} "
-                    "优先引用 data.analytical_evidence；多年数据须用 Markdown 表格；"
+                    "优先引用 data.analytical_evidence；多年数据须用 Markdown 表格（表头清晰、多指标对比优先宽表≥3列，禁止两行两列敷衍）；"
                     "若有 mda_crosswalk，融入盈利/现金流段落对照 MD&A，勿设独立勾稽章节。"
                     "每一段都必须回到目标股票本身：引用目标股票代码、目标股票的米筐数据字段、目标股票图表或目标股票对应行业归属。"
                     "如果原文有泛泛讲宏观、行业、市场或方法论但没有连接目标股票的句子，请删除或改写。"

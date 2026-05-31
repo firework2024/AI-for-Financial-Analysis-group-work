@@ -1382,8 +1382,8 @@ def _core_metric_table_html(data: dict[str, Any]) -> str:
         f"<tr><td>{html.escape(label)}</td><td>{html.escape(str(value))}</td></tr>" for label, value in rows
     )
     return (
-        '<table class="metrics"><thead><tr><th>指标</th><th>数值</th></tr></thead>'
-        f"<tbody>{body}</tbody></table>"
+        '<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>数值</th></tr></thead>'
+        f"<tbody>{body}</tbody></table></div>"
     )
 
 

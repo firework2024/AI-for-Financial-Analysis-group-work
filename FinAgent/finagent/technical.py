@@ -8,6 +8,42 @@ import pandas as pd
 
 from .chart_style import compute_rsi
 
+RSI_PERIOD = 14
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+MA_FAST = 20
+MA_SLOW = 60
+VOL_WINDOW = 20
+
+
+def trim_plot_frame(frame: pd.DataFrame, skip: int) -> pd.DataFrame:
+    if frame.empty or skip <= 0:
+        return frame
+    if len(frame) <= skip:
+        return frame.iloc[0:0].copy()
+    return frame.iloc[skip:].reset_index(drop=True)
+
+
+def technical_indicator_warmup_bars() -> int:
+    """RSI/MACD 出图前需剔除的无效热身交易日数（慢线+信号线滞后）。"""
+    return max(RSI_PERIOD, MACD_SLOW + MACD_SIGNAL - 1)
+
+
+def technical_indicator_plot_frame(price: pd.DataFrame) -> pd.DataFrame:
+    """截取 RSI/MACD 均已进入有效区间的子序列，避免图左侧误导性波动。"""
+    return trim_plot_frame(price, technical_indicator_warmup_bars())
+
+
+def moving_average_plot_frame(price: pd.DataFrame) -> pd.DataFrame:
+    """MA60 满窗后均线才稳定，三条线从此处起绘。"""
+    return trim_plot_frame(price, MA_SLOW - 1)
+
+
+def rolling_volatility_plot_frame(price: pd.DataFrame) -> pd.DataFrame:
+    """20 日滚动年化波动率满窗前无统计意义（含首日收益率空值）。"""
+    return trim_plot_frame(price, VOL_WINDOW)
+
 
 def safe_float(value: Any) -> float | None:
     try:
@@ -50,8 +86,8 @@ def enrich_price_frame(price: pd.DataFrame) -> pd.DataFrame:
     for col in ("open", "high", "low", "close", "volume", "total_turnover"):
         if col in frame.columns:
             frame[col] = pd.to_numeric(frame[col], errors="coerce")
-    frame["ma20"] = frame["close"].rolling(20).mean()
-    frame["ma60"] = frame["close"].rolling(60).mean()
+    frame["ma20"] = frame["close"].rolling(MA_FAST).mean()
+    frame["ma60"] = frame["close"].rolling(MA_SLOW).mean()
     frame["return"] = frame["close"].pct_change()
     base = frame["close"].iloc[0]
     if base and pd.notna(base) and base != 0:
@@ -59,13 +95,13 @@ def enrich_price_frame(price: pd.DataFrame) -> pd.DataFrame:
     else:
         frame["cum_return"] = pd.NA
     frame["drawdown"] = frame["close"] / frame["close"].cummax() - 1
-    frame["rsi14"] = compute_rsi(frame["close"])
-    ema12 = frame["close"].ewm(span=12, adjust=False).mean()
-    ema26 = frame["close"].ewm(span=26, adjust=False).mean()
+    frame["rsi14"] = compute_rsi(frame["close"], period=RSI_PERIOD)
+    ema12 = frame["close"].ewm(span=MACD_FAST, adjust=False).mean()
+    ema26 = frame["close"].ewm(span=MACD_SLOW, adjust=False).mean()
     frame["macd"] = ema12 - ema26
-    frame["macd_signal"] = frame["macd"].ewm(span=9, adjust=False).mean()
+    frame["macd_signal"] = frame["macd"].ewm(span=MACD_SIGNAL, adjust=False).mean()
     frame["macd_hist"] = frame["macd"] - frame["macd_signal"]
-    frame["vol20"] = frame["return"].rolling(20).std() * (252**0.5) * 100
+    frame["vol20"] = frame["return"].rolling(VOL_WINDOW).std() * (252**0.5) * 100
     return frame
 
 

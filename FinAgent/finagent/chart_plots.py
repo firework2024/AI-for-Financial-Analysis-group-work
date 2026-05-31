@@ -34,7 +34,15 @@ from .chart_style import (
     style_twin_axes,
     to_percent_points,
 )
-from .technical import enrich_price_frame, numeric_value_column, resolve_close_column, safe_float
+from .technical import (
+    enrich_price_frame,
+    moving_average_plot_frame,
+    numeric_value_column,
+    resolve_close_column,
+    rolling_volatility_plot_frame,
+    safe_float,
+    technical_indicator_plot_frame,
+)
 
 
 def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] | None = None) -> dict[str, str]:
@@ -71,16 +79,18 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
         close_figure(fig)
         charts["price_volume"] = str(path)
 
-        fig, ax = new_figure()
-        plot_line(ax, price["date"], price["close"], color=PALETTE["text"], linewidth=1.6, label=label("close"))
-        plot_line(ax, price["date"], price["ma20"], color=PALETTE["secondary"], linewidth=1.6, label=label("MA20"))
-        plot_line(ax, price["date"], price["ma60"], color=PALETTE["accent"], linewidth=1.6, label=label("MA60"))
-        style_axes(ax, title=chart_title(stock, "moving_averages"), ylabel=label("close"), date_index=price["date"])
-        style_legend(ax)
-        path = output_dir / "moving_averages.png"
-        save_chart(fig, path)
-        close_figure(fig)
-        charts["moving_averages"] = str(path)
+        ma = moving_average_plot_frame(price)
+        if not ma.empty:
+            fig, ax = new_figure()
+            plot_line(ax, ma["date"], ma["close"], color=PALETTE["text"], linewidth=1.6, label=label("close"))
+            plot_line(ax, ma["date"], ma["ma20"], color=PALETTE["secondary"], linewidth=1.6, label=label("MA20"))
+            plot_line(ax, ma["date"], ma["ma60"], color=PALETTE["accent"], linewidth=1.6, label=label("MA60"))
+            style_axes(ax, title=chart_title(stock, "moving_averages"), ylabel=label("close"), date_index=ma["date"])
+            style_legend(ax)
+            path = output_dir / "moving_averages.png"
+            save_chart(fig, path)
+            close_figure(fig)
+            charts["moving_averages"] = str(path)
 
         base_close = price["close"].iloc[0]
         if base_close and pd.notna(base_close) and base_close != 0:
@@ -113,21 +123,23 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
         close_figure(fig)
         charts["drawdown"] = str(path)
 
-        fig, (ax1, ax2) = new_figure(nrows=2, sharex=True)
-        x_idx, dt_idx = prepare_date_index(price["date"])
-        plot_line(ax1, dt_idx, price["rsi14"], color=PALETTE["positive"], linewidth=1.6)
-        add_ref_line(ax1, 70, color="#FCA5A5")
-        add_ref_line(ax1, 30, color="#86EFAC")
-        style_axes(ax1, title=chart_title(stock, "technical_indicators"), ylabel=label("rsi14"))
-        bar_on_dates(ax2, dt_idx, price["macd_hist"], color=PALETTE["neutral"], alpha=0.45, width=0.85)
-        plot_line(ax2, dt_idx, price["macd"], color=PALETTE["secondary"], linewidth=1.4, label=label("macd"))
-        plot_line(ax2, dt_idx, price["macd_signal"], color=PALETTE["negative"], linewidth=1.4, label=label("macd_signal"))
-        style_axes(ax2, ylabel="MACD", date_index=dt_idx)
-        style_legend(ax2, loc="upper left", ncol=2)
-        path = output_dir / "technical_indicators.png"
-        save_chart(fig, path)
-        close_figure(fig)
-        charts["technical_indicators"] = str(path)
+        tech = technical_indicator_plot_frame(price)
+        if not tech.empty:
+            fig, (ax1, ax2) = new_figure(nrows=2, sharex=True)
+            _, dt_idx = prepare_date_index(tech["date"])
+            plot_line(ax1, dt_idx, tech["rsi14"], color=PALETTE["positive"], linewidth=1.6)
+            add_ref_line(ax1, 70, color="#FCA5A5")
+            add_ref_line(ax1, 30, color="#86EFAC")
+            style_axes(ax1, title=chart_title(stock, "technical_indicators"), ylabel=label("rsi14"))
+            bar_on_dates(ax2, dt_idx, tech["macd_hist"], color=PALETTE["neutral"], alpha=0.45, width=0.85)
+            plot_line(ax2, dt_idx, tech["macd"], color=PALETTE["secondary"], linewidth=1.4, label=label("macd"))
+            plot_line(ax2, dt_idx, tech["macd_signal"], color=PALETTE["negative"], linewidth=1.4, label=label("macd_signal"))
+            style_axes(ax2, ylabel="MACD", date_index=dt_idx)
+            style_legend(ax2, loc="upper left", ncol=2)
+            path = output_dir / "technical_indicators.png"
+            save_chart(fig, path)
+            close_figure(fig)
+            charts["technical_indicators"] = str(path)
 
         if "total_turnover" in price.columns and price["total_turnover"].notna().any():
             fig, ax = new_figure()
@@ -138,10 +150,11 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             close_figure(fig)
             charts["turnover_amount"] = str(path)
 
-        if price["vol20"].notna().any():
+        vol = rolling_volatility_plot_frame(price)
+        if not vol.empty and vol["vol20"].notna().any():
             fig, ax = new_figure()
-            plot_line(ax, price["date"], price["vol20"], color=PALETTE["purple"], linewidth=1.8)
-            style_axes(ax, title=chart_title(stock, "rolling_volatility"), ylabel="年化波动率 (%)", date_index=price["date"])
+            plot_line(ax, vol["date"], vol["vol20"], color=PALETTE["purple"], linewidth=1.8)
+            style_axes(ax, title=chart_title(stock, "rolling_volatility"), ylabel="年化波动率 (%)", date_index=vol["date"])
             path = output_dir / "rolling_volatility.png"
             save_chart(fig, path)
             close_figure(fig)

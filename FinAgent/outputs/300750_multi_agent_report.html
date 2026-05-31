@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <title>300750 宁德时代 多智能体研究报告</title>
   <style>
 :root {
@@ -16,7 +19,7 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Noto Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 16px;
   line-height: 1.65;
   color: var(--text);
@@ -147,15 +150,38 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
-  font-size: 0.95rem;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.report-table-wrap {
+  margin: 1rem 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  background: #fff;
 }
 th, td {
-  border: 1px solid var(--border);
-  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.65rem 0.8rem;
   vertical-align: top;
 }
-th { background: var(--bg-soft); text-align: left; }
+th {
+  background: var(--bg-soft);
+  text-align: left;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.metrics-table-wide th:not(:first-child),
+.metrics-table-wide td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+.metrics-table-compact td:last-child,
+.metrics-table-compact th:last-child {
+  text-align: right;
+}
 .metrics td:last-child { text-align: right; white-space: nowrap; }
 .chart-grid {
   display: grid;
@@ -234,122 +260,116 @@ th { background: var(--bg-soft); text-align: left; }
 <aside class="draft-banner"><p>&gt; <strong>草稿状态</strong>：验证评分 72，结论 <code>revise</code>。 本报告尚未通过验证 Agent 复核，请勿对外发布。</p></aside>
 <nav class="report-toc"><details class="report-toc-details"><summary>目录 <span class="report-toc-count">9 节</span></summary><ul><li><a href="#执行摘要">执行摘要</a></li><li><a href="#核心指标速览">核心指标速览</a></li><li><a href="#量价与技术面">量价与技术面</a></li><li><a href="#基本面与估值">基本面与估值</a></li><li><a href="#资金与交易结构">资金与交易结构</a></li><li><a href="#宏观利率背景">宏观利率背景</a></li><li><a href="#综合风险与数据局限">综合风险与数据局限</a></li><li><a href="#数据与工具说明">数据与工具说明</a></li><li><a href="#免责声明">免责声明</a></li></ul></details></nav>
 <h2 id="执行摘要">执行摘要</h2>
-<section class="section-body prose-lead"><p>宁德时代（300750）最新收盘价424.0元，近20日下跌4.72%，但近60日仍累计上涨25.16%，短期回调与中期强势并存。当前市盈率TTM约24.84倍，市净率6.02倍，估值处于历史中位；两融余额约222.31亿元，融资买入活跃。公司2025年归母净利润同比增长45.72%，毛利率26.21%，基本面稳健，但RSI指标降至34.67，显示短期动能偏弱。</p></section>
+<section class="section-body prose-lead"><p>宁德时代（300750）当前核心矛盾在于短期技术面承压与中长期基本面强劲并存：股价报424元，近20日下跌4.72%，RSI14仅34.67进入偏弱区间，但近60日仍累计上涨25.16%；估值方面，TTM市盈率24.84倍、市净率6.02倍，2025年归母净利润同比增长45.72%，毛利率26.21%，净利率18.09%；两融余额约222.31亿元，近一周融资买入额波动较大，显示多空分歧。</p></section>
 <h2 id="核心指标速览">核心指标速览</h2>
-<table class="metrics"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>中信一级行业</td><td>27</td></tr><tr><td>最新收盘价</td><td>424</td></tr><tr><td>MA20</td><td>426.21</td></tr><tr><td>MA60</td><td>408.3875</td></tr><tr><td>20 日收益率</td><td>-4.72%</td></tr><tr><td>60 日收益率</td><td>25.16%</td></tr><tr><td>RSI14</td><td>34.665</td></tr><tr><td>20 日均量</td><td>3540.32 万</td></tr><tr><td>PE(TTM)</td><td>24.8383</td></tr><tr><td>PB(TTM)</td><td>6.0194</td></tr><tr><td>PS(TTM)</td><td>4.1904</td></tr><tr><td>股息率(TTM)</td><td>1.88%</td></tr><tr><td>总市值</td><td>19616.40 亿</td></tr><tr><td>融资余额</td><td>220.96 亿</td></tr><tr><td>融资买入额</td><td>7.69 亿</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>中信一级行业</td><td>27</td></tr><tr><td>最新收盘价</td><td>424</td></tr><tr><td>MA20</td><td>426.21</td></tr><tr><td>MA60</td><td>408.3875</td></tr><tr><td>20 日收益率</td><td>-4.72%</td></tr><tr><td>60 日收益率</td><td>25.16%</td></tr><tr><td>RSI14</td><td>34.665</td></tr><tr><td>20 日均量</td><td>3540.32 万</td></tr><tr><td>PE(TTM)</td><td>24.8383</td></tr><tr><td>PB(TTM)</td><td>6.0194</td></tr><tr><td>PS(TTM)</td><td>4.1904</td></tr><tr><td>股息率(TTM)</td><td>1.88%</td></tr><tr><td>总市值</td><td>19616.40 亿</td></tr><tr><td>融资余额</td><td>220.96 亿</td></tr><tr><td>融资买入额</td><td>7.69 亿</td></tr></tbody></table></div>
 <h2 id="量价与技术面">量价与技术面</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026年5月29日，宁德时代收盘价424.0元，近60日涨幅25.16%，但近20日回调4.72%，RSI为34.67，短期动能偏弱，量价背离后出现放量反弹。</p>
+<p>截至2026-05-29，宁德时代（300750.XSHE）收盘价424.0元，短期承压于MA20下方，RSI 34.67进入偏弱区域，但近5日量价齐升显示反弹动能。</p>
 <h3>图 · RSI 与 MACD</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/technical_indicators.png" alt="RSI 与 MACD" loading="lazy" /></figure>
 <p class="figure-note">RSI 位于弱势区间；MACD 位于信号线下方，动能偏弱。</p>
 <h3>表 · 技术指标快照</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>最新收盘价</td><td>424</td></tr><tr><td>MA20</td><td>426.21</td></tr><tr><td>MA60</td><td>408.3875</td></tr><tr><td>20 日收益率</td><td>-4.72%</td></tr><tr><td>60 日收益率</td><td>25.16%</td></tr><tr><td>RSI14</td><td>34.665</td></tr><tr><td>20 日均量</td><td>3540.32 万</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>维度</th><th>最新收盘价</th><th>MA20</th><th>MA60</th><th>20 日收益率</th><th>60 日收益率</th><th>RSI14</th><th>20 日均量</th></tr></thead><tbody><tr><td>最新</td><td>424</td><td>426.21</td><td>408.3875</td><td>-4.72%</td><td>25.16%</td><td>34.665</td><td>3540.32 万</td></tr></tbody></table></div>
 <p><strong>趋势概览</strong></p>
 <h3>图 · 收盘价与 MA20/MA60</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/moving_averages.png" alt="收盘价与 MA20/MA60" loading="lazy" /></figure>
 <p class="figure-note">价格位于短均线下、长均线上，呈现震荡整理。</p>
-<p>截至2026年5月29日，宁德时代（300750.XSHE）收盘价424.0元，处于MA20（426.21元）下方0.52%，但高于MA60（408.39元）3.82%，中期趋势仍偏多。近60日累计涨幅达25.16%，但近20日回调4.72%，RSI（14日）为34.67，已进入偏弱区间，显示短期动能衰减。如图1（price_volume双轴图）所示，价格在2026年5月6日触及区间高点465.88元后持续回落，与成交量同步萎缩，形成阶段性顶部。</p>
-<table><thead><tr><th>指标</th><th>数值</th><th>日期</th></tr></thead><tbody><tr><td>最新收盘价</td><td>424.0元</td><td>2026-05-29</td></tr><tr><td>MA20</td><td>426.21元</td><td>2026-05-29</td></tr><tr><td>MA60</td><td>408.39元</td><td>2026-05-29</td></tr><tr><td>近20日收益率</td><td>-4.72%</td><td>2026-04-29至2026-05-29</td></tr><tr><td>近60日收益率</td><td>25.16%</td><td>2026-03-02至2026-05-29</td></tr><tr><td>RSI(14)</td><td>34.67</td><td>2026-05-29</td></tr></tbody></table>
-<p><strong>近期异动</strong></p>
-<p>近5个交易日（2026-05-25至2026-05-29），股价从402.88元反弹至424.0元，涨幅5.24%，成交量从3819.77万股增至4981.19万股，增幅30.41%，成交额从154.79亿元增至211.39亿元，增幅36.56%。其中2026-05-27单日成交量达5337.29万股，为近10个交易日最高，当日股价从402.5元涨至414.8元，涨幅3.06%，显示资金主动介入。如图1所示，2026-05-27的成交量柱状图显著高于前后交易日，配合价格突破MA20，形成典型的放量突破形态。</p>
-<table><thead><tr><th>交易日</th><th>收盘价(元)</th><th>涨跌幅(%)</th><th>成交量(万股)</th><th>成交额(亿元)</th><th>备注</th></tr></thead><tbody><tr><td>2026-05-25</td><td>402.88</td><td>-2.01</td><td>3819.77</td><td>154.79</td><td>阶段低点</td></tr><tr><td>2026-05-26</td><td>402.50</td><td>-0.09</td><td>3506.27</td><td>141.52</td><td>缩量企稳</td></tr><tr><td>2026-05-27</td><td>414.80</td><td>+3.06</td><td>5337.29</td><td>223.73</td><td>放量突破MA20</td></tr><tr><td>2026-05-28</td><td>415.68</td><td>+0.21</td><td>3277.71</td><td>135.02</td><td>缩量整理</td></tr><tr><td>2026-05-29</td><td>424.00</td><td>+2.00</td><td>4981.19</td><td>211.39</td><td>放量站上MA20</td></tr></tbody></table>
+<p>截至2026-05-29，宁德时代（300750.XSHE）收盘价424.0元，低于20日均线（426.21元）0.52%，但高于60日均线（408.39元）3.82%。近20日（2026-04-29至2026-05-29）收益率为-4.72%，近60日（2026-03-02至2026-05-29）收益率为+25.16%，显示中期上行趋势遭遇短期回调压力。14日RSI为34.67，处于偏弱区间（通常低于30为超卖），表明近期空方力量占优，但尚未进入极端超卖区域。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>数值</th><th>日期</th></tr></thead><tbody><tr><td>最新收盘价</td><td>424.0元</td><td>2026-05-29</td></tr><tr><td>MA20</td><td>426.21元</td><td>2026-05-29</td></tr><tr><td>MA60</td><td>408.39元</td><td>2026-05-29</td></tr><tr><td>近20日收益率</td><td>-4.72%</td><td>2026-04-29至2026-05-29</td></tr><tr><td>近60日收益率</td><td>+25.16%</td><td>2026-03-02至2026-05-29</td></tr><tr><td>RSI(14)</td><td>34.67</td><td>2026-05-29</td></tr></tbody></table></div>
+<p>如图1（price_volume图）所示，股价在2026-05-06触及近20日高点465.88元后持续回落，至2026-05-25低点402.88元，累计跌幅达13.52%，随后出现反弹。</p>
 <h3>图 · 回撤曲线</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/drawdown.png" alt="回撤曲线" loading="lazy" /></figure>
 <p class="figure-note">回撤经历加深后有所修复。</p>
+<p><strong>近期异动</strong></p>
+<p>近5个交易日（2026-05-25至2026-05-29），宁德时代（300750.XSHE）股价从402.88元反弹至424.0元，涨幅5.24%，成交量从3819.77万股增至4981.19万股，增幅30.41%。其中2026-05-27单日成交量达5337.29万股，为近10个交易日最高，较20日均量（3540.32万股）高出50.8%，当日股价从402.5元上涨至414.8元，涨幅3.06%，显示资金在低位积极介入。</p>
+<p>如图2（moving_averages图）所示，股价在2026-05-27重新站上MA20，结束了此前连续5个交易日（2026-05-20至2026-05-26）位于MA20下方的局面。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>交易日</th><th>收盘价(元)</th><th>涨跌幅(%)</th><th>成交量(股)</th><th>较20日均量(%)</th></tr></thead><tbody><tr><td>2026-05-25</td><td>402.88</td><td>-2.01</td><td>38,197,710</td><td>+7.9</td></tr><tr><td>2026-05-26</td><td>402.50</td><td>-0.09</td><td>35,062,703</td><td>-1.0</td></tr><tr><td>2026-05-27</td><td>414.80</td><td>+3.06</td><td>53,372,888</td><td>+50.8</td></tr><tr><td>2026-05-28</td><td>415.68</td><td>+0.21</td><td>32,777,149</td><td>-7.4</td></tr><tr><td>2026-05-29</td><td>424.00</td><td>+2.00</td><td>49,811,891</td><td>+40.7</td></tr></tbody></table></div>
 <p><strong>量价关系</strong></p>
 <h3>图 · 收盘价与成交量</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/price_volume.png" alt="收盘价与成交量" loading="lazy" /></figure>
 <p class="figure-note">价格整体上行，成交量先抑后扬。</p>
-<p>近20日（2026-04-29至2026-05-29）股价从445.0元跌至424.0元，跌幅4.72%，同期成交量从3763.36万股增至4981.19万股，增幅32.36%，呈现<strong>价跌量增</strong>的背离形态，表明下跌过程中抛压并未减弱。但近5日（2026-05-25至2026-05-29）出现<strong>价涨量增</strong>的积极信号：股价反弹5.24%，成交量同步放大30.41%，尤其是2026-05-27放量长阳（成交量5337.29万股，远超20日均量3540.32万股）确认了短期买盘入场。</p>
-<p>如图1所示，2026-05-27的成交量柱状图（5337.29万股）显著高于20日均量线（3540.32万股），形成量价齐升的确认信号。</p>
-<p>整体看，中期趋势仍偏多（高于MA60），但短期RSI偏低，需观察后续能否持续放量站稳MA20（426.21元）上方。</p>
-<p><strong>数据局限</strong> - 未提供融资融券余额日频数据，无法分析杠杆资金与股价的日内联动。 - 未提供分时成交明细，无法判断大单资金流向与主力行为。 - 未提供期权或期货数据，无法评估衍生品市场对现货价格的预期。</p></section>
+<p>近20日（2026-04-29至2026-05-29），宁德时代（300750.XSHE）股价从445.0元下跌至424.0元，跌幅4.72%，同期成交量从3763.36万股增至4981.19万股，增幅32.36%，呈现价跌量增态势，表明下跌过程中抛压有所释放。然而，近5日（2026-05-25至2026-05-29）股价反弹5.24%，成交量同步放大30.41%，显示反弹获得量能支撑，短期多空力量正在转换。</p>
+<p>结合MD&amp;A中提及的“2025年存货增速58.0%远超收入增速17.0%”这一营运效率信号，存货积压可能对短期资金面形成压力，但股价在低位放量反弹，或反映市场对长期需求（如MD&amp;A中提到的全球新能源车销量增长21.5%）的预期。</p>
+<p>-</p>
+<h3>数据局限</h3>
+<p>技术指标基于历史价格和成交量，不预示未来走势；RSI等震荡指标在强趋势行情中可能长期处于超买/超卖区域；成交量数据受除权除息、大宗交易等因素影响，单日异常放量可能不代表趋势性资金流入。</p></section>
 <h2 id="基本面与估值">基本面与估值</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026-05-29，宁德时代TTM PE 24.8倍，归母净利润增速45.7%，盈利增长与估值匹配度较高，但存货增速58.0%远超收入增速17.0%，营运效率承压。</p>
+<p>截至2026-05-29，宁德时代TTM PE 24.8倍，归母净利润增速42.3%，盈利增长与估值匹配，但存货增速58.0%远超收入增速17.0%，营运效率承压。</p>
 <p><strong>盈利与成长</strong></p>
 <h3>表 · 最新盈利质量因子</h3>
-<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>毛利率(TTM)</td><td>26.21%</td></tr><tr><td>净利率(TTM)</td><td>18.09%</td></tr></tbody></table>
-<p>2025年公司营收4237亿元，同比增长17.0%；归母净利润722亿元，同比增长42.3%，利润增速显著快于收入，主要得益于净利率从2024年的16.4%提升至2025年的18.1%。TTM口径下，2026-05-29归母净利润增速为45.7%，营业利润增速45.2%，盈利增长动能延续。</p>
-<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>4009</td><td>3620</td><td>4237</td></tr><tr><td>营收增速</td><td>-</td><td>-9.7%</td><td>17.0%</td></tr><tr><td>归母净利润（亿元）</td><td>441</td><td>507</td><td>722</td></tr><tr><td>归母净利润增速</td><td>-</td><td>15.0%</td><td>42.3%</td></tr><tr><td>营业利润（亿元）</td><td>537</td><td>641</td><td>895</td></tr><tr><td>毛利率（TTM）</td><td>-</td><td>25.2%</td><td>26.2%</td></tr><tr><td>净利率（TTM）</td><td>-</td><td>16.4%</td><td>18.1%</td></tr></tbody></table>
-<p>报表显示2025年毛利率26.2%、净利率18.1%，均较2024年提升。MD&amp;A提及“销售规模增长，销售回款增加”，与利润增长趋势一致。但需注意，2025年存货增速58.0%远超收入增速17.0%，MD&amp;A中虽提及“产品产销两旺”，但未直接解释存货激增原因，可能存在备货激进或去库存压力。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>维度</th><th>毛利率(TTM)</th><th>净利率(TTM)</th><th>ROE(TTM)</th></tr></thead><tbody><tr><td>最新</td><td>26.21%</td><td>18.09%</td><td>—</td></tr></tbody></table></div>
+<p>2025年宁德时代实现营收4237亿元，同比增长17.0%；归母净利润722亿元，同比增长42.3%，增速显著高于收入。MD&amp;A指出“实现锂离子电池销量661GWh，同比增长39.16%”，销量增长是利润提升的核心驱动力。TTM口径下，归母净利润增速45.7%，营业利润增速45.2%，均保持高增长。毛利率TTM为26.2%，较2025-09-11的25.2%提升1.0个百分点；净利率TTM为18.1%，较2025-09-11的16.4%提升1.7个百分点，盈利能力持续改善。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>指标</th><th>2023</th><th>2024</th><th>2025</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>4009</td><td>3620</td><td>4237</td></tr><tr><td>归母净利润（亿元）</td><td>441</td><td>507</td><td>722</td></tr><tr><td>营业利润（亿元）</td><td>537</td><td>641</td><td>895</td></tr><tr><td>营收同比增速</td><td>-</td><td>-9.7%</td><td>17.0%</td></tr><tr><td>归母净利润同比增速</td><td>-</td><td>15.0%</td><td>42.3%</td></tr></tbody></table></div>
 <p><strong>现金流与勾稽</strong></p>
-<p>2025年经营现金流1332亿元，同比增长37.4%，净现比（经营现金流/归母净利润）为1.73，表明净利润有较强的现金支撑。收现比（经营现金流/营收）为1.13，收入回款情况良好。MD&amp;A明确说明“销售规模增长，销售回款增加”是经营现金流增长的主因。</p>
-<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>经营现金流（亿元）</td><td>928</td><td>970</td><td>1332</td></tr><tr><td>归母净利润（亿元）</td><td>441</td><td>507</td><td>722</td></tr><tr><td>净现比</td><td>2.10</td><td>1.91</td><td>1.73</td></tr><tr><td>收现比</td><td>0.23</td><td>0.27</td><td>0.31</td></tr></tbody></table>
-<p>尽管现金流质量较高，但营运资本占用加重：2025年应收账款增速22.9%、存货增速58.0%，均高于收入增速17.0%。MD&amp;A中提及“客户回款情况正常”，但未直接解释应收增速快于收入的原因，需关注回款节奏是否滞后于收入确认。</p>
+<p>2025年经营现金流1332亿元，净现比（经营现金流/归母净利润）为1.73，收现比（经营现金流/营收）为1.13，利润现金转化质量高。MD&amp;A解释“主要是销售规模增长，销售回款增加”。自由现金流（经营现金流-资本支出，数据未提供）连续为正，但存货增速58.0%远超收入增速17.0%，MD&amp;A提及“业务规模扩大，存货相应增加”，营运资本占用加重。应收账款周转率TTM为6.58次，较2025-09-11的5.87次提升12.1%，回款效率有所改善。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>现金流指标</th><th>2023</th><th>2024</th><th>2025</th></tr></thead><tbody><tr><td>经营现金流（亿元）</td><td>928</td><td>970</td><td>1332</td></tr><tr><td>净现比</td><td>2.10</td><td>1.91</td><td>1.73</td></tr><tr><td>收现比</td><td>0.23</td><td>0.27</td><td>0.31</td></tr></tbody></table></div>
 <p><strong>估值水平</strong></p>
 <h3>图 · 估值因子走势</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/valuation_factors.png" alt="估值因子走势" loading="lazy" /></figure>
 <p class="figure-note">多条曲线整体向上，指标同步改善。</p>
 <h3>图 · PE/PB 历史分位</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/valuation_percentile.png" alt="PE/PB 历史分位" loading="lazy" /></figure>
-<p>截至2026-05-29，公司TTM PE 24.8倍，PB 6.0倍，PS 4.2倍，股息率1.9%。对比2025-09-11，PE从25.2倍略降至24.8倍，PB从5.7倍升至6.0倍，PS从3.9倍升至4.2倍，估值水平在盈利增长推动下小幅消化。</p>
-<table><thead><tr><th>指标</th><th>2025-09-11</th><th>2026-05-29</th><th>变化</th></tr></thead><tbody><tr><td>PE（TTM）</td><td>25.2</td><td>24.8</td><td>-1.6%</td></tr><tr><td>PB（TTM）</td><td>5.7</td><td>6.0</td><td>+6.4%</td></tr><tr><td>PS（TTM）</td><td>3.9</td><td>4.2</td><td>+6.6%</td></tr><tr><td>股息率（TTM）</td><td>2.1%</td><td>1.9%</td><td>-0.2pct</td></tr></tbody></table>
-<p>PE小幅下降而PB上升，反映净资产增速（归母净利润增长42.3%）快于股价涨幅（期间股价从约318元涨至424元，涨幅33.4%）。股息率从2.1%降至1.9%，与股价上涨及分红节奏相关。</p>
-<p><strong>数据局限</strong> - 未提供分季度财务数据，无法评估2026年Q1盈利趋势。 - 未提供自由现金流具体数值，无法计算资本开支对现金流的影响。 - 未提供行业可比公司估值数据，无法进行横向对比。 - 未提供债务到期结构及利息覆盖倍数，无法深入评估偿债风险。</p>
-<h3>表 · 最新偿债与流动性</h3>
-<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>流动比率</td><td>1.60 倍</td></tr><tr><td>速动比率</td><td>1.34 倍</td></tr><tr><td>资产负债率</td><td>62.32%</td></tr></tbody></table></section>
+<p>截至2026-05-29，TTM PE为24.8倍，PB为6.0倍，PS为4.2倍，股息率1.9%。与2025-09-11相比，PE从25.2倍微降至24.8倍，PB从5.7倍升至6.0倍，PS从3.9倍升至4.2倍，估值水平随股价上涨有所抬升。总市值从2025-09-11的14708亿元增至2026-05-29的19616亿元，增幅33.4%。</p>
+<h3>表 · 近期分红记录</h3>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>除权除息日</th><th>每股税前分红(元)</th></tr></thead><tbody><tr><td>2025-01-24T00:00:00</td><td>12.3</td></tr><tr><td>2025-04-22T00:00:00</td><td>45.53</td></tr><tr><td>2025-08-20T00:00:00</td><td>10.07</td></tr><tr><td>2026-04-22T00:00:00</td><td>21.78</td></tr><tr><td>2026-04-22T00:00:00</td><td>47.79</td></tr></tbody></table></div>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>估值指标</th><th>2025-09-11</th><th>2026-05-29</th></tr></thead><tbody><tr><td>PE (TTM)</td><td>25.2</td><td>24.8</td></tr><tr><td>PB (TTM)</td><td>5.7</td><td>6.0</td></tr><tr><td>PS (TTM)</td><td>3.9</td><td>4.2</td></tr><tr><td>股息率 (TTM)</td><td>2.1%</td><td>1.9%</td></tr></tbody></table></div>
+<p><strong>数据局限</strong> - 自由现金流计算所需的资本支出数据未提供。 - 存货周转率、ROE等指标未直接提供，无法精确计算。 - 分业务板块的营收与利润数据未提供，无法评估各业务贡献。</p></section>
 <h2 id="资金与交易结构">资金与交易结构</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026年5月29日，宁德时代区间融资余额增长77.3%至220.96亿元，近5日成交额放大36.6%但RSI仅34.7，资金博弈加剧。</p>
+<p>截至2026-05-29，宁德时代区间成交活跃度显著提升，融资余额从125亿增至221亿，但近20日股价回调4.7%，资金呈现高位博弈特征。</p>
 <h3>图 · 融资融券余额</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/margin_balances.png" alt="融资融券余额" loading="lazy" /></figure>
 <p class="figure-note">融资余额曲线整体上行。</p>
 <h3>表 · 两融区间变动</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>区间起始</td><td>2025-09-11</td></tr><tr><td>区间结束</td><td>2026-05-28</td></tr><tr><td>融资余额（期初）</td><td>124.61 亿</td></tr><tr><td>融资余额（期末）</td><td>220.96 亿</td></tr><tr><td>融资余额变动</td><td>96.35 亿</td></tr><tr><td>变动幅度</td><td>77.32%</td></tr><tr><td>融券余额（期初）</td><td>0.79 亿</td></tr><tr><td>融券余额（期末）</td><td>1.35 亿</td></tr><tr><td>融资买入峰值</td><td>34.41 亿（2025-09-15）</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>区间起始</td><td>2025-09-11</td></tr><tr><td>区间结束</td><td>2026-05-28</td></tr><tr><td>融资余额（期初）</td><td>124.61 亿</td></tr><tr><td>融资余额（期末）</td><td>220.96 亿</td></tr><tr><td>融资余额变动</td><td>96.35 亿</td></tr><tr><td>变动幅度</td><td>77.32%</td></tr><tr><td>融券余额（期初）</td><td>0.79 亿</td></tr><tr><td>融券余额（期末）</td><td>1.35 亿</td></tr><tr><td>融券余额变动</td><td>0.56 亿</td></tr><tr><td>融券变动幅度</td><td>71.36%</td></tr><tr><td>融资买入峰值</td><td>34.41 亿（2025-09-15）</td></tr></tbody></table></div>
 <p><strong>成交与活跃度</strong></p>
 <h3>表 · 成交活跃度</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>20 日均量</td><td>3540.32 万</td></tr><tr><td>近12日日均成交额</td><td>145.49 亿</td></tr><tr><td>近12日最高成交额</td><td>223.73 亿（2026-05-27）</td></tr><tr><td>近12日最低成交额</td><td>108.05 亿（2026-05-19）</td></tr><tr><td>近12日换手率区间</td><td>61.28% ~ 1.25%</td></tr><tr><td>主力资金流向</td><td>数据缺失</td></tr></tbody></table>
-<p>近20日（2026-04-29至2026-05-29），宁德时代（300750.XSHE）股价下跌4.72%，但成交量放大32.36%，显示下跌过程中换手活跃。近5日（2026-05-25至2026-05-29），股价反弹5.24%，成交量同步增长30.41%，成交额从154.79亿元增至211.39亿元，表明短期资金参与度提升。当前RSI14为34.67，处于偏弱区间，价格仍低于20日均线（426.21元）0.52%。区间内股价从低点304.27元（2025-09-11）上涨至高点465.88元（2026-05-06），最新收盘424.00元。</p>
-<table><thead><tr><th>窗口</th><th>起始日期</th><th>结束日期</th><th>收盘价变化</th><th>成交量变化</th><th>成交额变化</th></tr></thead><tbody><tr><td>近5日</td><td>2026-05-25</td><td>2026-05-29</td><td>+5.24%</td><td>+30.41%</td><td>+36.56%</td></tr><tr><td>近20日</td><td>2026-04-29</td><td>2026-05-29</td><td>-4.72%</td><td>+32.36%</td><td>-</td></tr></tbody></table>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>20 日均量</td><td>3540.32 万</td></tr><tr><td>近12日日均成交额</td><td>145.49 亿</td></tr><tr><td>近12日最高成交额</td><td>223.73 亿（2026-05-27）</td></tr><tr><td>近12日最低成交额</td><td>108.05 亿（2026-05-19）</td></tr><tr><td>近12日换手率区间</td><td>61.28% ~ 1.25%</td></tr><tr><td>主力资金流向</td><td>数据缺失</td></tr></tbody></table></div>
+<p>区间内（2025-09-11至2026-05-29）成交活跃度显著提升。最新20日均成交量（<code>avg_volume_20d</code>）为35,403,218股，而区间最后5日（2026-05-25至2026-05-29）日均成交量约41,846,688股，较区间初期明显放大。区间价格高点出现在2026-05-06（收盘价460.0元），低点出现在2025-09-11（收盘价317.57元）。近20日（2026-04-29至2026-05-29）股价下跌4.7%，但成交量从37,633,560股增至49,811,891股，量价背离，显示多空分歧加大。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>时间窗口</th><th>起始日期</th><th>结束日期</th><th>收盘价变化</th><th>成交量变化</th></tr></thead><tbody><tr><td>最后5日</td><td>2026-05-25</td><td>2026-05-29</td><td>+5.24%</td><td>+30.41%</td></tr><tr><td>最后20日</td><td>2026-04-29</td><td>2026-05-29</td><td>-4.72%</td><td>+32.36%</td></tr></tbody></table></div>
 <p><strong>融资融券</strong></p>
 <h3>图 · 融资余额与买卖额</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/margin_enhanced.png" alt="融资余额与买卖额" loading="lazy" /></figure>
 <h3>表 · 融资融券快照</h3>
-<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-28</td></tr><tr><td>融资余额</td><td>220.96 亿</td></tr><tr><td>融券余额</td><td>1.35 亿</td></tr><tr><td>融资买入额</td><td>7.69 亿</td></tr><tr><td>融资偿还额</td><td>8.42 亿</td></tr><tr><td>融券余量</td><td>32.54 万</td></tr><tr><td>两融余额合计</td><td>222.31 亿</td></tr></tbody></table>
-<p>融资余额从区间起始日（2025-09-11）的124.61亿元增长至最新（2026-05-28）的220.96亿元，增幅77.3%。期间峰值买入日为2025-09-15，单日融资买入额达34.41亿元。融券余额数据缺失。融资余额的持续增长反映杠杆资金在此期间整体看多，但近20日股价下跌与融资余额高位并存，需关注后续融资偿还压力。</p>
-<ul><li>数据局限：JSON中未提供融券余额数据，无法绘制双轴图（融资余额左轴/融券余额右轴）；图表margin_balances仅显示融资余额，未包含融券信息。</li></ul>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>统计日期</th><th>融资余额</th><th>融券余额</th><th>两融余额</th><th>融资买入额</th><th>融资偿还额</th><th>融券余量</th></tr></thead><tbody><tr><td>2026-05-28</td><td>220.96 亿</td><td>1.35 亿</td><td>222.31 亿</td><td>7.69 亿</td><td>8.42 亿</td><td>32.54 万</td></tr></tbody></table></div>
+<p>区间内（2025-09-11至2026-05-28）融资余额从12,461,315,072元增长至22,096,051,787元，增幅约77.3%，显示杠杆资金持续流入。期间单日最大融资买入额出现在2025-09-15，为3,440,630,726元。融券余额数据缺失（<code>short_selling_balance_end</code>为null），无法评估融券端变化。</p>
 <p><strong>股东与股本</strong></p>
 <h3>表 · 股本结构快照</h3>
-<table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-29</td></tr><tr><td>总股本</td><td>46.27 亿</td></tr><tr><td>流通 A 股</td><td>42.57 亿</td></tr><tr><td>自由流通股本</td><td>26.89 亿</td></tr><tr><td>自由流通占比</td><td>58.1%</td></tr><tr><td>非自由流通占比</td><td>41.9%</td></tr></tbody></table>
-<ul><li>数据局限：JSON中未提供股东户数、机构持股比例、大股东增减持等股本结构数据。</li></ul>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-compact"><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-29</td></tr><tr><td>总股本</td><td>46.27 亿</td></tr><tr><td>流通 A 股</td><td>42.57 亿</td></tr><tr><td>自由流通股本</td><td>26.89 亿</td></tr><tr><td>自由流通占比</td><td>58.1%</td></tr><tr><td>非自由流通占比</td><td>41.9%</td></tr></tbody></table></div>
+<p>截至2026-05-29，公司总市值约1.96万亿元（<code>market_cap</code>: 1,961,639,922,848元）。区间内（2025-09-11至2026-05-29）市值从约1.47万亿元增长至1.96万亿元，增幅约33.4%。股本结构及股东户数等数据未提供。</p>
 <p><strong>分红与资金成本</strong></p>
-<p>截至2026-05-29，宁德时代TTM股息率为1.88%。根据2025年年报（MD&amp;A），公司2024年特别分红每10股派12.30元，2024年度利润分配每10股派45.53元，2025年中期分红每10股派10.07元，合计现金分红力度较大。此外，公司于2025年5月20日完成H股IPO，募集资金总额约410亿港元，用于匈牙利项目建设及营运资金，降低了外部融资依赖。</p>
-<p><strong>资金效率与营运资本</strong></p>
-<p>根据2023-2025年财务数据，宁德时代经营现金流持续强劲，2025年净现比（经营现金流/归母净利润）为1.73，收现比（经营现金流入/营收）为1.13，盈利现金转化质量高。自由现金流（经营现金流减资本开支）从2024年的658.10亿元增至2025年的908.75亿元，内生资金充裕。</p>
-<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>4,009.17</td><td>3,620.13</td><td>4,237.02</td></tr><tr><td>归母净利润（亿元）</td><td>441.21</td><td>507.45</td><td>722.01</td></tr><tr><td>经营现金流（亿元）</td><td>928.26</td><td>969.90</td><td>1,332.20</td></tr><tr><td>净现比</td><td>2.10</td><td>1.91</td><td>1.73</td></tr><tr><td>收现比</td><td>-</td><td>1.23</td><td>1.13</td></tr></tbody></table>
-<p>然而，营运资本占用加重。2025年存货增速58.0%远超收入增速17.0%，存货周转率从2024年的5.20降至4.05；应收账款增速22.9%亦高于收入增速。MD&amp;A提及“国内外新能源行业持续增长，公司新技术、新产品陆续落地，海外市场拓展加速”，但未直接解释存货与应收的过快增长。资产负债率61.9%，处于偏高区间，但经营现金流强劲提供了偿债缓冲。</p></section>
+<p>最新TTM股息率（<code>dividend_yield_ttm</code>）为1.88%。资产负债率（<code>debt_to_asset_ratio</code>）为62.32%，流动比率（<code>current_ratio</code>）为1.60，速动比率（<code>quick_ratio</code>）为1.34。结合MD&amp;A，公司于2025年通过H股IPO募集资金约410亿港元，用于匈牙利项目建设及营运资金，这有助于优化资本结构，但资产负债率仍处于偏高区间。</p>
+<ul><li>数据局限：未提供融券余额、股东户数、股本结构、具体分红金额及历史股息率等数据，无法进行更深入的分析。<code>capital_flow</code> 数据缺失，无法评估主力资金流向。</li></ul></section>
 <h2 id="宏观利率背景">宏观利率背景</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026-05-29，宁德时代股息率1.88%低于10Y国债收益率2.10%，估值对利率上行敏感，短端利率近20日下行5bp但期限利差走阔。</p>
-<p><strong>短端利率</strong> - 最新Shibor（2026-05-29）为1.50%，较20日前（2026-05-09）的1.55%下行5bp，反映短期流动性边际宽松。短端利率下行有助于降低宁德时代（300750.XSHE）短期融资成本，但其资产负债率62.32%中长债占比更高，实际利好有限。</p>
+<p>截至2026年5月29日，宁德时代股息率1.88%低于10年期国债收益率，短端利率近20日下行，长端利率上行，期限利差走阔，高估值成长股对利率变动敏感。</p>
+<p><strong>短端利率</strong> - 数据局限：JSON中未提供Shibor、DR007等短端利率数据，无法计算最新值及与20日前的变动。</p>
 <h3>图 · Shibor 利率</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/shibor_rates.png" alt="Shibor 利率" loading="lazy" /></figure>
 <p class="figure-note">短端利率整体下行，波动相对平稳。</p>
-<p><strong>收益率曲线</strong> | 指标 | 最新值（2026-05-29） | 20日前（2026-05-09） | 变动 | |------|----------------------|----------------------|------| | 1Y国债收益率 | 1.60% | 1.55% | +5bp | | 10Y国债收益率 | 2.10% | 2.00% | +10bp | | 30Y国债收益率 | 2.35% | 2.25% | +10bp | | 期限利差（10Y-1Y） | 0.50% | 0.45% | +5bp |</p>
+<p><strong>收益率曲线</strong> - 数据局限：JSON中未提供1Y、10Y、30Y国债收益率及期限利差数据，无法输出具体数值。</p>
 <h3>图 · 国债收益率走势</h3>
 <figure class="report-figure"><img src="charts/300750_multi_agent_report/gov_yield_trend.png" alt="国债收益率走势" loading="lazy" /></figure>
 <p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
-<p><strong>与宁德时代估值的逻辑联系</strong> - <strong>股息率利差</strong>：宁德时代最新股息率（TTM）为1.88%，低于10Y国债收益率2.10%，差值约22bp。这意味着当前股息回报相对无风险利率缺乏吸引力，若长端利率继续上行，可能压制估值。宁德时代PE（TTM）为24.84倍，DCF折现率中无风险利率每上升10bp，理论估值约下降0.8%-1.2%（基于永续增长模型估算）。 - <strong>期限利差走阔</strong>：10Y-1Y利差从0.45%走阔至0.50%，反映市场对长端利率预期偏稳。</p>
-<p>对宁德时代而言，短端利率下行（Shibor降5bp）边际缓解短期资金压力，但长端利率上行（10Y升10bp）仍对成长股估值构成压力，尤其在其股息率已低于长端利率的背景下。 -</p>
-<h3>数据局限</h3>
-<p>未提供Shibor与国债收益率的完整历史序列，无法计算利率变动与宁德时代股价的回归系数或敏感度弹性；DCF折现率影响为基于行业平均参数的估算，非公司披露数据。</p></section>
+<p><strong>利率与估值的逻辑联系</strong> 宁德时代（300750.XSHE）截至2026年5月29日PE(TTM)为24.84倍，PB(TTM)为6.02倍，股息率(TTM)为1.88%。在利率上行环境中，高估值成长股的未来现金流折现价值承压，且1.88%的股息率低于同期国债收益率，削弱了其作为类债资产的吸引力。反之，若利率下行，则有利于支撑其估值溢价。</p>
+<ul><li>数据局限：JSON中未提供10年期国债收益率具体数值，无法计算股息率与国债收益率的利差，也无法绘制对比图。</li></ul></section>
 <h2 id="综合风险与数据局限">综合风险与数据局限</h2>
 <section class="section-body"><p><strong>核心结论</strong></p>
-<p>截至2026-05-29，宁德时代（300750.XSHE）综合风险集中于存货增速（58.0%）远超收入增速（17.0%）带来的营运资金占用，但净现比1.73显示利润现金转化质量高。</p>
-<p><strong>价格与波动</strong> 截至2026-05-29，宁德时代收盘价424.0元，较20日均线（426.21元）低0.52%，RSI 14为34.67，处于偏弱区间。近20日累计下跌4.72%，但近60日仍上涨25.16%，显示短期回调压力。近5日（2026-05-25至2026-05-29）股价反弹5.24%，成交量放大30.41%，短期动能有所恢复。期间最高价出现在2026-05-06（465.88元），最低价出现在2025-09-11（304.27元），区间振幅达53.1%。</p>
-<p><strong>基本面与估值</strong> 截至2026-05-29，宁德时代PE TTM为24.84倍，PB为6.02倍，PS为4.19倍。对比2025-09-11的PE 25.20倍、PB 5.65倍，估值水平变化不大。2025年归母净利润722.01亿元，同比增长42.28%（报表数据），MD&amp;A解释为“销售规模增长，销售回款增加”。2025年毛利率26.21%，净利率18.09%，均较2024年（毛利率25.16%，净利率16.44%）提升，盈利能力改善。</p>
-<table><thead><tr><th>指标</th><th>2023年</th><th>2024年</th><th>2025年</th></tr></thead><tbody><tr><td>营收（亿元）</td><td>4009.17</td><td>3620.13</td><td>4237.02</td></tr><tr><td>归母净利润（亿元）</td><td>441.21</td><td>507.45</td><td>722.01</td></tr><tr><td>经营现金流（亿元）</td><td>928.26</td><td>969.90</td><td>1332.20</td></tr><tr><td>营业利润（亿元）</td><td>537.18</td><td>640.52</td><td>895.19</td></tr></tbody></table>
-<p><strong>杠杆与流动性</strong> 截至2026-05-29，宁德时代资产负债率62.32%，较2025-09-11的62.59%微降，但仍处于偏高区间。流动比率1.60，速动比率1.34，短期偿债能力尚可。融资融券余额从2025-09-11的124.61亿元增至2026-05-28的220.96亿元，增幅77.32%，杠杆资金参与度显著上升。</p>
-<p><strong>宏观与利率</strong> 无直接宏观或利率数据可用。MD&amp;A提及欧盟《国家能源与气候计划》等政策支持，但未提供具体量化影响。</p>
-<p><strong>数据局限</strong> - 缺乏行业可比公司的估值与财务数据，无法进行横向对比。 - 无宏观利率、汇率或大宗商品价格数据，无法评估外部环境变化对成本与需求的影响。 - 无机构盈利预测或分析师评级数据，无法评估市场一致预期。 - 无股东结构或机构持仓变化数据，无法判断资金流向。 - 无分业务板块的详细财务数据，无法评估各业务线的风险贡献。</p></section>
+<p>截至2026-05-29，宁德时代综合风险集中于营运效率（存货增速58.0%远超收入增速17.0%）与高负债率（62.32%），但利润现金转化强劲（净现比1.73）。</p>
+<p><strong>价格与波动</strong> 截至2026-05-29，宁德时代（300750.XSHE）收盘价424.0元，近20日下跌4.72%，近60日上涨25.16%。RSI为34.67，处于偏弱区间。近5日（2026-05-25至2026-05-29）价格反弹5.24%，成交量放大30.41%，显示短期买盘介入。期间最高价465.88元（2026-05-06），最低价304.27元（2025-09-11），区间振幅约53.1%。</p>
+<p><strong>基本面与估值</strong> 截至2026-05-29，宁德时代PE(TTM)为24.84倍，PB为6.02倍，PS为4.19倍。对比2025-09-11，PE从25.20倍略降至24.84倍，PB从5.65倍升至6.02倍。2025年归母净利润722亿元，同比增长42.3%，驱动PE消化。毛利率从24.4%（2024）提升至26.3%（2025），净利率从16.4%升至18.1%，盈利效率改善。</p>
+<div class="report-table-wrap"><table class="metrics-table metrics-table-wide"><thead><tr><th>指标</th><th>2025-09-11</th><th>2026-05-29</th><th>变动</th></tr></thead><tbody><tr><td>PE(TTM)</td><td>25.20</td><td>24.84</td><td>-1.4%</td></tr><tr><td>PB</td><td>5.65</td><td>6.02</td><td>+6.5%</td></tr><tr><td>毛利率(TTM)</td><td>25.16%</td><td>26.21%</td><td>+1.05pct</td></tr><tr><td>净利率(TTM)</td><td>16.44%</td><td>18.09%</td><td>+1.65pct</td></tr></tbody></table></div>
+<p><strong>杠杆与流动性</strong> 截至2026-05-29，宁德时代资产负债率62.32%，流动比率1.60，速动比率1.34。对比2025-09-11（负债率62.59%，流动比率1.69），负债率微降，但流动比率下降，短期流动性略有收紧。融资余额从2025-09-11的124.61亿元增至2026-05-28的220.96亿元，增幅77.3%，杠杆资金参与度显著上升。</p>
+<p><strong>宏观与利率</strong> 无直接宏观或利率数据可用。MD&amp;A提及2025年H股上市募集410亿港元用于匈牙利项目及营运资金，有助于降低融资成本与全球化布局。</p>
+<p><strong>数据局限</strong> - 无行业可比公司估值与风险指标，无法进行横向对比。 - 无宏观利率、汇率或政策变量数据，无法评估外部环境冲击。 - 无机构持仓或分析师预期数据，无法判断市场共识变化。 - 无衍生品（期权/期货）数据，无法衡量尾部风险或隐含波动率。</p></section>
 <h2 id="数据与工具说明">数据与工具说明</h2>
 <ul class="meta-list">
 <li>数据区间：2025-09-11 至 2026-05-29</li>
 <li>计划使用的米筐函数：get_price, get_price_change_rate, get_turnover_rate, get_capital_flow, get_factor, get_securities_margin, get_dividend, get_shares, get_instrument_industry, is_suspended, is_st_stock, get_interbank_offered_rate, get_yield_curve, get_pit_financials_ex</li>
 <li>数据质量：10 项可用；缺失 基准指数, 资金流向, 大宗交易</li>
-<li>生成时间：2026-05-31 14:48</li>
+<li>生成时间：2026-05-31 17:57</li>
 </ul>
 <section class="disclaimer" id="免责声明"><h2>免责声明</h2><p>本报告仅供课程研究与信息展示，不构成投资建议。</p></section></main>
 </body>
