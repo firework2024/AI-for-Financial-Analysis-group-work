@@ -186,6 +186,40 @@ function renderChatMessages(session) {
   scrollChatToBottom();
 }
 
+function toastBootstrapStatus(session) {
+  const boot = session?.data_bootstrap;
+  if (!boot || boot.status === "running") return;
+  if (boot.status === "completed") {
+    App.toast(boot.message || "数据已入库", "success");
+    return;
+  }
+  if (boot.status === "failed") {
+    App.toast(boot.error || boot.message || "数据预加载失败", "error");
+  }
+}
+
+async function pollSessionBootstrap(sessionId) {
+  for (let i = 0; i < 90; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    if (chatState.activeSessionId !== sessionId) return;
+    try {
+      const session = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
+      const boot = session.data_bootstrap;
+      if (!boot || boot.status !== "running") {
+        if (chatState.activeSessionId === sessionId) {
+          chatState.activeSession = session;
+          updateChatHeader(session);
+          await loadChatSessions();
+        }
+        toastBootstrapStatus(session);
+        return;
+      }
+    } catch (_e) {
+      return;
+    }
+  }
+}
+
 function updateChatHeader(session) {
   if (chatEls.chatTitle) {
     chatEls.chatTitle.textContent = session?.title || "新对话";
@@ -195,6 +229,10 @@ function updateChatHeader(session) {
   if (session?.report_id) bits.push(`报告 ${session.report_id.split("_")[0]}`);
   if (session?.pdf_name) bits.push(`PDF · ${session.pdf_name}`);
   if (session?.stock_code) bits.push(`代码 ${session.stock_code}`);
+  const boot = session?.data_bootstrap;
+  if (boot?.status === "running") bits.push("入库中…");
+  if (boot?.status === "completed") bits.push("已入库");
+  if (boot?.status === "failed") bits.push("入库失败");
   if (!bits.length) {
     chatEls.chatContextPill.innerHTML = `<span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>`;
   } else {
@@ -225,6 +263,10 @@ async function openChatSession(sessionId) {
   if (session.stock_code && chatEls.chatStockInput) {
     chatEls.chatStockInput.value = session.stock_code;
   }
+  if (session.data_bootstrap?.status === "running") {
+    App.toast(session.data_bootstrap.message || "正在后台下载年报并入库…", "info");
+    pollSessionBootstrap(sessionId);
+  }
   App.navigate("chat");
   App.setSidebarPanel("chat");
   App.renderReportList();
@@ -252,6 +294,9 @@ async function deleteChatSession(sessionId) {
 
 async function createChatSession() {
   const stock = String(chatEls.chatStockInput?.value || "").trim();
+  if (!/^\d{6}$/.test(stock)) {
+    App.toast("请先填写 6 位股票代码，新建对话将自动下载年报并入库", "info");
+  }
   const payload = await api("/api/chat/sessions", {
     method: "POST",
     body: JSON.stringify({

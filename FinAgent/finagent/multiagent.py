@@ -239,14 +239,27 @@ def _fetch_sec_name(rqdatac, order_book_id: str, stock_code: str) -> str:
     return ""
 
 
-def data_executor_agent(*, order_book_id: str, as_of: date, lookback_days: int, output_dir: Path) -> dict[str, Any]:
+def data_executor_agent(
+    *,
+    order_book_id: str,
+    as_of: date,
+    lookback_days: int,
+    output_dir: Path,
+    incremental_after: str | None = None,
+) -> dict[str, Any]:
     import rqdatac
+
+    from .datastore.snapshot_merge import incremental_fetch_start
 
     _init_rqdata(rqdatac)
     stock_code = order_book_id.split(".")[0]
     sec_name = _fetch_sec_name(rqdatac, order_book_id, stock_code)
     end_date = _previous_trading_date(rqdatac, as_of)
-    start_date = end_date - timedelta(days=max(30, lookback_days))
+    start_date = incremental_fetch_start(
+        end_date,
+        lookback_days=lookback_days,
+        last_end_date=incremental_after,
+    )
     fundamentals_start = end_date - timedelta(days=730)
     macro_start = end_date - timedelta(days=120)
     available_factors = set(rqdatac.get_all_factor_names())

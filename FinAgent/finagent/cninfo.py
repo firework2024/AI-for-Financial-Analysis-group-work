@@ -23,6 +23,7 @@ STOCK_LIST_URLS = (
     "http://www.cninfo.com.cn/new/data/sse_stock.json",
 )
 _ORG_ID_CACHE: dict[str, str] | None = None
+_STOCK_NAME_CACHE: dict[str, str] | None = None
 
 
 @dataclass
@@ -94,6 +95,43 @@ def _load_org_id_map(session: requests.Session | None = None) -> dict[str, str]:
                 mapping[code] = org_id
     _ORG_ID_CACHE = mapping
     return mapping
+
+
+def _load_stock_name_map(session: requests.Session | None = None) -> dict[str, str]:
+    """简称/全称 → 6 位股票代码。"""
+    global _STOCK_NAME_CACHE
+    if _STOCK_NAME_CACHE is not None:
+        return _STOCK_NAME_CACHE
+    http = session or requests.Session()
+    mapping: dict[str, str] = {}
+    for url in STOCK_LIST_URLS:
+        try:
+            response = http.get(url, headers=HEADERS, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            continue
+        for item in data.get("stockList") or []:
+            code = str(item.get("code") or "").strip()
+            if not re.fullmatch(r"\d{6}", code):
+                continue
+            for key in ("zwjc", "secName", "name", "abbr"):
+                name = str(item.get(key) or "").strip()
+                if len(name) >= 2:
+                    mapping[name] = code
+    _STOCK_NAME_CACHE = mapping
+    return mapping
+
+
+def lookup_stock_code_by_name(text: str, session: requests.Session | None = None) -> str | None:
+    q = str(text or "").strip()
+    if len(q) < 2:
+        return None
+    names = _load_stock_name_map(session)
+    for name in sorted(names.keys(), key=len, reverse=True):
+        if name in q:
+            return names[name]
+    return None
 
 
 def org_id_for(stock_code: str, column: str | None = None, session: requests.Session | None = None) -> str:

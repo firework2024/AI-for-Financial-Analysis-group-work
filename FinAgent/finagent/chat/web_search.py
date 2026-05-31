@@ -207,6 +207,7 @@ def search_web(
         merged.extend(batch)
 
     ranked = rank_search_results(merged, max_results=limit, query=text, intent=intent)
+    ranked = _prepend_eastmoney_quote(ranked, stock_code=stock_code, query=text, intent=intent)
     return {
         "query": text,
         "provider": "+".join(sorted(providers)) if providers else None,
@@ -277,9 +278,12 @@ def build_search_plans(query: str, *, stock_code: str | None, intent: SearchInte
         plans.append(SearchPlan(f"{subject} 公告 site:cninfo.com.cn", prefer_official=True, intent=intent))
     if intent.financial_metric:
         plans.append(SearchPlan(f"{subject} 总资产 资产负债表 site:cninfo.com.cn", prefer_official=True, intent=intent))
-        plans.append(SearchPlan(f"{code or subject} 财务指标 site:data.eastmoney.com", prefer_official=False, intent=intent))
-    if intent.stock_quote or intent.prefer_eastmoney:
-        plans.append(SearchPlan(f"{code or subject} 最新收盘 site:quote.eastmoney.com", prefer_official=False, intent=intent))
+        plans.append(SearchPlan(f"{code or subject} 财务指标 site:cninfo.com.cn", prefer_official=True, intent=intent))
+    # 股价/收盘应走米筐 live_data，不要用网页搜行情页（snippet 无结构化字段、极易答错）
+    if intent.stock_quote and not _explicit_web_quote_request(base):
+        pass
+    elif intent.stock_quote or intent.prefer_eastmoney:
+        plans.append(SearchPlan(f"{code or subject} 最新收盘 新闻 公告", prefer_official=True, intent=intent))
     if intent.news:
         plans.append(
             SearchPlan(
@@ -452,12 +456,64 @@ def _run_search_plan(plan: SearchPlan, *, fetch_limit: int) -> tuple[list[dict[s
         return [], None
 
 
+def _tavily_search_depth() -> str:
+    depth = str(get_env("FINAGENT_TAVILY_SEARCH_DEPTH", "advanced") or "advanced").strip().lower()
+    return depth if depth in {"basic", "advanced"} else "advanced"
+
+
+def _prepend_eastmoney_quote(
+    ranked: list[dict[str, Any]],
+    *,
+    stock_code: str | None,
+    query: str,
+    intent: SearchIntent,
+) -> list[dict[str, Any]]:
+    if not stock_code or not (intent.stock_quote or any(h in str(query or "") for h in QUOTE_HINTS)):
+        return ranked
+    try:
+        from datetime import date
+
+        from .quote_sources import (
+            extract_trade_date_from_query,
+            fetch_eastmoney_quote,
+            format_quote_text,
+        )
+
+        trade_date = extract_trade_date_from_query(query, default_year=date.today().year)
+        em = fetch_eastmoney_quote(stock_code, trade_date=trade_date)
+        if em.get("close") is None:
+            return ranked
+        snippet = format_quote_text(em)
+        head = {
+            "title": f"{em.get('name') or stock_code} 东方财富行情（结构化）",
+            "url": em.get("page_url") or f"https://quote.eastmoney.com/{stock_code}.html",
+            "snippet": snippet,
+            "structured_quote": em,
+            "source_tier": "quote_terminal",
+            "domain": "quote.eastmoney.com",
+            "authority_score": 112.0,
+        }
+        return [head, *[r for r in ranked if r.get("domain") != "quote.eastmoney.com"]][: max(len(ranked), 1)]
+    except Exception:
+        return ranked
+
+
+def _explicit_web_quote_request(query: str) -> bool:
+    """用户明确要求联网查行情/去东方财富，才用网页搜股价。"""
+    q = str(query or "")
+    if any(h in q for h in ("搜", "联网", "网上", "查一下", "去查", "东方财富", "同花顺", "eastmoney")):
+        return True
+    if "site:" in q.lower():
+        return True
+    return False
+
+
 def _search_tavily(query: str, api_key: str, max_results: int, *, plan: SearchPlan) -> list[dict[str, Any]]:
     body: dict[str, Any] = {
         "api_key": api_key,
         "query": query,
         "max_results": max_results,
-        "search_depth": "basic",
+        "search_depth": _tavily_search_depth(),
         "include_answer": False,
     }
     include_domains = _preferred_domains(plan.intent)
@@ -539,6 +595,7 @@ def _extract_code(text: str) -> str | None:
 
 def _guess_company_name(text: str, stock_code: str | None) -> str:
     mapping = {
+        "300274": "阳光电源",
         "300750": "宁德时代",
         "600519": "贵州茅台",
         "000001": "平安银行",

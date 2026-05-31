@@ -9,7 +9,8 @@ from typing import Any
 
 from ..llm_settings import has_llm_api_key
 from ..pdf_text import extract_mda, extract_pdf_text
-from .data_tools import extract_stock_code
+from .data_tools import extract_stock_code, live_quote_available
+from .intent import classify_query_intent, is_fundamental_narrative_hit
 from .tools import gather_tool_context
 from .knowledge_graph import build_graph_from_report, build_graph_from_text, query_graph
 from .rag import TextChunk, chunk_text, format_hits, search_chunks
@@ -261,11 +262,20 @@ def _chat_clock() -> dict[str, Any]:
     else:
         notes.append(f"{year - 1}年A股年报披露季为{year}年1—4月（截止4月30日）。")
 
+    trading_notes: list[str] = []
+    if today.weekday() >= 5:
+        trading_notes.append(f"{today.isoformat()} 为周末，A 股无盘中/收盘实时行情，股价问题应引用最近交易日收盘价。")
+    else:
+        trading_notes.append("交易日请用 tools.live_data.quote 或 technical.latest_close；非交易日用最近交易日收盘。")
+
     return {
         "today": today.isoformat(),
         "year": year,
         "month": month,
+        "weekday": today.weekday(),
+        "is_weekend": today.weekday() >= 5,
         "disclosure_notes": notes,
+        "trading_notes": trading_notes,
         "instruction": "以本字段系统日期为准，勿凭主观猜测当前月份或披露进度；与用户纠正的时间线冲突时，以系统日期+用户明确说明综合判断。",
     }
 
@@ -278,7 +288,13 @@ def _hits_from_web_search(web: dict[str, Any] | None) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         title = str(item.get("title") or "").strip()
-        snippet = str(item.get("snippet") or "").strip()
+        structured = item.get("structured_quote")
+        if isinstance(structured, dict) and structured.get("close") is not None:
+            from .quote_sources import format_quote_text
+
+            snippet = format_quote_text(structured)
+        else:
+            snippet = str(item.get("snippet") or "").strip()
         text = f"{title}\n{snippet}".strip()
         if not text:
             continue
@@ -301,7 +317,12 @@ def _hits_from_web_search(web: dict[str, Any] | None) -> list[dict[str, Any]]:
     return hits
 
 
-def _hits_from_data_api(data_api: dict[str, Any] | None, query: str = "") -> list[dict[str, Any]]:
+def _hits_from_data_api(
+    data_api: dict[str, Any] | None,
+    query: str = "",
+    *,
+    quote_primary: bool = False,
+) -> list[dict[str, Any]]:
     if not data_api or data_api.get("error"):
         return []
     stored = data_api.get("stored") or {}
@@ -311,9 +332,22 @@ def _hits_from_data_api(data_api: dict[str, Any] | None, query: str = "") -> lis
     matched_keys = list(stored.get("matched_keys") or [])
     hits: list[dict[str, Any]] = []
 
+    if quote_primary:
+        series = stored.get("series") or {}
+        price_rows = (series.get("price") or {}).get("rows") or []
+        if price_rows:
+            hits.append(
+                {
+                    "source": "datastore:price",
+                    "score": 0.9,
+                    "text": json.dumps(price_rows[-3:], ensure_ascii=False)[:900],
+                    "meta": {"kind": "price", "stock_code": stock, "priority": "local_db"},
+                }
+            )
+
     annual = stored.get("annual_report") or {}
     financial = annual.get("financial_data") or []
-    if financial and (_query_mentions_financials(query) or _query_mentions_annual(query)):
+    if not quote_primary and financial and (_query_mentions_financials(query) or _query_mentions_annual(query)):
         for index, row in enumerate(financial[-4:]):
             hits.append(
                 {
@@ -329,22 +363,23 @@ def _hits_from_data_api(data_api: dict[str, Any] | None, query: str = "") -> lis
                 }
             )
 
-    for index, item in enumerate(annual.get("mda_hits") or []):
-        if not isinstance(item, dict):
-            continue
-        text = str(item.get("text") or item.get("snippet") or "").strip()
-        if not text:
-            continue
-        hits.append(
-            {
-                "source": "datastore:annual_mda",
-                "score": 0.78 - index * 0.02,
-                "text": text[:900],
-                "meta": {"kind": "mda", "stock_code": stock, "priority": "local_db"},
-            }
-        )
+    if not quote_primary:
+        for index, item in enumerate(annual.get("mda_hits") or []):
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or item.get("snippet") or "").strip()
+            if not text:
+                continue
+            hits.append(
+                {
+                    "source": "datastore:annual_mda",
+                    "score": 0.78 - index * 0.02,
+                    "text": text[:900],
+                    "meta": {"kind": "mda", "stock_code": stock, "priority": "local_db"},
+                }
+            )
 
-    if "pit_financials" in matched_keys or _query_mentions_financials(query):
+    if not quote_primary and ("pit_financials" in matched_keys or _query_mentions_financials(query)):
         pit = stored.get("pit_financials_cache") or {}
         for index, row in enumerate((pit.get("rows") or [])[-2:]):
             hits.append(
@@ -390,7 +425,7 @@ def _query_mentions_financials(query: str) -> bool:
     q = str(query or "").lower()
     hints = (
         "营收", "利润", "净利", "资产", "负债", "现金流", "财务", "三表", "毛利率", "roe",
-        "pe", "pb", "估值", "融资", "股价", "收盘", "涨跌", "换手",
+        "pe", "pb", "估值", "融资",
     )
     return any(h in q for h in hints)
 
@@ -410,7 +445,18 @@ def _merge_retrieved_hits(
     data_hits: list[dict[str, Any]],
     *,
     max_total: int = 8,
+    quote_primary: bool = False,
 ) -> list[dict[str, Any]]:
+    if quote_primary:
+        rag_hits = [
+            h
+            for h in rag_hits
+            if not is_fundamental_narrative_hit(str(h.get("text") or ""))
+        ][:3]
+        for hit in data_hits:
+            kind = (hit.get("meta") or {}).get("kind")
+            if kind in {"technical", "factor", "price"}:
+                hit["score"] = float(hit.get("score") or 0) + 0.12
     merged = sorted([*data_hits, *rag_hits], key=lambda item: float(item.get("score") or 0), reverse=True)
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []
@@ -439,8 +485,16 @@ def _local_answer(
 
     tech = live.get("technical") or stored.get("technical") or {}
     factor = live.get("factor") or stored.get("factor") or {}
-    if (live and not live.get("error")) or stored:
-        if tech or factor:
+    quote = live.get("quote") or {}
+    if live_quote_available(live) or stored:
+        if quote.get("close") is not None:
+            date_label = quote.get("date") or live.get("end_date") or "最近交易日"
+            parts.append(f"{date_label} 收盘价约 {quote.get('close')} 元。")
+            if quote.get("change_pct") is not None:
+                parts.append(f"较前一日涨跌约 {quote.get('change_pct')}%。")
+            if (live.get("market_context") or {}).get("is_weekend"):
+                parts.append("今天是非交易日，上面是最近一个交易日的收盘。")
+        elif tech or factor:
             parts.append("我先看了下数据库/最新数据快照：")
             if tech.get("latest_close") is not None:
                 parts.append(f"最新收盘大概 {tech.get('latest_close')}，20 日涨跌 {tech.get('return_20d')}。")
@@ -452,12 +506,17 @@ def _local_answer(
     if data_api.get("hint"):
         parts.append(str(data_api["hint"]))
     if web.get("results"):
-        parts.append("联网检索结果（优先引用 official / financial_data 来源）：")
+        parts.append("联网检索结果（行情优先 quote_terminal / structured_quote）：")
         for item in web["results"][:5]:
             tier = item.get("source_tier") or "web"
-            parts.append(
-                f"- [{tier}] {item.get('title')}: {str(item.get('snippet') or '')[:200]}"
-            )
+            structured = item.get("structured_quote")
+            if isinstance(structured, dict) and structured.get("close") is not None:
+                from .quote_sources import format_quote_text
+
+                body = format_quote_text(structured)
+            else:
+                body = str(item.get("snippet") or "")[:200]
+            parts.append(f"- [{tier}] {item.get('title')}: {body}")
     if hits:
         parts.append("结合你上传/绑定的材料（含本地数据库），相关片段是：")
         for hit in hits[:3]:
@@ -491,20 +550,15 @@ def _llm_answer(
 
     system = (
         "你是 FinAgent 研究助手，像同事聊天一样回答，口语自然、别写成研报八股。"
-        "必须直接回答 question 本身；不要每次重复同一套行情/估值/财务摘要。"
-        "可以分段，但不要用过多小标题和编号列表；需要数字时引用上下文里的数据，别编造。"
-        "clock 字段给出系统今天的日期与 A 股披露节奏；禁止与 clock 矛盾的表述（例如 clock 已是 5 月仍说「年报还没出」）。"
-        "回答优先级（必须遵守）："
-        "1) 先理解 question 意图，再选用最相关的来源；"
-        "2) retrieved_chunks 绑定报告/PDF 片段（解读报告、风险、业务问题时优先）；"
-        "3) tools.data_api 本地 SQLite（仅在与问题相关的 matched_keys / mda_hits / financial_data 出现时引用）；"
-        "4) tools.web_search 网页检索（问年报/公告/具体财务数字时必看 results；snippet 含数字则引用并注明标题/域名，禁止空口说「没查到」）；"
-        "5) tools.live_data 米筐实时快照（用户问最新行情/估值时）。"
-        "若 question 与财务指标无关，不要机械罗列 PE/PB/收盘价；若与报告解读有关，优先用 retrieved_chunks。"
-        "只有上述来源都确实没有该字段时，才说明缺失并建议上传 PDF 或指定报告年份。"
-        "引用新闻时优先 source_tier 为 official / financial_data 的结果，并注明标题；社区来源仅作参考。"
-        "session.binding_warnings 若有内容，说明上下文曾切换股票/报告，勿混用其它公司数据。"
-        "不要输出 JSON，不要写「作为 AI」之类套话，不要给买卖建议。"
+        "以 question 为中心作答；tools / retrieved_chunks / graph_hits 都是证据，由你判断哪些与问题相关，"
+        "不要机械堆砌无关的营收、毛利率、行业分段长文。"
+        "tools.intent 与 tools.answer_guidance 仅供参考，不是硬性禁令；缺证据时再说明。"
+        "股价/收盘类：优先 tools.evidence_summary.quote 或 tools.live_data.quote.close（最近交易日收盘价），"
+        "严禁把 quote.prev_close 当成用户所问日的收盘价；有 close 时直接报数，勿让用户自己去炒股软件查。"
+        "财务/年报类：再用 data_api.annual_report、retrieved_chunks；二者与纯股价问题勿混用。"
+        "clock 与披露节奏一致；数字须来自上下文，禁止编造。"
+        "session.binding_warnings 勿混用其它公司股票数据。"
+        "不要输出 JSON，不要写「作为 AI」套话，不要给买卖建议。"
     )
     payload = {
         "clock": _chat_clock(),
@@ -546,10 +600,20 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
     rag_hits = format_hits(search_chunks(chunks, query, top_k=6, stock_code=session.stock_code))
     graph_hits = query_graph(session.knowledge_graph, query, limit=8)
 
+    intent = classify_query_intent(query, session)
     tools_payload, tool_calls = gather_tool_context(query, session)
-    data_hits = _hits_from_data_api(tools_payload.get("data_api"), query)
+    data_hits = _hits_from_data_api(
+        tools_payload.get("data_api"),
+        query,
+        quote_primary=intent.quote_primary,
+    )
     web_hits = _hits_from_web_search(tools_payload.get("web_search"))
-    hits = _merge_retrieved_hits(rag_hits, [*data_hits, *web_hits], max_total=10)
+    hits = _merge_retrieved_hits(
+        rag_hits,
+        [*data_hits, *web_hits],
+        max_total=10,
+        quote_primary=intent.quote_primary,
+    )
 
     try:
         if has_llm_api_key():

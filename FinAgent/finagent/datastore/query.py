@@ -74,7 +74,13 @@ def query_needs_stored_data(query: str) -> bool:
     return _mentions_financials(q) or _mentions_annual(q)
 
 
-def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[str, Any] | None:
+def query_stored_data(
+    stock_code: str,
+    query: str,
+    *,
+    tail: int = 20,
+    scope: str = "auto",
+) -> dict[str, Any] | None:
     """按股票代码与问题检索最新快照中的相关序列；无数据时返回 None。"""
     code = str(stock_code or "").strip()
     if not code:
@@ -88,7 +94,11 @@ def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[st
         return None
 
     selected_keys = _select_data_keys(query)
-    payload: dict[str, Any] = {"stock_code": code, "matched_keys": selected_keys}
+    if scope == "quote":
+        selected_keys = [k for k in selected_keys if k in {"price", "price_change_rate", "turnover", "factor", "factor_history"}]
+        if not selected_keys:
+            selected_keys = ["price", "factor"]
+    payload: dict[str, Any] = {"stock_code": code, "matched_keys": selected_keys, "scope": scope}
 
     if snapshot:
         payload["snapshot"] = {
@@ -120,15 +130,14 @@ def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[st
             "fetched_at": pit["fetched_at"],
         }
 
-    if annual:
+    if annual and scope != "quote":
         annual_payload = _annual_payload(annual, query, tail=tail)
         include_annual = (
-            _mentions_annual(query)
+            scope in {"annual", "fundamentals", "overview"}
+            or _mentions_annual(query)
             or _mentions_financials(query)
             or report_year is not None
             or any(h in str(query or "") for h in _QUARTER_HINTS)
-            or bool(annual_payload.get("mda_hits"))
-            or bool(annual_payload.get("financial_data"))
         )
         if include_annual:
             payload["annual_report"] = annual_payload

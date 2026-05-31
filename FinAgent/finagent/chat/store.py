@@ -37,6 +37,7 @@ class ChatSession:
     messages: list[ChatMessage] = field(default_factory=list)
     chunks: list[dict[str, Any]] = field(default_factory=list)
     knowledge_graph: dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
+    data_bootstrap: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +53,7 @@ class ChatSession:
             "messages": [message.to_dict() for message in self.messages],
             "chunks": self.chunks,
             "knowledge_graph": self.knowledge_graph,
+            "data_bootstrap": self.data_bootstrap,
         }
 
     @classmethod
@@ -74,6 +76,7 @@ class ChatSession:
             messages=messages,
             chunks=list(payload.get("chunks") or []),
             knowledge_graph=payload.get("knowledge_graph") if isinstance(payload.get("knowledge_graph"), dict) else {"nodes": [], "edges": []},
+            data_bootstrap=payload.get("data_bootstrap") if isinstance(payload.get("data_bootstrap"), dict) else None,
         )
 
 

@@ -187,8 +187,9 @@ def persist_market_snapshot(
     *,
     lookback_days: int | None = None,
     source: str = "data_executor",
+    incremental: bool = True,
 ) -> int | None:
-    """将 data_executor 返回的 dict 写入 SQLite；失败时返回 None，不中断主流程。"""
+    """将 data_executor 返回的 dict 写入 SQLite；默认在最新快照上增量合并。"""
     stock_code = str(data.get("stock_code") or "").strip()
     if not stock_code:
         order_book_id = str(data.get("order_book_id") or "").strip()
@@ -197,6 +198,10 @@ def persist_market_snapshot(
     if not stock_code:
         return None
     try:
+        if incremental:
+            from .snapshot_merge import upsert_market_snapshot
+
+            return upsert_market_snapshot(data, lookback_days=lookback_days, source=source)
         return save_data_snapshot(data, stock_code=stock_code, lookback_days=lookback_days, source=source)
     except Exception:
         return None

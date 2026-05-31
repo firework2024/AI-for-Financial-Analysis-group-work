@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import uuid
 from datetime import datetime
@@ -23,7 +24,8 @@ from ..chat.store import SessionStore
 from ..llm import llm_text
 from ..llm_settings import activate_llm_settings, has_llm_api_key, reset_llm_settings, use_llm_settings
 
-from ..env import load_dotenv, prepare_rqdata_env, rqdata_configured
+from ..chat.data_ingest import bootstrap_stock_data, chat_bootstrap_enabled
+from ..env import load_dotenv, prepare_rqdata_env, project_root, rqdata_configured
 from ..chat.tools import query_data_api
 from ..chat.web_search import search_web, web_search_configured, web_search_enabled
 from ..multiagent import MultiAgentOptions, run_multi_agent
@@ -456,6 +458,56 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="对话不存在")
         return session
 
+    def _bootstrap_running(session) -> bool:
+        boot = session.data_bootstrap if isinstance(session.data_bootstrap, dict) else {}
+        return boot.get("status") == "running"
+
+    def _start_session_bootstrap(user_id: str, session_id: str, stock_code: str) -> None:
+        def _worker() -> None:
+            load_dotenv()
+            prepare_rqdata_env()
+            try:
+                result = bootstrap_stock_data(stock_code, workdir=project_root())
+                session = session_store.get(user_id, session_id)
+                if not session:
+                    return
+                session.data_bootstrap = {**result, "status": "completed" if result.get("ok") else "failed"}
+                sec_name = result.get("sec_name")
+                if sec_name and session.title in {"", "新对话"}:
+                    session.title = f"{stock_code} {sec_name}"
+                session_store.save(session)
+            except Exception as exc:
+                session = session_store.get(user_id, session_id)
+                if session:
+                    session.data_bootstrap = {
+                        "status": "failed",
+                        "stock_code": stock_code,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                    session_store.save(session)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _schedule_bootstrap_if_needed(session, stock_code: str | None) -> None:
+        code = str(stock_code or session.stock_code or "").strip()
+        if not code or not re.fullmatch(r"\d{6}", code):
+            return
+        if not chat_bootstrap_enabled():
+            return
+        if _bootstrap_running(session):
+            return
+        boot = session.data_bootstrap if isinstance(session.data_bootstrap, dict) else {}
+        if boot.get("status") == "completed" and boot.get("stock_code") == code:
+            return
+        session.stock_code = code
+        session.data_bootstrap = {
+            "status": "running",
+            "stock_code": code,
+            "message": "正在下载年报、解析 PDF，并入库行情与财务数据…",
+        }
+        session_store.save(session)
+        _start_session_bootstrap(session.user_id, session.id, code)
+
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {
@@ -587,6 +639,20 @@ def create_app() -> FastAPI:
     @app.post("/api/chat/sessions")
     def create_chat_session(request: ChatCreateRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
         session = session_store.create(title=request.title or "新对话", stock_code=request.stock_code, user_id=user.id)
+        _schedule_bootstrap_if_needed(session, request.stock_code)
+        session = session_store.get(user.id, session.id) or session
+        return session.to_dict()
+
+    @app.post("/api/chat/sessions/{session_id}/bootstrap")
+    def bootstrap_chat_session(session_id: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        session = _get_session(user, session_id)
+        code = str(session.stock_code or "").strip()
+        if not re.fullmatch(r"\d{6}", code):
+            raise HTTPException(status_code=400, detail="请先填写 6 位股票代码")
+        session.data_bootstrap = None
+        session_store.save(session)
+        _schedule_bootstrap_if_needed(session, code)
+        session = session_store.get(user.id, session_id) or session
         return session.to_dict()
 
     @app.get("/api/chat/sessions/{session_id}")
@@ -604,6 +670,8 @@ def create_app() -> FastAPI:
     def post_chat_message(session_id: str, request: ChatMessageRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
         session = _get_session(user, session_id)
         sync_session_stock(session, request.stock_code)
+        _schedule_bootstrap_if_needed(session, request.stock_code or session.stock_code)
+        session = session_store.get(user.id, session_id) or session
         reply = chat_turn(session, request.message)
         session_store.save(session)
         return {"reply": reply.to_dict(), "session": session.to_dict()}

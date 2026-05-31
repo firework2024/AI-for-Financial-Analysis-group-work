@@ -71,7 +71,15 @@ def test_detect_search_intent_and_plans():
     plans = build_search_plans("300750 总资产", stock_code="300750", intent=intent)
     joined = " ".join(plan.query for plan in plans)
     assert "site:cninfo.com.cn" in joined
-    assert "site:data.eastmoney.com" in joined
+    assert "site:data.eastmoney.com" not in joined
+
+
+def test_stock_quote_plan_skips_eastmoney_quote_page():
+    intent = detect_search_intent("300750 现在股价多少")
+    assert intent.stock_quote
+    plans = build_search_plans("300750 现在股价多少", stock_code="300750", intent=intent)
+    joined = " ".join(plan.query for plan in plans)
+    assert "site:quote.eastmoney.com" not in joined
 
 
 def test_needs_web_search_followup():

@@ -73,6 +73,47 @@ def test_query_matches_margin_keywords(temp_db):
     assert "securities_margin" in stored["series"]
 
 
+def test_upsert_market_snapshot_incremental(temp_db):
+    from finagent.datastore import list_snapshots, persist_market_snapshot
+
+    first = {
+        "order_book_id": "300750.XSHE",
+        "stock_code": "300750",
+        "start_date": "2026-01-01",
+        "end_date": "2026-05-28",
+        "price": {
+            "rows": [{"date": "2026-05-27", "close": 100.0}, {"date": "2026-05-28", "close": 101.0}],
+            "row_count": 2,
+            "columns": ["date", "close"],
+        },
+        "technical": {"latest_close": 101.0},
+    }
+    sid1 = persist_market_snapshot(first, lookback_days=60)
+    second = {
+        "order_book_id": "300750.XSHE",
+        "stock_code": "300750",
+        "start_date": "2026-05-29",
+        "end_date": "2026-05-29",
+        "price": {
+            "rows": [{"date": "2026-05-28", "close": 101.5}, {"date": "2026-05-29", "close": 102.0}],
+            "row_count": 2,
+            "columns": ["date", "close"],
+        },
+        "technical": {"latest_close": 102.0},
+    }
+    sid2 = persist_market_snapshot(second, lookback_days=60)
+    assert sid1 == sid2 == 1
+    assert len(list_snapshots("300750", limit=5)) == 1
+
+    series = load_series(1, ["price"])
+    dates = [r["date"] for r in series["price"]["rows"]]
+    assert dates == ["2026-05-27", "2026-05-28", "2026-05-29"]
+    assert series["price"]["rows"][-1]["close"] == 102.0
+
+    stored = query_stored_data("300750", "最近股价")
+    assert stored["technical"]["latest_close"] == 102.0
+
+
 def test_persist_market_snapshot_matches_executor_shape(temp_db):
     from finagent.datastore import list_snapshots, persist_market_snapshot
 
