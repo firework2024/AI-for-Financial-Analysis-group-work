@@ -80,6 +80,26 @@ def test_needs_web_search_followup():
     assert not needs_web_search("试试")
 
 
+def test_needs_web_search_annual_report():
+    assert needs_web_search("去查一下2025年年报的具体数据")
+    assert needs_web_search("300274 2025年 营收 净利润")
+    intent = detect_search_intent("300274 2025年年报 营收 净利润 毛利率")
+    assert intent.disclosure
+    plans = build_search_plans("300274 2025年年报 营收 净利润", stock_code="300274", intent=intent)
+    joined = " ".join(plan.query for plan in plans)
+    assert "2025年" in joined
+    assert "site:cninfo.com.cn" in joined
+    assert "营业收入" in joined or "净利润" in joined
+
+
+def test_extract_report_year():
+    from finagent.datastore.query import extract_report_year
+
+    assert extract_report_year("阳光电源2025年年报营收") == 2025
+    assert extract_report_year("2024一季报") == 2024
+    assert extract_report_year("最近估值如何") is None
+
+
 def test_score_result_boosts_relevant_title():
     intent = detect_search_intent("300750 总资产")
     cninfo, _ = score_result(

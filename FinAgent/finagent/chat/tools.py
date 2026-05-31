@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..datastore.query import query_needs_stored_data
+from ..datastore.query import extract_report_year, query_needs_stored_data
 from .data_tools import extract_stock_code, fetch_market_snapshot, needs_live_data
 from .store import ChatSession
 from .web_search import (
+    DISCLOSURE_HINTS,
     FOLLOWUP_HINTS,
     FINANCIAL_METRIC_HINTS,
+    detect_search_intent,
     needs_web_search,
     search_web,
 )
@@ -53,7 +55,9 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
 
     if _should_web_search(query, stock=stock, recent_user_messages=recent_user):
         web_query = _resolve_web_query(query, session, stock)
-        web = search_web(web_query, stock_code=stock)
+        intent = detect_search_intent(web_query)
+        max_results = 8 if (intent.disclosure or extract_report_year(web_query)) else 5
+        web = search_web(web_query, stock_code=stock, max_results=max_results)
         payload["web_search"] = web
         tool_calls.append(
             {
@@ -105,8 +109,12 @@ def _should_web_search(
     if needs_web_search(query, recent_user_messages=recent_user_messages):
         return True
     q = str(query or "")
+    if any(h in q for h in DISCLOSURE_HINTS):
+        return True
+    if extract_report_year(q):
+        return True
     if stock and any(h in q for h in FINANCIAL_METRIC_HINTS):
-        return any(h in q for h in ("搜", "联网", "巨潮", "东方财富", "同花顺", "官网", "网上", "查一下"))
+        return any(h in q for h in ("搜", "联网", "巨潮", "东方财富", "同花顺", "官网", "网上", "查", "去查"))
     return False
 
 
@@ -116,14 +124,34 @@ def _recent_user_messages(session: ChatSession) -> list[str]:
 
 def _resolve_web_query(query: str, session: ChatSession, stock_code: str | None) -> str:
     text = str(query or "").strip()
-    if any(h in text for h in FOLLOWUP_HINTS) and len(text) <= 16:
+    recent = [message.content for message in session.messages if message.role == "user"][-4:]
+    context = " ".join([text, *recent[-3:]])
+    if any(h in text for h in FOLLOWUP_HINTS) and len(text) <= 20:
         for message in reversed(session.messages):
             if message.role != "user" or message.content.strip() == text:
                 continue
             prior = message.content.strip()
             if prior:
-                return _web_query(prior, stock_code)
-    return _web_query(text, stock_code)
+                context = f"{prior} {text}"
+                text = prior
+                break
+    enriched = _web_query(text, stock_code)
+    year = extract_report_year(context)
+    if stock_code:
+        try:
+            from ..datastore.db import get_annual_report
+
+            record = get_annual_report(stock_code, report_year=year) if year else get_annual_report(stock_code)
+            sec_name = str((record or {}).get("sec_name") or "").strip()
+            if sec_name and sec_name not in enriched:
+                enriched = f"{stock_code} {sec_name} {enriched}"
+        except Exception:
+            pass
+    if year and str(year) not in enriched:
+        enriched = f"{stock_code or ''} {year}年 {enriched}".strip()
+    if any(h in context for h in DISCLOSURE_HINTS) and "site:" not in enriched:
+        enriched = f"{enriched} 年度报告 营业收入 净利润"
+    return enriched.strip()
 
 
 def _web_query(query: str, stock_code: str | None) -> str:

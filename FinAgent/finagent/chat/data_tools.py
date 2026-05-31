@@ -17,6 +17,7 @@ LIVE_DATA_HINTS = (
     "实时",
     "股价",
     "收盘",
+    "开盘",
     "融资",
     "pe",
     "pb",
@@ -25,15 +26,22 @@ LIVE_DATA_HINTS = (
     "均线",
     "市值",
     "换手率",
-    "查一下",
-    "帮我看",
-    "数据",
+    "行情",
+    "k线",
+    "现价",
+    "涨跌",
 )
+
+_LIVE_DATA_GENERIC = ("查一下", "帮我看", "拉一下", "更新一下")
 
 
 def needs_live_data(query: str) -> bool:
     q = str(query or "").lower()
-    return any(hint in q for hint in LIVE_DATA_HINTS)
+    if any(hint in q for hint in LIVE_DATA_HINTS):
+        return True
+    if any(h in q for h in _LIVE_DATA_GENERIC):
+        return any(h in q for h in ("股价", "行情", "收盘", "pe", "pb", "融资", "市值", "换手", "最新"))
+    return False
 
 
 def fetch_market_snapshot(stock_code: str, *, as_of: str | None = None, lookback_days: int = 60) -> dict[str, Any]:

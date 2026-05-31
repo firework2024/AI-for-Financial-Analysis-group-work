@@ -103,3 +103,31 @@ def test_query_needs_stored_data_only_when_relevant():
     assert query_needs_stored_data("这份报告的核心风险是什么") is False
     assert query_needs_stored_data("最近估值水平如何") is True
     assert query_needs_stored_data("查一下最新融资余额") is True
+    assert query_needs_stored_data("2025年年报营收净利润") is True
+
+
+def test_hits_from_web_search_includes_snippets():
+    from finagent.chat.agent import _hits_from_web_search
+
+    web = {
+        "results": [
+            {
+                "title": "阳光电源2025年年度报告",
+                "snippet": "营业收入778.57亿元，净利润110.36亿元",
+                "domain": "cninfo.com.cn",
+                "source_tier": "official_disclosure",
+                "url": "https://www.cninfo.com.cn/",
+            }
+        ]
+    }
+    hits = _hits_from_web_search(web)
+    assert hits
+    assert "778.57" in hits[0]["text"]
+    assert hits[0]["meta"]["kind"] == "web_search"
+
+
+def test_needs_live_data_not_triggered_by_generic_lookup():
+    from finagent.chat.data_tools import needs_live_data
+
+    assert not needs_live_data("去查一下2025年年报的具体数据")
+    assert needs_live_data("查一下最新股价")

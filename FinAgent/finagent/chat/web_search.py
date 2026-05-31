@@ -45,7 +45,12 @@ WEB_SEARCH_HINTS = (
     "自己去",
     "你搜",
     "帮我搜",
+    "去查",
+    "查一下",
+    "具体数据",
     "官网",
+    "年报",
+    "年度报告",
 )
 
 FOLLOWUP_HINTS = ("试试", "再搜", "搜搜", "再试试", "继续搜", "再查", "帮我找")
@@ -67,11 +72,14 @@ FINANCIAL_METRIC_HINTS = (
     "财务",
     "三表",
     "资产负债表",
+    "分红",
+    "每股收益",
+    "净资产收益率",
 )
 
 QUOTE_HINTS = ("股价", "行情", "收盘", "最新价", "现价", "涨跌", "k线", "实时")
 
-DISCLOSURE_HINTS = ("公告", "年报", "季报", "披露", "巨潮", "cninfo", "临时公告", "年度报告")
+DISCLOSURE_HINTS = ("公告", "年报", "年度报告", "季报", "一季报", "半年报", "三季报", "披露", "巨潮", "cninfo", "临时公告")
 
 NEWS_HINTS = ("新闻", "消息", "政策", "监管", "舆情", "传闻", "热点")
 
@@ -161,9 +169,16 @@ def needs_web_search(query: str, *, recent_user_messages: list[str] | None = Non
     q = str(query or "").lower()
     if any(hint in q for hint in WEB_SEARCH_HINTS):
         return True
+    if any(h in q for h in DISCLOSURE_HINTS):
+        return True
+    if re.search(r"20\d{2}\s*年", q) and any(h in q for h in ("报", "营收", "净利润", "披露", "财务")):
+        return True
     if any(h in q for h in FOLLOWUP_HINTS) and recent_user_messages:
         prior = " ".join(recent_user_messages[-4:]).lower()
-        return any(h in prior for h in ("搜", "联网", "巨潮", "东方财富", "同花顺", "官网", "公告", "股价", "资产"))
+        return any(
+            h in prior
+            for h in ("搜", "联网", "巨潮", "东方财富", "同花顺", "官网", "公告", "股价", "资产", "年报", "营收", "净利润")
+        )
     return False
 
 
@@ -231,13 +246,33 @@ def detect_search_intent(query: str) -> SearchIntent:
 
 
 def build_search_plans(query: str, *, stock_code: str | None, intent: SearchIntent) -> list["SearchPlan"]:
+    from ..datastore.query import extract_report_year
+
     base = str(query or "").strip()
     code = stock_code or _extract_code(base)
     company = _guess_company_name(base, code)
     subject = " ".join(part for part in (company, code, base) if part).strip()
+    report_year = extract_report_year(base)
+    year_label = f"{report_year}年" if report_year else ""
 
     plans: list[SearchPlan] = []
 
+    if intent.disclosure or report_year or "年报" in base or "年度报告" in base:
+        plans.append(
+            SearchPlan(
+                f"{code or company} {year_label}年度报告 营业收入 净利润 site:cninfo.com.cn",
+                prefer_official=True,
+                intent=intent,
+            )
+        )
+        if subject and subject != (code or company):
+            plans.append(
+                SearchPlan(
+                    f"{subject} {year_label} site:cninfo.com.cn",
+                    prefer_official=True,
+                    intent=intent,
+                )
+            )
     if intent.disclosure or intent.prefer_cninfo:
         plans.append(SearchPlan(f"{subject} 公告 site:cninfo.com.cn", prefer_official=True, intent=intent))
     if intent.financial_metric:

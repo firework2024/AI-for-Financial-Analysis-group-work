@@ -6,6 +6,7 @@ from finagent.chat.web_search import _strip_html, needs_web_search, search_web
 def test_needs_web_search():
     assert needs_web_search("最近有什么行业新闻")
     assert needs_web_search("搜一下监管政策")
+    assert needs_web_search("去查一下2025年年报的具体数据")
     assert needs_web_search("试试", recent_user_messages=["你去巨潮搜一下"])
     assert not needs_web_search("PE是多少")
 

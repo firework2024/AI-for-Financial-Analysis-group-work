@@ -246,6 +246,61 @@ def _guess_report_year(filename: str, text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _chat_clock() -> dict[str, Any]:
+    from datetime import date
+
+    today = date.today()
+    year, month = today.year, today.month
+    notes: list[str] = []
+
+    if month >= 5:
+        notes.append(f"{year - 1}年A股年报原则上应在{year}年4月30日前披露完毕；当前已过披露期。")
+        notes.append(f"{year}年一季报原则上应在{year}年4月30日前披露完毕。")
+    elif month == 4:
+        notes.append(f"{year - 1}年A股年报与{year}年一季报披露截止日为{year}年4月30日，部分公司可能仍在披露。")
+    else:
+        notes.append(f"{year - 1}年A股年报披露季为{year}年1—4月（截止4月30日）。")
+
+    return {
+        "today": today.isoformat(),
+        "year": year,
+        "month": month,
+        "disclosure_notes": notes,
+        "instruction": "以本字段系统日期为准，勿凭主观猜测当前月份或披露进度；与用户纠正的时间线冲突时，以系统日期+用户明确说明综合判断。",
+    }
+
+
+def _hits_from_web_search(web: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not web or web.get("error"):
+        return []
+    hits: list[dict[str, Any]] = []
+    for index, item in enumerate(web.get("results") or []):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        snippet = str(item.get("snippet") or "").strip()
+        text = f"{title}\n{snippet}".strip()
+        if not text:
+            continue
+        tier = str(item.get("source_tier") or "")
+        base = 0.86 if tier in {"official_disclosure", "official"} else 0.8 if tier == "financial_data" else 0.74
+        hits.append(
+            {
+                "source": f"web:{item.get('domain') or 'search'}",
+                "score": base - index * 0.03,
+                "text": text[:900],
+                "meta": {
+                    "kind": "web_search",
+                    "url": item.get("url"),
+                    "title": title,
+                    "source_tier": tier,
+                    "priority": "web",
+                },
+            }
+        )
+    return hits
+
+
 def _hits_from_data_api(data_api: dict[str, Any] | None, query: str = "") -> list[dict[str, Any]]:
     if not data_api or data_api.get("error"):
         return []
@@ -257,6 +312,23 @@ def _hits_from_data_api(data_api: dict[str, Any] | None, query: str = "") -> lis
     hits: list[dict[str, Any]] = []
 
     annual = stored.get("annual_report") or {}
+    financial = annual.get("financial_data") or []
+    if financial and (_query_mentions_financials(query) or _query_mentions_annual(query)):
+        for index, row in enumerate(financial[-4:]):
+            hits.append(
+                {
+                    "source": "datastore:annual_financials",
+                    "score": 0.8 - index * 0.02,
+                    "text": json.dumps(row, ensure_ascii=False)[:900],
+                    "meta": {
+                        "kind": "annual_financials",
+                        "stock_code": stock,
+                        "report_year": annual.get("report_year"),
+                        "priority": "local_db",
+                    },
+                }
+            )
+
     for index, item in enumerate(annual.get("mda_hits") or []):
         if not isinstance(item, dict):
             continue
@@ -306,6 +378,12 @@ def _hits_from_data_api(data_api: dict[str, Any] | None, query: str = "") -> lis
         )
 
     return hits
+
+
+def _query_mentions_annual(query: str) -> bool:
+    q = str(query or "").lower()
+    hints = ("年报", "年度报告", "一季报", "半年报", "三季报", "季报", "披露")
+    return any(h in q for h in hints)
 
 
 def _query_mentions_financials(query: str) -> bool:
@@ -374,9 +452,12 @@ def _local_answer(
     if data_api.get("hint"):
         parts.append(str(data_api["hint"]))
     if web.get("results"):
-        parts.append("网上搜到这些：")
-        for item in web["results"][:3]:
-            parts.append(f"- {item.get('title')}: {str(item.get('snippet') or '')[:160]}")
+        parts.append("联网检索结果（优先引用 official / financial_data 来源）：")
+        for item in web["results"][:5]:
+            tier = item.get("source_tier") or "web"
+            parts.append(
+                f"- [{tier}] {item.get('title')}: {str(item.get('snippet') or '')[:200]}"
+            )
     if hits:
         parts.append("结合你上传/绑定的材料（含本地数据库），相关片段是：")
         for hit in hits[:3]:
@@ -412,19 +493,21 @@ def _llm_answer(
         "你是 FinAgent 研究助手，像同事聊天一样回答，口语自然、别写成研报八股。"
         "必须直接回答 question 本身；不要每次重复同一套行情/估值/财务摘要。"
         "可以分段，但不要用过多小标题和编号列表；需要数字时引用上下文里的数据，别编造。"
+        "clock 字段给出系统今天的日期与 A 股披露节奏；禁止与 clock 矛盾的表述（例如 clock 已是 5 月仍说「年报还没出」）。"
         "回答优先级（必须遵守）："
         "1) 先理解 question 意图，再选用最相关的来源；"
         "2) retrieved_chunks 绑定报告/PDF 片段（解读报告、风险、业务问题时优先）；"
-        "3) tools.data_api 本地 SQLite（仅在与问题相关的 matched_keys / mda_hits 出现时引用）；"
-        "4) tools.live_data 米筐实时快照（用户问最新行情/估值时）；"
-        "5) tools.web_search 网页检索（已按 authority_score 排序）。"
+        "3) tools.data_api 本地 SQLite（仅在与问题相关的 matched_keys / mda_hits / financial_data 出现时引用）；"
+        "4) tools.web_search 网页检索（问年报/公告/具体财务数字时必看 results；snippet 含数字则引用并注明标题/域名，禁止空口说「没查到」）；"
+        "5) tools.live_data 米筐实时快照（用户问最新行情/估值时）。"
         "若 question 与财务指标无关，不要机械罗列 PE/PB/收盘价；若与报告解读有关，优先用 retrieved_chunks。"
-        "只有上述来源都确实没有该字段时，才说明缺失并建议下一步。"
+        "只有上述来源都确实没有该字段时，才说明缺失并建议上传 PDF 或指定报告年份。"
         "引用新闻时优先 source_tier 为 official / financial_data 的结果，并注明标题；社区来源仅作参考。"
         "session.binding_warnings 若有内容，说明上下文曾切换股票/报告，勿混用其它公司数据。"
         "不要输出 JSON，不要写「作为 AI」之类套话，不要给买卖建议。"
     )
     payload = {
+        "clock": _chat_clock(),
         "session": {
             "stock_code": session.stock_code,
             "report_id": session.report_id,
@@ -465,7 +548,8 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
 
     tools_payload, tool_calls = gather_tool_context(query, session)
     data_hits = _hits_from_data_api(tools_payload.get("data_api"), query)
-    hits = _merge_retrieved_hits(rag_hits, data_hits, max_total=8)
+    web_hits = _hits_from_web_search(tools_payload.get("web_search"))
+    hits = _merge_retrieved_hits(rag_hits, [*data_hits, *web_hits], max_total=10)
 
     try:
         if has_llm_api_key():

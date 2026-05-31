@@ -33,7 +33,23 @@ _QUERY_HINTS: dict[str, tuple[str, ...]] = {
 _DEFAULT_KEYS = ("price", "factor", "securities_margin", "pit_financials", "turnover")
 _OVERVIEW_HINTS = ("概况", "总结", "怎么样", "概览", "整体", "介绍", "基本面", "综合分析")
 
-_ANNUAL_HINTS = ("年报", "mda", "管理层", "经营情况", "董事会", "讨论与分析", "/pdf")
+_ANNUAL_HINTS = ("年报", "年度报告", "mda", "管理层", "经营情况", "董事会", "讨论与分析", "/pdf")
+_QUARTER_HINTS = ("一季报", "半年报", "三季报", "季度报告")
+
+
+def extract_report_year(query: str) -> int | None:
+    q = str(query or "")
+    patterns = (
+        r"(20\d{2})\s*年?\s*(?:度)?\s*(?:annual|年报|年度报告|财务报告)",
+        r"(20\d{2})\s*年?\s*(?:一季报|半年报|三季报|季度报告)",
+        r"(20\d{2})(?:年)?报",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, q, flags=re.I)
+        if match:
+            return int(match.group(1))
+    return None
+
 
 _META_FOR_KEYS: dict[str, tuple[str, ...]] = {
     "technical": ("price", "price_change_rate", "turnover", "capital_flow"),
@@ -51,6 +67,10 @@ def query_needs_stored_data(query: str) -> bool:
         return False
     if _select_data_keys(q):
         return True
+    if extract_report_year(q):
+        return True
+    if any(h in q for h in _QUARTER_HINTS):
+        return True
     return _mentions_financials(q) or _mentions_annual(q)
 
 
@@ -62,7 +82,8 @@ def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[st
 
     snapshot = get_latest_snapshot(code)
     pit = get_pit_financials(code)
-    annual = get_annual_report(code)
+    report_year = extract_report_year(query)
+    annual = get_annual_report(code, report_year=report_year) if report_year else get_annual_report(code)
     if snapshot is None and pit is None and annual is None:
         return None
 
@@ -101,7 +122,15 @@ def query_stored_data(stock_code: str, query: str, *, tail: int = 20) -> dict[st
 
     if annual:
         annual_payload = _annual_payload(annual, query, tail=tail)
-        if _mentions_annual(query) or _mentions_financials(query) or annual_payload.get("mda_hits"):
+        include_annual = (
+            _mentions_annual(query)
+            or _mentions_financials(query)
+            or report_year is not None
+            or any(h in str(query or "") for h in _QUARTER_HINTS)
+            or bool(annual_payload.get("mda_hits"))
+            or bool(annual_payload.get("financial_data"))
+        )
+        if include_annual:
             payload["annual_report"] = annual_payload
 
     if not _payload_has_content(payload):
@@ -155,7 +184,7 @@ def _annual_payload(annual: dict[str, Any], query: str, *, tail: int) -> dict[st
 
 def _mentions_annual(query: str) -> bool:
     q = str(query or "").lower()
-    return any(h in q for h in _ANNUAL_HINTS)
+    return any(h in q for h in _ANNUAL_HINTS) or any(h in q for h in _QUARTER_HINTS)
 
 
 def _select_data_keys(query: str) -> list[str]:
