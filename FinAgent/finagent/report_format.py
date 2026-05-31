@@ -74,6 +74,25 @@ def _strip_data_source_columns_from_tables(text: str) -> str:
     return "\n".join(out)
 
 
+_PIPELINE_ONLY_SECTIONS = ("字段来源概览", "数据说明", "年报来源", "免责声明")
+
+
+def strip_pipeline_only_sections(text: str) -> str:
+    """去掉模型正文末尾误生成的流水线附录（字段来源概览等）。"""
+    result = str(text or "").strip()
+    if not result:
+        return result
+    earliest: int | None = None
+    for title in _PIPELINE_ONLY_SECTIONS:
+        match = re.search(rf"^#{{1,6}}\s*{re.escape(title)}\s*$", result, re.MULTILINE)
+        if match is not None and (earliest is None or match.start() < earliest):
+            earliest = match.start()
+    if earliest is not None:
+        result = result[:earliest].rstrip()
+        result = re.sub(r"\n---+\s*$", "", result).strip()
+    return result
+
+
 def polish_field_refs(text: str) -> str:
     """去掉冗余的数据源/字段元数据；保留字段名时用反引号供前端统一标签样式。"""
     if not text:
@@ -167,6 +186,8 @@ def normalize_section_text(content: Any, section_name: str) -> str:
     text = normalize_core_conclusion_markdown(text)
     text = _structure_section_readability(text, section_name)
     text = _normalize_body_headings(text)
+    if "投资总监" in section_name:
+        text = strip_pipeline_only_sections(text)
     text = polish_field_refs(text)
     if not any(skip in section_name for skip in ("执行摘要", "免责声明", "数据与工具", "验证", "投资总监")):
         from .report_writing import ensure_section_lead_conclusion

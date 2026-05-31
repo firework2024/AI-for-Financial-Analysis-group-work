@@ -214,6 +214,7 @@ def _build_prompt(mda_text: str, financial_analysis: dict[str, Any], company_con
         "用「报表显示…，MD&A 称…，因此…」的句式；禁止单独设「MD&A与报表勾稽」章节或小标题。"
         "正文与「核心矛盾汇总」表格均勿标注数据来源、字段名或 reviewed_signals/data_notes 引用；"
         "可追溯性由报告末尾「字段来源概览」承担。"
+        "勿在投资总监正文中输出「字段来源概览」或字段引用表，该节由系统自动生成。"
         "MD&A 未覆盖项写入数据局限。按上述结构输出完整分析。"
     )
 

@@ -46,6 +46,38 @@ def test_polish_field_refs_drops_data_source_table_column():
     assert "依赖央行借款" in out
 
 
+def test_strip_pipeline_only_sections_from_director():
+    from finagent.report_format import strip_pipeline_only_sections
+
+    text = (
+        "### 总结\n\n"
+        "2025年经营承压。\n\n"
+        "---\n\n"
+        "### 字段来源概览\n\n"
+        "| 分析维度 | 引用字段 |\n"
+        "| --- | --- |\n"
+        "| 营收 | `revenue` |\n"
+    )
+    out = strip_pipeline_only_sections(text)
+    assert "字段来源概览" not in out
+    assert "`revenue`" not in out
+    assert "2025年经营承压" in out
+
+
+def test_normalize_director_strips_embedded_provenance_table():
+    text = (
+        "好的，以下是分析。\n\n"
+        "### 总结\n\n"
+        "正文结束。\n\n"
+        "### 字段来源概览\n\n"
+        "| 维度 | 字段 |\n|---|---|\n| 利润 | `net_profit` |\n"
+    )
+    out = normalize_section_text(text, "投资总监分析")
+    assert "字段来源概览" not in out
+    assert "net_profit" not in out
+    assert "正文结束" in out
+
+
 def test_build_report_toc_assigns_unique_ids():
     entries = build_report_toc(["执行摘要", "核心指标", "执行摘要"])
     assert len(entries) == 3
