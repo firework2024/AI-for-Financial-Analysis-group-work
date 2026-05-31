@@ -25,6 +25,8 @@ from ..llm import llm_text
 from ..llm_settings import activate_llm_settings, has_llm_api_key, reset_llm_settings, use_llm_settings
 
 from ..chat.data_ingest import bootstrap_stock_data, chat_bootstrap_enabled
+from ..chat.stock_bind import bind_stocks_from_chat, message_requests_data_ingest, should_run_chat_bootstrap
+from ..chat.stock_codes import normalize_stock_codes_list, stocks_display_label
 from ..env import load_dotenv, prepare_rqdata_env, project_root, rqdata_configured
 from ..chat.tools import query_data_api
 from ..chat.web_search import search_web, web_search_configured, web_search_enabled
@@ -125,11 +127,13 @@ class MultiAnalyzeRequest(BaseModel):
 class ChatCreateRequest(BaseModel):
     title: str | None = None
     stock_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    stocks: str | None = Field(default=None, max_length=500, description="多个代码或公司名，逗号/空格分隔")
 
 
 class ChatMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=8000)
     stock_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    stocks: str | None = Field(default=None, max_length=500)
 
 
 class AttachReportRequest(BaseModel):
@@ -462,51 +466,152 @@ def create_app() -> FastAPI:
         boot = session.data_bootstrap if isinstance(session.data_bootstrap, dict) else {}
         return boot.get("status") == "running"
 
-    def _start_session_bootstrap(user_id: str, session_id: str, stock_code: str) -> None:
+    def _patch_bootstrap_progress(
+        user_id: str,
+        session_id: str,
+        *,
+        message: str,
+        stock_codes: list[str],
+        current: str | None = None,
+        step: str | None = None,
+        stocks_state: dict[str, Any] | None = None,
+    ) -> None:
+        session = session_store.get(user_id, session_id)
+        if not session:
+            return
+        boot = session.data_bootstrap if isinstance(session.data_bootstrap, dict) else {}
+        if boot.get("status") != "running":
+            return
+        payload: dict[str, Any] = {
+            **boot,
+            "status": "running",
+            "stock_codes": stock_codes,
+            "stock_code": stock_codes[0] if stock_codes else None,
+            "message": message,
+            "current": current,
+            "step": step,
+        }
+        if stocks_state is not None:
+            payload["stocks"] = stocks_state
+        session.data_bootstrap = payload
+        session_store.save(session)
+
+    def _start_session_bootstrap(user_id: str, session_id: str, stock_codes: list[str]) -> None:
+        codes = normalize_stock_codes_list(stock_codes)
+        if not codes:
+            return
+
         def _worker() -> None:
             load_dotenv()
             prepare_rqdata_env()
-            try:
-                result = bootstrap_stock_data(stock_code, workdir=project_root())
-                session = session_store.get(user_id, session_id)
-                if not session:
-                    return
-                session.data_bootstrap = {**result, "status": "completed" if result.get("ok") else "failed"}
-                sec_name = result.get("sec_name")
-                if sec_name and session.title in {"", "新对话"}:
-                    session.title = f"{stock_code} {sec_name}"
-                session_store.save(session)
-            except Exception as exc:
+            stocks_state: dict[str, Any] = {c: {"status": "pending"} for c in codes}
+            ok_count = 0
+
+            for idx, code in enumerate(codes, start=1):
+                def _on_progress(*, gap: str, index: int, total: int, message: str, _code: str = code) -> None:
+                    _patch_bootstrap_progress(
+                        user_id,
+                        session_id,
+                        message=f"({idx}/{len(codes)}) {_code} · {message}",
+                        stock_codes=codes,
+                        current=_code,
+                        step=gap,
+                        stocks_state=stocks_state,
+                    )
+
+                try:
+                    result = bootstrap_stock_data(code, workdir=project_root(), on_progress=_on_progress)
+                    stocks_state[code] = {
+                        "status": "completed" if result.get("ok") else "failed",
+                        "message": result.get("message"),
+                    }
+                    if result.get("ok"):
+                        ok_count += 1
+                except Exception as exc:
+                    stocks_state[code] = {
+                        "status": "failed",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+
                 session = session_store.get(user_id, session_id)
                 if session:
+                    from ..chat.stock_codes import merge_session_stock_codes
+
+                    merge_session_stock_codes(session, codes)
                     session.data_bootstrap = {
-                        "status": "failed",
-                        "stock_code": stock_code,
-                        "error": f"{type(exc).__name__}: {exc}",
+                        "status": "running",
+                        "stock_codes": codes,
+                        "stock_code": codes[0],
+                        "stocks": stocks_state,
+                        "current": code,
+                        "message": f"正在入库 ({idx}/{len(codes)}) {code}…",
                     }
                     session_store.save(session)
 
+            session = session_store.get(user_id, session_id)
+            if not session:
+                return
+            from ..chat.stock_codes import merge_session_stock_codes
+
+            merge_session_stock_codes(session, codes)
+            label = stocks_display_label(codes)
+            session.data_bootstrap = {
+                "status": "completed" if ok_count else "failed",
+                "stock_codes": codes,
+                "stock_code": codes[0],
+                "stocks": stocks_state,
+                "ok": ok_count > 0,
+                "message": f"{label} 入库完成（{ok_count}/{len(codes)}）",
+            }
+            if session.title in {"", "新对话", "多股对比"} and len(codes) == 1:
+                sec = (stocks_state.get(codes[0]) or {}).get("message") or codes[0]
+                session.title = f"{codes[0]} {sec}"[:24]
+            elif session.title in {"", "新对话"}:
+                session.title = f"多股 {label}"
+            session_store.save(session)
+
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _schedule_bootstrap_if_needed(session, stock_code: str | None) -> None:
-        code = str(stock_code or session.stock_code or "").strip()
-        if not code or not re.fullmatch(r"\d{6}", code):
+    def _schedule_bootstrap_if_needed(
+        session,
+        stock_codes: str | list[str] | None = None,
+        *,
+        stocks_text: str | None = None,
+    ) -> None:
+        codes = normalize_stock_codes_list(
+            stock_codes if isinstance(stock_codes, list) else None,
+            single=stock_codes if isinstance(stock_codes, str) and re.fullmatch(r"\d{6}", str(stock_codes)) else None,
+            text=stocks_text,
+        )
+        if not codes:
+            codes = normalize_stock_codes_list(getattr(session, "stock_codes", None) or [], single=session.stock_code)
+        if not codes:
             return
         if not chat_bootstrap_enabled():
             return
         if _bootstrap_running(session):
             return
         boot = session.data_bootstrap if isinstance(session.data_bootstrap, dict) else {}
-        if boot.get("status") == "completed" and boot.get("stock_code") == code:
-            return
-        session.stock_code = code
+        if boot.get("status") == "completed":
+            done_codes = boot.get("stock_codes") or ([boot.get("stock_code")] if boot.get("stock_code") else [])
+            if set(codes).issubset(set(done_codes)):
+                from ..chat.stock_codes import merge_session_stock_codes
+
+                merge_session_stock_codes(session, codes)
+                session_store.save(session)
+                return
+        from ..chat.stock_codes import merge_session_stock_codes
+
+        merge_session_stock_codes(session, codes)
         session.data_bootstrap = {
             "status": "running",
-            "stock_code": code,
-            "message": "正在下载年报、解析 PDF，并入库行情与财务数据…",
+            "stock_codes": codes,
+            "stock_code": codes[0],
+            "message": f"正在为 {stocks_display_label(codes)} 入库（共 {len(codes)} 只）…",
+            "stocks": {c: {"status": "pending"} for c in codes},
         }
         session_store.save(session)
-        _start_session_bootstrap(session.user_id, session.id, code)
+        _start_session_bootstrap(session.user_id, session.id, codes)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -638,20 +743,26 @@ def create_app() -> FastAPI:
 
     @app.post("/api/chat/sessions")
     def create_chat_session(request: ChatCreateRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
-        session = session_store.create(title=request.title or "新对话", stock_code=request.stock_code, user_id=user.id)
-        _schedule_bootstrap_if_needed(session, request.stock_code)
+        codes = normalize_stock_codes_list(None, single=request.stock_code, text=request.stocks)
+        session = session_store.create(
+            title=request.title or "新对话",
+            stock_code=codes[0] if codes else request.stock_code,
+            stock_codes=codes,
+            user_id=user.id,
+        )
+        _schedule_bootstrap_if_needed(session, codes)
         session = session_store.get(user.id, session.id) or session
         return session.to_dict()
 
     @app.post("/api/chat/sessions/{session_id}/bootstrap")
     def bootstrap_chat_session(session_id: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
         session = _get_session(user, session_id)
-        code = str(session.stock_code or "").strip()
-        if not re.fullmatch(r"\d{6}", code):
-            raise HTTPException(status_code=400, detail="请先填写 6 位股票代码")
+        codes = normalize_stock_codes_list(getattr(session, "stock_codes", None) or [], single=session.stock_code)
+        if not codes:
+            raise HTTPException(status_code=400, detail="请先填写股票代码或公司名称")
         session.data_bootstrap = None
         session_store.save(session)
-        _schedule_bootstrap_if_needed(session, code)
+        _schedule_bootstrap_if_needed(session, codes)
         session = session_store.get(user.id, session_id) or session
         return session.to_dict()
 
@@ -669,10 +780,23 @@ def create_app() -> FastAPI:
     @app.post("/api/chat/sessions/{session_id}/messages")
     def post_chat_message(session_id: str, request: ChatMessageRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
         session = _get_session(user, session_id)
-        sync_session_stock(session, request.stock_code)
-        _schedule_bootstrap_if_needed(session, request.stock_code or session.stock_code)
+        codes = bind_stocks_from_chat(
+            session,
+            request.message,
+            sidebar_code=request.stock_code,
+            sidebar_stocks=request.stocks,
+        )
+        session_store.save(session)
+        if codes and should_run_chat_bootstrap(session, codes, request.message):
+            if message_requests_data_ingest(request.message):
+                session.data_bootstrap = None
+                session_store.save(session)
+            _schedule_bootstrap_if_needed(session, codes)
         session = session_store.get(user.id, session_id) or session
         reply = chat_turn(session, request.message)
+        disk = session_store.get(user.id, session_id)
+        if disk and isinstance(disk.data_bootstrap, dict):
+            session.data_bootstrap = disk.data_bootstrap
         session_store.save(session)
         return {"reply": reply.to_dict(), "session": session.to_dict()}
 

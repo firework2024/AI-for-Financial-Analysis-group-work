@@ -13,6 +13,8 @@ def test_fundamentals_not_quote_primary():
     intent = classify_query_intent("比亚迪2024年营收和净利润")
     assert intent.quote_primary is False
     assert intent.fundamentals is True
+    assert "净利润" in (intent.focused_metrics or [])
+    assert "营业收入" in (intent.focused_metrics or [])
 
 
 def test_fundamental_narrative_detector():

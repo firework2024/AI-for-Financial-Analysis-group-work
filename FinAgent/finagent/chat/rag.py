@@ -93,7 +93,13 @@ def expand_query_terms(query: str) -> set[str]:
     return expanded
 
 
-def _score_chunk(chunk: TextChunk, q_tokens: set[str], *, stock_code: str | None) -> float:
+def _score_chunk(
+    chunk: TextChunk,
+    q_tokens: set[str],
+    *,
+    stock_code: str | None,
+    stock_codes: list[str] | None = None,
+) -> float:
     c_tokens = _tokenize(chunk.text)
     if not c_tokens:
         return 0.0
@@ -103,10 +109,12 @@ def _score_chunk(chunk: TextChunk, q_tokens: set[str], *, stock_code: str | None
     score = overlap / (len(q_tokens) ** 0.5)
     if any(token in chunk.text for token in q_tokens if len(token) >= 3):
         score += 0.5
-    if stock_code and stock_code in chunk.text:
+    watch = list(stock_codes or []) or ([stock_code] if stock_code else [])
+    if watch and any(code in chunk.text for code in watch):
         score += 0.8
     meta = chunk.meta or {}
-    if stock_code and meta.get("stock_code") == stock_code:
+    chunk_stock = str(meta.get("stock_code") or "").strip()
+    if watch and chunk_stock in watch:
         score += 0.6
     if meta.get("kind") in {"summary", "section", "analysis", "mda", "pit_financials"}:
         score += 0.15
@@ -119,6 +127,7 @@ def search_chunks(
     *,
     top_k: int = 6,
     stock_code: str | None = None,
+    stock_codes: list[str] | None = None,
 ) -> list[tuple[TextChunk, float]]:
     q_tokens = expand_query_terms(query)
     if not q_tokens or not chunks:
@@ -126,7 +135,7 @@ def search_chunks(
 
     scored: list[tuple[TextChunk, float]] = []
     for chunk in chunks:
-        score = _score_chunk(chunk, q_tokens, stock_code=stock_code)
+        score = _score_chunk(chunk, q_tokens, stock_code=stock_code, stock_codes=stock_codes)
         if score > 0:
             scored.append((chunk, score))
 
@@ -139,7 +148,7 @@ def search_chunks(
     fallback_tokens = expand_query_terms(query)
     for chunk in chunks:
         if any(token in chunk.text for token in fallback_tokens if len(token) >= 2):
-            score = _score_chunk(chunk, fallback_tokens, stock_code=stock_code)
+            score = _score_chunk(chunk, fallback_tokens, stock_code=stock_code, stock_codes=stock_codes)
             if score <= 0:
                 score = 0.35
             scored.append((chunk, score))

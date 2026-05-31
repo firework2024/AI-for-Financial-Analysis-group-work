@@ -93,6 +93,9 @@ def query_stored_data(
     if snapshot is None and pit is None and annual is None:
         return None
 
+    from ..chat.metrics import filter_financial_rows, resolve_focused_metrics
+
+    metric_labels = resolve_focused_metrics(query)
     selected_keys = _select_data_keys(query)
     if scope == "quote":
         selected_keys = [k for k in selected_keys if k in {"price", "price_change_rate", "turnover", "factor", "factor_history"}]
@@ -122,25 +125,32 @@ def query_stored_data(
             payload["available_series"] = list(COLLECTED_SERIES.keys())
 
     if pit and ("pit_financials" in selected_keys or _mentions_financials(query)):
+        pit_rows = pit["rows"]
+        if metric_labels:
+            pit_rows = filter_financial_rows(pit_rows, metric_labels)
+        if tail:
+            pit_rows = pit_rows[-tail:]
         payload["pit_financials_cache"] = {
             "report_year": pit["report_year"],
             "years": pit["years"],
             "quarters": pit["quarters"],
-            "rows": pit["rows"][-tail:] if tail else pit["rows"],
+            "rows": pit_rows,
             "fetched_at": pit["fetched_at"],
         }
 
     if annual and scope != "quote":
-        annual_payload = _annual_payload(annual, query, tail=tail)
         include_annual = (
             scope in {"annual", "fundamentals", "overview"}
             or _mentions_annual(query)
             or _mentions_financials(query)
             or report_year is not None
             or any(h in str(query or "") for h in _QUARTER_HINTS)
+            or bool(metric_labels)
         )
         if include_annual:
-            payload["annual_report"] = annual_payload
+            payload["annual_report"] = _annual_payload(
+                annual, query, tail=tail, metric_labels=metric_labels or None
+            )
 
     if not _payload_has_content(payload):
         return None
@@ -166,13 +176,21 @@ def _meta_relevant(meta_key: str, selected_keys: list[str]) -> bool:
     return any(key in selected_keys for key in triggers)
 
 
-def _annual_payload(annual: dict[str, Any], query: str, *, tail: int) -> dict[str, Any]:
+def _annual_payload(annual: dict[str, Any], query: str, *, tail: int, metric_labels: list[str] | None = None) -> dict[str, Any]:
     financial = annual.get("financial_data") or []
+    if metric_labels:
+        from ..chat.metrics import filter_financial_rows
+
+        financial = filter_financial_rows(financial, metric_labels)
     if tail and len(financial) > tail:
         financial = financial[-tail:]
     mda_text = str(annual.get("mda_text") or "")
     mda_meta = annual.get("mda_meta") or {}
-    mda_hits = search_mda_hits(mda_text, query, top_k=4)
+    mda_hits = (
+        []
+        if metric_labels and len(metric_labels) <= 2
+        else search_mda_hits(mda_text, query, top_k=4)
+    )
     return {
         "report_year": annual.get("report_year"),
         "sec_name": annual.get("sec_name"),

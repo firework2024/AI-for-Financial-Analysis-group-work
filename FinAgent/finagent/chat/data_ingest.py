@@ -19,8 +19,14 @@ from ..datastore.query import (
 from .data_tools import fetch_market_snapshot, needs_live_data
 from .intent import classify_query_intent
 
-# 新对话一键入库：按固定顺序拉全量数据（已存在则跳过）
-BOOTSTRAP_GAPS = ("annual_report", "pit_financials", "market_snapshot")
+# 新对话一键入库：行情优先（先可用），年报最慢放最后
+BOOTSTRAP_GAPS = ("market_snapshot", "pit_financials", "annual_report")
+
+_GAP_LABELS = {
+    "market_snapshot": "行情快照",
+    "pit_financials": "财务序列",
+    "annual_report": "年报 PDF",
+}
 
 
 def chat_bootstrap_enabled() -> bool:
@@ -35,15 +41,25 @@ def bootstrap_stock_data(
     *,
     workdir: Path | None = None,
     report_year: int | None = None,
-    lookback_days: int = 260,
+    lookback_days: int = 120,
+    on_progress: Any | None = None,
 ) -> dict[str, Any]:
-    """新对话预加载：年报下载解析 + PIT 财务 + 行情快照，全部写入 SQLite。"""
+    """新对话预加载：行情 + PIT + 年报写入 SQLite（已存在步骤会跳过）。"""
     code = normalize_stock_code(stock_code)
     root = workdir or Path(".")
     year = report_year if report_year is not None else default_as_of(None).year - 1
     actions: list[dict[str, Any]] = []
+    total = len(BOOTSTRAP_GAPS)
 
-    for gap in BOOTSTRAP_GAPS:
+    for index, gap in enumerate(BOOTSTRAP_GAPS, start=1):
+        label = _GAP_LABELS.get(gap, gap)
+        if on_progress:
+            on_progress(
+                gap=gap,
+                index=index,
+                total=total,
+                message=f"正在入库 {label}（{index}/{total}）…",
+            )
         try:
             if gap == "annual_report":
                 result = ingest_annual_report(code, report_year=year, workdir=root)

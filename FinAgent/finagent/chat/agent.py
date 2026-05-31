@@ -10,7 +10,8 @@ from typing import Any
 from ..llm_settings import has_llm_api_key
 from ..pdf_text import extract_mda, extract_pdf_text
 from .data_tools import extract_stock_code, live_quote_available
-from .intent import classify_query_intent, is_fundamental_narrative_hit
+from .intent import QueryIntent, classify_query_intent, is_fundamental_narrative_hit
+from .metrics import filter_financial_rows
 from .tools import gather_tool_context
 from .knowledge_graph import build_graph_from_report, build_graph_from_text, query_graph
 from .rag import TextChunk, chunk_text, format_hits, search_chunks
@@ -90,21 +91,22 @@ def _purge_stale_chunks(session: ChatSession, *, report_id: str, stock_code: str
 
 def _chunks_for_retrieval(session: ChatSession) -> list[TextChunk]:
     chunks = _chunks_from_session(session)
-    stock = session.stock_code
+    watch = list(session.stock_codes or []) or ([session.stock_code] if session.stock_code else [])
     report_id = session.report_id
-    if not stock and not report_id:
+    if not watch and not report_id:
         return chunks
 
     filtered: list[TextChunk] = []
     for chunk in chunks:
         meta = chunk.meta or {}
         kind = meta.get("kind")
+        chunk_stock = str(meta.get("stock_code") or "").strip()
         if kind in _REPORT_CHUNK_KINDS:
             if report_id and meta.get("report_id") and meta.get("report_id") != report_id:
                 continue
-            if stock and meta.get("stock_code") and meta.get("stock_code") != stock:
+            if watch and chunk_stock and chunk_stock not in watch:
                 continue
-        elif kind in _PDF_CHUNK_KINDS and stock and meta.get("stock_code") and meta.get("stock_code") != stock:
+        elif kind in _PDF_CHUNK_KINDS and watch and chunk_stock and chunk_stock not in watch:
             continue
         filtered.append(chunk)
     return filtered or chunks
@@ -322,6 +324,7 @@ def _hits_from_data_api(
     query: str = "",
     *,
     quote_primary: bool = False,
+    intent: QueryIntent | None = None,
 ) -> list[dict[str, Any]]:
     if not data_api or data_api.get("error"):
         return []
@@ -345,25 +348,32 @@ def _hits_from_data_api(
                 }
             )
 
+    labels = list((intent.focused_metrics if intent else None) or [])
+    narrow = bool(intent and intent.narrow_answer)
     annual = stored.get("annual_report") or {}
     financial = annual.get("financial_data") or []
-    if not quote_primary and financial and (_query_mentions_financials(query) or _query_mentions_annual(query)):
+    if labels:
+        financial = filter_financial_rows(financial, labels)
+    if not quote_primary and financial and (
+        labels or _query_mentions_financials(query) or _query_mentions_annual(query)
+    ):
         for index, row in enumerate(financial[-4:]):
             hits.append(
                 {
                     "source": "datastore:annual_financials",
-                    "score": 0.8 - index * 0.02,
+                    "score": 0.88 - index * 0.02,
                     "text": json.dumps(row, ensure_ascii=False)[:900],
                     "meta": {
                         "kind": "annual_financials",
                         "stock_code": stock,
                         "report_year": annual.get("report_year"),
                         "priority": "local_db",
+                        "focused_metrics": labels,
                     },
                 }
             )
 
-    if not quote_primary:
+    if not quote_primary and not (narrow or labels):
         for index, item in enumerate(annual.get("mda_hits") or []):
             if not isinstance(item, dict):
                 continue
@@ -379,15 +389,25 @@ def _hits_from_data_api(
                 }
             )
 
-    if not quote_primary and ("pit_financials" in matched_keys or _query_mentions_financials(query)):
+    if not quote_primary and (
+        labels or "pit_financials" in matched_keys or _query_mentions_financials(query)
+    ):
         pit = stored.get("pit_financials_cache") or {}
-        for index, row in enumerate((pit.get("rows") or [])[-2:]):
+        pit_rows = pit.get("rows") or []
+        if labels:
+            pit_rows = filter_financial_rows(pit_rows, labels)
+        for index, row in enumerate(pit_rows[-4:]):
             hits.append(
                 {
                     "source": "datastore:pit_financials",
-                    "score": 0.72 - index * 0.02,
+                    "score": 0.84 - index * 0.02,
                     "text": json.dumps(row, ensure_ascii=False)[:900],
-                    "meta": {"kind": "pit_financials", "stock_code": stock, "priority": "local_db"},
+                    "meta": {
+                        "kind": "pit_financials",
+                        "stock_code": stock,
+                        "priority": "local_db",
+                        "focused_metrics": labels,
+                    },
                 }
             )
 
@@ -398,6 +418,8 @@ def _hits_from_data_api(
         "benchmark_index": 0.58,
     }
     for key, base_score in meta_scores.items():
+        if labels and (narrow or len(labels) <= 2):
+            continue
         block = stored.get(key)
         if not isinstance(block, dict) or not block:
             continue
@@ -446,13 +468,14 @@ def _merge_retrieved_hits(
     *,
     max_total: int = 8,
     quote_primary: bool = False,
+    narrow_answer: bool = False,
 ) -> list[dict[str, Any]]:
-    if quote_primary:
+    if quote_primary or narrow_answer:
         rag_hits = [
             h
             for h in rag_hits
             if not is_fundamental_narrative_hit(str(h.get("text") or ""))
-        ][:3]
+        ][:3 if quote_primary else 2]
         for hit in data_hits:
             kind = (hit.get("meta") or {}).get("kind")
             if kind in {"technical", "factor", "price"}:
@@ -552,7 +575,9 @@ def _llm_answer(
         "你是 FinAgent 研究助手，像同事聊天一样回答，口语自然、别写成研报八股。"
         "以 question 为中心作答；tools / retrieved_chunks / graph_hits 都是证据，由你判断哪些与问题相关，"
         "不要机械堆砌无关的营收、毛利率、行业分段长文。"
-        "tools.intent 与 tools.answer_guidance 仅供参考，不是硬性禁令；缺证据时再说明。"
+        "若 tools.intent.narrow_answer 为 true 或 tools.evidence_summary.financial_facts 存在："
+        "只答用户点名的指标（列年份+数值），禁止净息差/原因分析/反问还要哪个指标。"
+        "tools.intent 与 tools.answer_guidance 供你判断优先级；缺证据时再说明。"
         "股价/收盘类：优先 tools.evidence_summary.quote 或 tools.live_data.quote.close（最近交易日收盘价），"
         "严禁把 quote.prev_close 当成用户所问日的收盘价；有 close 时直接报数，勿让用户自己去炒股软件查。"
         "财务/年报类：再用 data_api.annual_report、retrieved_chunks；二者与纯股价问题勿混用。"
@@ -564,6 +589,7 @@ def _llm_answer(
         "clock": _chat_clock(),
         "session": {
             "stock_code": session.stock_code,
+            "stock_codes": list(session.stock_codes or []) or ([session.stock_code] if session.stock_code else []),
             "report_id": session.report_id,
             "pdf_name": session.pdf_name,
             "binding_warnings": session.binding_warnings,
@@ -593,11 +619,16 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
     if not query:
         raise ValueError("消息不能为空")
 
+    from .stock_bind import bind_stocks_from_chat
+
+    bind_stocks_from_chat(session, query)
+
     user = ChatMessage(role="user", content=query, created_at=_now())
     session.messages.append(user)
 
     chunks = _chunks_for_retrieval(session)
-    rag_hits = format_hits(search_chunks(chunks, query, top_k=6, stock_code=session.stock_code))
+    watch_codes = list(session.stock_codes or []) or ([session.stock_code] if session.stock_code else [])
+    rag_hits = format_hits(search_chunks(chunks, query, top_k=6, stock_code=session.stock_code, stock_codes=watch_codes))
     graph_hits = query_graph(session.knowledge_graph, query, limit=8)
 
     intent = classify_query_intent(query, session)
@@ -606,6 +637,7 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
         tools_payload.get("data_api"),
         query,
         quote_primary=intent.quote_primary,
+        intent=intent,
     )
     web_hits = _hits_from_web_search(tools_payload.get("web_search"))
     hits = _merge_retrieved_hits(
@@ -613,6 +645,7 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
         [*data_hits, *web_hits],
         max_total=10,
         quote_primary=intent.quote_primary,
+        narrow_answer=intent.narrow_answer,
     )
 
     try:

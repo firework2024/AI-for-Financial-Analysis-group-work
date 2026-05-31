@@ -199,12 +199,17 @@ function toastBootstrapStatus(session) {
 }
 
 async function pollSessionBootstrap(sessionId) {
-  for (let i = 0; i < 90; i += 1) {
+  const maxPolls = 150;
+  for (let i = 0; i < maxPolls; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     if (chatState.activeSessionId !== sessionId) return;
     try {
       const session = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
       const boot = session.data_bootstrap;
+      if (chatState.activeSessionId === sessionId && boot?.status === "running") {
+        chatState.activeSession = session;
+        updateChatHeader(session);
+      }
       if (!boot || boot.status !== "running") {
         if (chatState.activeSessionId === sessionId) {
           chatState.activeSession = session;
@@ -218,6 +223,10 @@ async function pollSessionBootstrap(sessionId) {
       return;
     }
   }
+  if (chatState.activeSessionId === sessionId) {
+    App.toast("入库时间较长（可能在下载年报 PDF），请稍候或刷新对话列表查看状态", "info");
+    pollSessionBootstrap(sessionId);
+  }
 }
 
 function updateChatHeader(session) {
@@ -228,9 +237,14 @@ function updateChatHeader(session) {
   const bits = [];
   if (session?.report_id) bits.push(`报告 ${session.report_id.split("_")[0]}`);
   if (session?.pdf_name) bits.push(`PDF · ${session.pdf_name}`);
-  if (session?.stock_code) bits.push(`代码 ${session.stock_code}`);
+  const codes = Array.isArray(session?.stock_codes) ? session.stock_codes.filter(Boolean) : [];
+  if (codes.length > 1) bits.push(`标的 ${codes.join("、")}`);
+  else if (session?.stock_code) bits.push(`代码 ${session.stock_code}`);
   const boot = session?.data_bootstrap;
-  if (boot?.status === "running") bits.push("入库中…");
+  if (boot?.status === "running") {
+    const cur = boot.current || boot.stock_code;
+    bits.push(cur ? `入库中 ${cur}…` : "入库中…");
+  }
   if (boot?.status === "completed") bits.push("已入库");
   if (boot?.status === "failed") bits.push("入库失败");
   if (!bits.length) {
@@ -260,9 +274,7 @@ async function openChatSession(sessionId) {
   renderChatSessions();
   renderChatMessages(session);
   updateChatHeader(session);
-  if (session.stock_code && chatEls.chatStockInput) {
-    chatEls.chatStockInput.value = session.stock_code;
-  }
+  syncChatStockInput(session);
   if (session.data_bootstrap?.status === "running") {
     App.toast(session.data_bootstrap.message || "正在后台下载年报并入库…", "info");
     pollSessionBootstrap(sessionId);
@@ -292,16 +304,33 @@ async function deleteChatSession(sessionId) {
   App.toast("对话已删除");
 }
 
+function chatStocksPayload() {
+  const raw = String(chatEls.chatStockInput?.value || "").trim();
+  if (!raw) return {};
+  if (/^\d{6}$/.test(raw)) return { stock_code: raw };
+  return { stocks: raw };
+}
+
+function syncChatStockInput(session) {
+  if (!chatEls.chatStockInput || !session) return;
+  const codes = session.stock_codes;
+  if (Array.isArray(codes) && codes.length) {
+    chatEls.chatStockInput.value = codes.join(", ");
+  } else if (session.stock_code) {
+    chatEls.chatStockInput.value = session.stock_code;
+  }
+}
+
 async function createChatSession() {
   const stock = String(chatEls.chatStockInput?.value || "").trim();
-  if (!/^\d{6}$/.test(stock)) {
-    App.toast("请先填写 6 位股票代码，新建对话将自动下载年报并入库", "info");
+  if (!stock) {
+    App.toast("可填写股票代码或公司名（多只请用逗号分隔），新建对话将自动入库", "info");
   }
   const payload = await api("/api/chat/sessions", {
     method: "POST",
     body: JSON.stringify({
       title: "新对话",
-      ...( /^\d{6}$/.test(stock) ? { stock_code: stock } : {}),
+      ...chatStocksPayload(),
     }),
   });
   await loadChatSessions();
@@ -324,17 +353,21 @@ async function sendChatMessage() {
   renderChatMessages(chatState.activeSession);
   setChatThinking(true);
   try {
-    const stock = String(chatEls.chatStockInput?.value || "").trim();
     const payload = await api(`/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/messages`, {
       method: "POST",
       body: JSON.stringify({
         message: pending,
-        ...( /^\d{6}$/.test(stock) ? { stock_code: stock } : {}),
+        ...chatStocksPayload(),
       }),
     });
     chatState.activeSession = payload.session;
     renderChatMessages(payload.session);
     updateChatHeader(payload.session);
+    syncChatStockInput(payload.session);
+    if (payload.session?.data_bootstrap?.status === "running") {
+      App.toast(payload.session.data_bootstrap.message || "正在识别股票并入库…", "info");
+      pollSessionBootstrap(chatState.activeSessionId);
+    }
     await loadChatSessions();
   } catch (error) {
     App.toast(error.message || "发送失败", "error");
@@ -493,9 +526,7 @@ async function attachReportById(reportId) {
   renderChatSessions();
   renderChatMessages(session);
   updateChatHeader(session);
-  if (session.stock_code && chatEls.chatStockInput) {
-    chatEls.chatStockInput.value = session.stock_code;
-  }
+  syncChatStockInput(session);
   await loadChatSessions();
   closeReportPicker();
   App.navigate("chat");

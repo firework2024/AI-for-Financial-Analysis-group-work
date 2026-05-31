@@ -31,6 +31,7 @@ class ChatSession:
     updated_at: str
     user_id: str = ""
     stock_code: str | None = None
+    stock_codes: list[str] = field(default_factory=list)
     report_id: str | None = None
     pdf_name: str | None = None
     binding_warnings: list[str] = field(default_factory=list)
@@ -47,6 +48,7 @@ class ChatSession:
             "updated_at": self.updated_at,
             "user_id": self.user_id,
             "stock_code": self.stock_code,
+            "stock_codes": self.stock_codes,
             "report_id": self.report_id,
             "pdf_name": self.pdf_name,
             "binding_warnings": self.binding_warnings,
@@ -70,6 +72,7 @@ class ChatSession:
             updated_at=str(payload.get("updated_at") or _now()),
             user_id=str(payload.get("user_id") or ""),
             stock_code=payload.get("stock_code"),
+            stock_codes=_load_stock_codes_from_payload(payload),
             report_id=payload.get("report_id"),
             pdf_name=payload.get("pdf_name"),
             binding_warnings=list(payload.get("binding_warnings") or []),
@@ -78,6 +81,15 @@ class ChatSession:
             knowledge_graph=payload.get("knowledge_graph") if isinstance(payload.get("knowledge_graph"), dict) else {"nodes": [], "edges": []},
             data_bootstrap=payload.get("data_bootstrap") if isinstance(payload.get("data_bootstrap"), dict) else None,
         )
+
+
+def _load_stock_codes_from_payload(payload: dict[str, Any]) -> list[str]:
+    from .stock_codes import normalize_stock_codes_list
+
+    raw = payload.get("stock_codes")
+    if isinstance(raw, list):
+        return normalize_stock_codes_list(raw, single=payload.get("stock_code"))
+    return normalize_stock_codes_list(None, single=payload.get("stock_code"))
 
 
 def _now() -> str:
@@ -100,14 +112,25 @@ class SessionStore:
         safe_session = Path(session_id).name
         return self._user_dir(user_id) / f"{safe_session}.json"
 
-    def create(self, *, user_id: str, title: str = "新对话", stock_code: str | None = None) -> ChatSession:
+    def create(
+        self,
+        *,
+        user_id: str,
+        title: str = "新对话",
+        stock_code: str | None = None,
+        stock_codes: list[str] | None = None,
+    ) -> ChatSession:
+        from .stock_codes import normalize_stock_codes_list
+
+        codes = normalize_stock_codes_list(stock_codes, single=stock_code)
         session = ChatSession(
             id=uuid.uuid4().hex,
             title=title,
             created_at=_now(),
             updated_at=_now(),
             user_id=user_id,
-            stock_code=stock_code,
+            stock_codes=codes,
+            stock_code=codes[0] if codes else None,
         )
         self.save(session)
         return session
@@ -151,6 +174,7 @@ class SessionStore:
                     "title": payload.get("title"),
                     "updated_at": payload.get("updated_at"),
                     "stock_code": payload.get("stock_code"),
+                    "stock_codes": payload.get("stock_codes") or ([payload.get("stock_code")] if payload.get("stock_code") else []),
                     "report_id": payload.get("report_id"),
                     "pdf_name": payload.get("pdf_name"),
                     "message_count": len(payload.get("messages") or []),

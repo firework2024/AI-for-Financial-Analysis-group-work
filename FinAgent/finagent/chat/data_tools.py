@@ -47,6 +47,11 @@ _STOCK_ALIASES: dict[str, str] = {
     "万科": "000002",
     "万科a": "000002",
     "比亚迪": "002594",
+    "比亚迪股份": "002594",
+    "隆基绿能": "601012",
+    "工商银行": "601398",
+    "招商银行": "600036",
+    "中国平安": "601318",
 }
 
 
@@ -66,42 +71,125 @@ def extract_stock_code(text: str, fallback: str | None = None) -> str | None:
     return fallback
 
 
-def resolve_stock_code(query: str, session: ChatSession | None = None) -> str | None:
-    """从会话绑定、问题文本、历史消息、知识片段或简称解析股票代码。"""
-    if session and session.stock_code:
-        return session.stock_code
-
-    code = extract_stock_code(query)
+def resolve_stock_from_message(text: str, session: ChatSession | None = None) -> str | None:
+    """仅从文本（及可选会话片段）解析股票，不读 session.stock_code。"""
+    code = _resolve_code_from_text(str(text or ""))
     if code:
         return code
+    if not session:
+        return None
+    for message in reversed(session.messages):
+        if message.role != "user":
+            continue
+        code = _resolve_code_from_text(message.content)
+        if code:
+            return code
+    for item in session.chunks or []:
+        meta = item.get("meta") if isinstance(item, dict) else {}
+        chunk_code = str((meta or {}).get("stock_code") or "").strip()
+        if re.fullmatch(r"\d{6}", chunk_code):
+            return chunk_code
+        code = _resolve_code_from_text(str(item.get("text") or "")[:800])
+        if code:
+            return code
+    blob = " ".join([str(text or ""), *[m.content for m in session.messages if m.role == "user"][-4:]])
+    return _resolve_code_from_text(blob)
 
-    if session:
+
+def resolve_stocks_for_chat(
+    query: str,
+    session: ChatSession | None = None,
+    *,
+    sidebar_code: str | None = None,
+    sidebar_stocks: str | None = None,
+) -> list[str]:
+    """对话选股（可多只）：优先本条消息里的代码/公司名，其次侧栏与会话绑定。"""
+    from .stock_codes import normalize_stock_codes_list, parse_stock_codes_text
+
+    mentioned = parse_stock_codes_text(query)
+    if not mentioned and session:
         for message in reversed(session.messages):
             if message.role != "user":
                 continue
-            code = extract_stock_code(message.content)
-            if code:
-                return code
+            mentioned = parse_stock_codes_text(message.content)
+            if mentioned:
+                break
+    if mentioned:
+        return mentioned
 
-        for item in session.chunks or []:
-            meta = item.get("meta") if isinstance(item, dict) else {}
-            chunk_code = str((meta or {}).get("stock_code") or "").strip()
-            if re.fullmatch(r"\d{6}", chunk_code):
-                return chunk_code
-            code = extract_stock_code(str(item.get("text") or "")[:800])
-            if code:
-                return code
+    session_codes = list(getattr(session, "stock_codes", None) or []) if session else []
+    if not session_codes and session and session.stock_code:
+        session_codes = [session.stock_code]
+    side = normalize_stock_codes_list(None, single=sidebar_code, text=sidebar_stocks)
+    if side:
+        return side
+    return normalize_stock_codes_list(session_codes)
 
-    blob = str(query or "")
-    if session:
-        blob = " ".join([blob, *[m.content for m in session.messages if m.role == "user"][-4:]])
-    code = _code_from_aliases(blob)
+
+def resolve_stock_for_chat(
+    query: str,
+    session: ChatSession | None = None,
+    *,
+    sidebar_code: str | None = None,
+    sidebar_stocks: str | None = None,
+) -> str | None:
+    stocks = resolve_stocks_for_chat(
+        query, session, sidebar_code=sidebar_code, sidebar_stocks=sidebar_stocks
+    )
+    return stocks[0] if stocks else None
+
+
+def resolve_stock_code(
+    query: str,
+    session: ChatSession | None = None,
+    *,
+    sidebar_code: str | None = None,
+    sidebar_stocks: str | None = None,
+) -> str | None:
+    """兼容旧调用：返回主股票代码。"""
+    return resolve_stock_for_chat(
+        query, session, sidebar_code=sidebar_code, sidebar_stocks=sidebar_stocks
+    )
+
+
+def _resolve_code_from_text(text: str) -> str | None:
+    code = extract_stock_code(text)
+    if code:
+        return normalize_stock_code(code)
+    code = _code_from_aliases(text)
     if code:
         return code
-    code = _code_from_cninfo_name(blob)
+    code = _code_from_cninfo_name(text)
     if code:
-        return code
-    return _code_from_sec_name(blob)
+        return normalize_stock_code(code)
+    code = _code_from_sec_name(text)
+    if code:
+        return normalize_stock_code(code)
+    return None
+
+
+def sec_name_for_code(stock_code: str) -> str | None:
+    code = normalize_stock_code(stock_code)
+    try:
+        from ..datastore.db import get_annual_report
+
+        row = get_annual_report(code)
+        if row and row.get("sec_name"):
+            return str(row["sec_name"]).strip()
+    except Exception:
+        pass
+    try:
+        from ..cninfo import _load_stock_name_map
+
+        for name, mapped in _load_stock_name_map().items():
+            if mapped == code:
+                return name
+    except Exception:
+        pass
+    for name, mapped in _STOCK_ALIASES.items():
+        if mapped == code:
+            return name
+    return None
 
 
 def _code_from_aliases(text: str) -> str | None:

@@ -124,7 +124,7 @@ def test_bootstrap_stock_data_calls_all_gaps(monkeypatch, temp_db):
 
     result = bootstrap_stock_data("300274", report_year=2025)
     assert result["ok"] is True
-    assert calls == ["annual_report", "pit_financials", "market_snapshot"]
+    assert calls == ["market_snapshot", "pit_financials", "annual_report"]
 
 
 def test_incremental_persist_merges_price_rows(temp_db):

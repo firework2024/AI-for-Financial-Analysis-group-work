@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from ..datastore.query import extract_report_year, _mentions_annual, _mentions_financials, _select_data_keys
+from .metrics import narrow_answer_requested, resolve_focused_metrics
 
 if False:  # TYPE_CHECKING
     from .store import ChatSession
@@ -68,6 +69,8 @@ class QueryIntent:
     overview: bool = False
     disclosure: bool = False
     matched_data_keys: list[str] | None = None
+    focused_metrics: list[str] | None = None
+    narrow_answer: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -109,6 +112,15 @@ class QueryIntent:
     def answer_guidance(self) -> str:
         if self.quote_primary and not (self.fundamentals or self.annual):
             return "用户主要在问行情/收盘价：先给最新价与日期，勿用年报营收/毛利率长文代替股价。"
+        if self.narrow_answer and self.focused_metrics:
+            names = "、".join(self.focused_metrics)
+            return (
+                f"用户只要「{names}」：优先 tools.evidence_summary.financial_facts；"
+                f"直接列年份与数值（单位亿元），勿写营收/净息差/原因分析，勿反问还要哪个指标。"
+            )
+        if self.focused_metrics and len(self.focused_metrics) == 1:
+            names = self.focused_metrics[0]
+            return f"用户主要问「{names}」：先答该指标近年数据，勿展开其它科目与长篇解读。"
         if self.annual or self.disclosure:
             return "用户关注披露/年报：可结合 retrieved_chunks 与 annual_report。"
         if self.fundamentals:
@@ -116,10 +128,28 @@ class QueryIntent:
         return "根据 question 选用最相关证据，避免堆砌无关指标。"
 
 
+def _metric_context_from_session(session: Any | None, query: str) -> str:
+    if session is None or len(str(query or "").strip()) > 20:
+        return ""
+    parts: list[str] = []
+    for message in getattr(session, "messages", [])[-6:]:
+        if getattr(message, "role", None) != "user":
+            continue
+        text = str(getattr(message, "content", "") or "").strip()
+        if text and text != str(query or "").strip():
+            parts.append(text)
+    return " ".join(parts[-2:])
+
+
 def classify_query_intent(query: str, session: Any | None = None) -> QueryIntent:
     q = str(query or "").strip()
     ql = q.lower()
-    keys = _select_data_keys(q)
+    ctx = _metric_context_from_session(session, q)
+    keys = _select_data_keys(f"{ctx} {q}".strip())
+    focused = resolve_focused_metrics(q, context=ctx)
+    narrow = narrow_answer_requested(q) or (
+        len(focused) == 1 and len(q) <= 18 and not any(h in q for h in ("和", "与", "及", "对比", "比较"))
+    )
     has_quote = any(h in ql for h in _QUOTE_HINTS) or (
         "最近" in q and any(h in q for h in ("价", "股价", "行情", "收盘"))
     )
@@ -140,6 +170,8 @@ def classify_query_intent(query: str, session: Any | None = None) -> QueryIntent
         overview=overview,
         disclosure=disclosure,
         matched_data_keys=keys or None,
+        focused_metrics=focused or None,
+        narrow_answer=narrow,
     )
 
 
