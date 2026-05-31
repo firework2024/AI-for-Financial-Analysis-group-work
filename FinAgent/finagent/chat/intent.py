@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from ..datastore.query import extract_report_year, _mentions_annual, _mentions_financials, _select_data_keys
-from .metrics import narrow_answer_requested, resolve_focused_metrics
+from .metrics import is_valuation_focus, narrow_answer_requested, resolve_focused_metrics
 
 if False:  # TYPE_CHECKING
     from .store import ChatSession
@@ -76,8 +76,16 @@ class QueryIntent:
         return asdict(self)
 
     @property
+    def valuation_focus(self) -> bool:
+        return is_valuation_focus(self.focused_metrics)
+
+    @property
     def want_live_quote(self) -> bool:
-        return self.quote_primary or bool(self.matched_data_keys and "price" in self.matched_data_keys)
+        return (
+            self.quote_primary
+            or self.valuation_focus
+            or bool(self.matched_data_keys and "price" in (self.matched_data_keys or []))
+        )
 
     @property
     def want_data_api(self) -> bool:
@@ -110,46 +118,52 @@ class QueryIntent:
         return self.fundamentals or self.annual or self.overview or self.disclosure
 
     def answer_guidance(self) -> str:
+        """软提示：供模型参考，不强制裁剪回答结构与篇幅。"""
         if self.quote_primary and not (self.fundamentals or self.annual):
-            return "用户主要在问行情/收盘价：先给最新价与日期，勿用年报营收/毛利率长文代替股价。"
+            return "倾向：股价/收盘价问题可先看 quote；若用户同时要基本面，可再补年报。"
+        if self.valuation_focus and self.focused_metrics:
+            names = "、".join(self.focused_metrics)
+            return (
+                f"倾向：估值相关（{names}）可看 evidence_summary.valuation_facts / factor；"
+                f"多只股票时逐只对比；用户若追问原因可简要解释。"
+            )
         if self.narrow_answer and self.focused_metrics:
             names = "、".join(self.focused_metrics)
             return (
-                f"用户只要「{names}」：优先 tools.evidence_summary.financial_facts；"
-                f"直接列年份与数值（单位亿元），勿写营收/净息差/原因分析，勿反问还要哪个指标。"
+                f"倾向：用户明确收窄到「{names}」，可先给核心数字；"
+                f"若对理解有帮助，可一两句补充口径或同比。"
             )
-        if self.focused_metrics and len(self.focused_metrics) == 1:
-            names = self.focused_metrics[0]
-            return f"用户主要问「{names}」：先答该指标近年数据，勿展开其它科目与长篇解读。"
+        if self.focused_metrics:
+            names = "、".join(self.focused_metrics)
+            return f"倾向：与 {names} 相关的证据优先；其它内容按用户兴趣决定是否展开。"
         if self.annual or self.disclosure:
-            return "用户关注披露/年报：可结合 retrieved_chunks 与 annual_report。"
+            return "倾向：披露/年报可看 annual_report 与 retrieved_chunks。"
         if self.fundamentals:
-            return "用户关注财务指标：可引用 data_api 财务序列与年报字段。"
-        return "根据 question 选用最相关证据，避免堆砌无关指标。"
+            return "倾向：财务问题可结合 data_api 与年报字段。"
+        return "按 question 自选最相关证据；详略与是否对比由你根据对话判断。"
 
 
 def _metric_context_from_session(session: Any | None, query: str) -> str:
     if session is None or len(str(query or "").strip()) > 20:
         return ""
+    q = str(query or "").strip()
     parts: list[str] = []
-    for message in getattr(session, "messages", [])[-6:]:
-        if getattr(message, "role", None) != "user":
+    for message in getattr(session, "messages", [])[-8:]:
+        if getattr(message, "role", None) not in {"user", "assistant"}:
             continue
         text = str(getattr(message, "content", "") or "").strip()
-        if text and text != str(query or "").strip():
-            parts.append(text)
-    return " ".join(parts[-2:])
+        if text and text != q:
+            parts.append(text[:400])
+    return " ".join(parts[-3:])
 
 
 def classify_query_intent(query: str, session: Any | None = None) -> QueryIntent:
     q = str(query or "").strip()
     ql = q.lower()
     ctx = _metric_context_from_session(session, q)
-    keys = _select_data_keys(f"{ctx} {q}".strip())
-    focused = resolve_focused_metrics(q, context=ctx)
-    narrow = narrow_answer_requested(q) or (
-        len(focused) == 1 and len(q) <= 18 and not any(h in q for h in ("和", "与", "及", "对比", "比较"))
-    )
+    focused = resolve_focused_metrics(q, context="" if resolve_focused_metrics(q) else ctx)
+    keys = _select_data_keys(f"{ctx} {q}".strip() if ctx else q)
+    narrow = narrow_answer_requested(q)
     has_quote = any(h in ql for h in _QUOTE_HINTS) or (
         "最近" in q and any(h in q for h in ("价", "股价", "行情", "收盘"))
     )

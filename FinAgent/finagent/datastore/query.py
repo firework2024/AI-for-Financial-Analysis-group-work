@@ -186,11 +186,7 @@ def _annual_payload(annual: dict[str, Any], query: str, *, tail: int, metric_lab
         financial = financial[-tail:]
     mda_text = str(annual.get("mda_text") or "")
     mda_meta = annual.get("mda_meta") or {}
-    mda_hits = (
-        []
-        if metric_labels and len(metric_labels) <= 2
-        else search_mda_hits(mda_text, query, top_k=4)
-    )
+    mda_hits = search_mda_hits(mda_text, query, top_k=4)
     return {
         "report_year": annual.get("report_year"),
         "sec_name": annual.get("sec_name"),

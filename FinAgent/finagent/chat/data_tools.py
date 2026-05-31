@@ -38,6 +38,22 @@ LIVE_DATA_HINTS = (
 
 _LIVE_DATA_GENERIC = ("查一下", "帮我看", "拉一下", "更新一下")
 
+_PLURAL_REF_HINTS = (
+    "他们",
+    "它们",
+    "这些",
+    "这家",
+    "几家",
+    "多个",
+    "各只",
+    "分别",
+    "对比",
+    "都",
+    "几个公司",
+    "这几只",
+    "这几家",
+)
+
 _STOCK_ALIASES: dict[str, str] = {
     "阳光电源": "300274",
     "宁德时代": "300750",
@@ -52,6 +68,7 @@ _STOCK_ALIASES: dict[str, str] = {
     "工商银行": "601398",
     "招商银行": "600036",
     "中国平安": "601318",
+    "寒武纪": "688256",
 }
 
 
@@ -71,29 +88,103 @@ def extract_stock_code(text: str, fallback: str | None = None) -> str | None:
     return fallback
 
 
+def build_chat_context_blob(
+    session: ChatSession | None,
+    query: str,
+    *,
+    max_messages: int = 14,
+    max_chars_per_message: int = 700,
+) -> str:
+    """拼接本轮问题与近期对话（含助手回复），供识别公司名/代码。"""
+    parts: list[str] = []
+    q = str(query or "").strip()
+    if q:
+        parts.append(q)
+    if not session:
+        return " ".join(parts)
+
+    for message in session.messages[-max_messages:]:
+        role = str(getattr(message, "role", "") or "")
+        if role not in {"user", "assistant"}:
+            continue
+        text = str(getattr(message, "content", "") or "").strip()
+        if not text or text == q:
+            continue
+        parts.append(text[:max_chars_per_message])
+    return " ".join(parts)
+
+
+def _codes_from_session_dialogue(session: ChatSession | None, query: str) -> list[str]:
+    from .stock_codes import parse_stock_codes_text
+
+    if not session:
+        return parse_stock_codes_text(query)
+
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def _merge(codes: list[str]) -> None:
+        for code in codes:
+            if code not in seen:
+                seen.add(code)
+                found.append(code)
+
+    _merge(parse_stock_codes_text(query))
+    _merge(parse_stock_codes_text(build_chat_context_blob(session, query)))
+
+    for message in reversed(session.messages):
+        if str(getattr(message, "role", "") or "") not in {"user", "assistant"}:
+            continue
+        _merge(parse_stock_codes_text(str(getattr(message, "content", "") or "")))
+        if len(found) >= 8:
+            break
+
+    for item in session.chunks or []:
+        meta = item.get("meta") if isinstance(item, dict) else {}
+        chunk_stock = str((meta or {}).get("stock_code") or "").strip()
+        if re.fullmatch(r"\d{6}", chunk_stock):
+            _merge([chunk_stock])
+        _merge(parse_stock_codes_text(str(item.get("text") or "")[:800]))
+
+    return found[:8]
+
+
 def resolve_stock_from_message(text: str, session: ChatSession | None = None) -> str | None:
-    """仅从文本（及可选会话片段）解析股票，不读 session.stock_code。"""
+    """从文本及会话（含助手历史）解析单只股票。"""
     code = _resolve_code_from_text(str(text or ""))
     if code:
         return code
+    codes = _codes_from_session_dialogue(session, text)
+    return codes[0] if codes else None
+
+
+def _query_refers_session_stocks(query: str) -> bool:
+    q = str(query or "")
+    if any(h in q for h in _PLURAL_REF_HINTS):
+        return True
+    return "公司" in q and len(q) <= 28 and any(h in q.lower() for h in ("pe", "pb", "ps", "估值", "市值"))
+
+
+def _query_continues_session_topic(query: str, session: ChatSession | None) -> bool:
+    """短追问（如「总资产」「他们的 PE」）沿用本会话已绑定标的。"""
     if not session:
-        return None
-    for message in reversed(session.messages):
-        if message.role != "user":
-            continue
-        code = _resolve_code_from_text(message.content)
-        if code:
-            return code
-    for item in session.chunks or []:
-        meta = item.get("meta") if isinstance(item, dict) else {}
-        chunk_code = str((meta or {}).get("stock_code") or "").strip()
-        if re.fullmatch(r"\d{6}", chunk_code):
-            return chunk_code
-        code = _resolve_code_from_text(str(item.get("text") or "")[:800])
-        if code:
-            return code
-    blob = " ".join([str(text or ""), *[m.content for m in session.messages if m.role == "user"][-4:]])
-    return _resolve_code_from_text(blob)
+        return False
+    codes = list(getattr(session, "stock_codes", None) or []) or (
+        [session.stock_code] if getattr(session, "stock_code", None) else []
+    )
+    if not codes:
+        return False
+    if _query_refers_session_stocks(query):
+        return True
+    q = str(query or "").strip()
+    if len(q) > 32:
+        return False
+    from .intent import classify_query_intent
+    from .stock_codes import parse_stock_codes_text
+
+    if classify_query_intent(query, session).want_data_api and not parse_stock_codes_text(query):
+        return True
+    return False
 
 
 def resolve_stocks_for_chat(
@@ -103,23 +194,24 @@ def resolve_stocks_for_chat(
     sidebar_code: str | None = None,
     sidebar_stocks: str | None = None,
 ) -> list[str]:
-    """对话选股（可多只）：优先本条消息里的代码/公司名，其次侧栏与会话绑定。"""
+    """对话选股：本条消息 + 侧栏 + 整段对话（含助手回复）+ 已绑定 session。"""
     from .stock_codes import normalize_stock_codes_list, parse_stock_codes_text
-
-    mentioned = parse_stock_codes_text(query)
-    if not mentioned and session:
-        for message in reversed(session.messages):
-            if message.role != "user":
-                continue
-            mentioned = parse_stock_codes_text(message.content)
-            if mentioned:
-                break
-    if mentioned:
-        return mentioned
 
     session_codes = list(getattr(session, "stock_codes", None) or []) if session else []
     if not session_codes and session and session.stock_code:
         session_codes = [session.stock_code]
+
+    mentioned = parse_stock_codes_text(query)
+    if mentioned:
+        return normalize_stock_codes_list(mentioned)
+
+    if session_codes and _query_continues_session_topic(query, session):
+        return normalize_stock_codes_list(session_codes)
+
+    dialogue_codes = _codes_from_session_dialogue(session, query)
+    if dialogue_codes:
+        return normalize_stock_codes_list(dialogue_codes)
+
     side = normalize_stock_codes_list(None, single=sidebar_code, text=sidebar_stocks)
     if side:
         return side
@@ -229,6 +321,20 @@ def _code_from_sec_name(text: str) -> str | None:
         return str(row["stock_code"]) if row else None
     except Exception:
         return None
+
+
+def fetch_valuation_snapshot(stock_code: str) -> dict[str, Any]:
+    """估值类问题：优先本地快照 factor，避免每次都全量拉行情。"""
+    code = normalize_stock_code(stock_code)
+    local = _local_snapshot_fallback(code)
+    factor = (local or {}).get("factor") if isinstance(local, dict) else None
+    if isinstance(factor, dict) and factor.get("pe_ratio_ttm") is not None:
+        payload = {**(local or {}), "stock_code": code, "valuation_only": True}
+        payload.setdefault("source", "local_db")
+        return payload
+    slim = fetch_market_snapshot(code, lookback_days=30, incremental=True)
+    slim["valuation_only"] = True
+    return slim
 
 
 def fetch_market_snapshot(

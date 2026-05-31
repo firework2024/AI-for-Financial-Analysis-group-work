@@ -26,6 +26,8 @@ function initChatElements() {
     chatAttachReportBtn: document.getElementById("chatAttachReportBtn"),
     chatAnalyzeBtn: document.getElementById("chatAnalyzeBtn"),
     chatStockInput: document.getElementById("chatStockInput"),
+    chatMaxSteps: document.getElementById("chatMaxSteps"),
+    chatAgentMode: document.getElementById("chatAgentMode"),
     chatContextPill: document.getElementById("chatContextPill"),
     reportPickerModal: document.getElementById("reportPickerModal"),
     reportPickerList: document.getElementById("reportPickerList"),
@@ -172,7 +174,10 @@ function renderChatMessages(session) {
       const bubbleClass = role === "assistant" ? "chat-bubble prose chat-prose" : "chat-bubble";
       const tools =
         Array.isArray(msg.tool_calls) && msg.tool_calls.length
-          ? `<div class="chat-tools">${msg.tool_calls.map((t) => `<span>${escapeHtml(t.tool || "tool")}</span>`).join("")}</div>`
+          ? `<div class="chat-tools">${msg.tool_calls.map((t) => {
+              const label = t.tool === "think" ? `思考${t.step ? `·${t.step}` : ""}` : (t.tool || "tool");
+              return `<span title="${escapeHtml(JSON.stringify(t.args || {}))}">${escapeHtml(label)}</span>`;
+            }).join("")}</div>`
           : "";
       return `
         <div class="chat-msg chat-msg-${role}">
@@ -311,6 +316,15 @@ function chatStocksPayload() {
   return { stocks: raw };
 }
 
+function chatAgentPayload() {
+  const steps = parseInt(chatEls.chatMaxSteps?.value, 10);
+  const mode = chatEls.chatAgentMode?.value === "single" ? "single" : "loop";
+  return {
+    chat_max_steps: Number.isFinite(steps) ? Math.max(1, Math.min(8, steps)) : 4,
+    chat_agent_mode: mode,
+  };
+}
+
 function syncChatStockInput(session) {
   if (!chatEls.chatStockInput || !session) return;
   const codes = session.stock_codes;
@@ -324,7 +338,7 @@ function syncChatStockInput(session) {
 async function createChatSession() {
   const stock = String(chatEls.chatStockInput?.value || "").trim();
   if (!stock) {
-    App.toast("可填写股票代码或公司名（多只请用逗号分隔），新建对话将自动入库", "info");
+    App.toast("侧栏股票可选；在对话里直接问公司名也会自动识别并入库", "info");
   }
   const payload = await api("/api/chat/sessions", {
     method: "POST",
@@ -358,6 +372,7 @@ async function sendChatMessage() {
       body: JSON.stringify({
         message: pending,
         ...chatStocksPayload(),
+        ...chatAgentPayload(),
       }),
     });
     chatState.activeSession = payload.session;

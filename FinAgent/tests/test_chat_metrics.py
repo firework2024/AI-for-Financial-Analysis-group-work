@@ -2,6 +2,11 @@ from finagent.chat.intent import classify_query_intent
 from finagent.chat.metrics import extract_financial_facts, filter_financial_rows, resolve_focused_metrics
 
 
+def test_resolve_pe():
+    assert resolve_focused_metrics("他们的pe") == ["市盈率"]
+    assert resolve_focused_metrics("这几个公司的PE") == ["市盈率"]
+
+
 def test_resolve_total_assets():
     assert resolve_focused_metrics("总资产？") == ["总资产"]
 
@@ -20,10 +25,11 @@ def test_filter_financial_rows():
     assert "revenue" not in slim[0]
 
 
-def test_narrow_intent_for_total_assets():
+def test_narrow_only_when_user_asks():
     intent = classify_query_intent("总资产")
     assert intent.focused_metrics == ["总资产"]
-    assert intent.narrow_answer is True
+    assert intent.narrow_answer is False
+    assert classify_query_intent("我只要净利润").narrow_answer is True
 
 
 def test_extract_financial_facts():

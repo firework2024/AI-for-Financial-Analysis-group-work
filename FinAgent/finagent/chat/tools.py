@@ -9,13 +9,13 @@ from ..env import project_root
 from .data_ingest import ensure_stored_data, live_quote_has_data
 from .data_tools import (
     fetch_market_snapshot,
+    fetch_valuation_snapshot,
     live_quote_available,
     needs_live_data,
-    resolve_stock_for_chat,
     resolve_stocks_for_chat,
 )
 from .intent import QueryIntent, classify_query_intent, is_fundamental_narrative_hit
-from .metrics import extract_financial_facts
+from .metrics import extract_financial_facts, extract_valuation_facts, is_valuation_focus, slim_factor_block
 from .quote_sources import supplement_live_with_web_quote
 from .stock_codes import merge_session_stock_codes
 from .store import ChatSession
@@ -34,6 +34,8 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
     """收集与本问相关的工具证据；支持会话内多只股票。"""
     intent = classify_query_intent(query, session)
     stocks = resolve_stocks_for_chat(query, session)
+    if stocks:
+        merge_session_stock_codes(session, stocks)
     primary = stocks[0] if stocks else None
     recent_user = _recent_user_messages(session)
     tool_calls: list[dict[str, Any]] = []
@@ -55,9 +57,12 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
         merge_session_stock_codes(session, stocks)
 
     ingest_actions: list[dict[str, Any]] = []
+    valuation_only = is_valuation_focus(intent.focused_metrics)
+
     for code in stocks:
-        should_ingest = intent.want_background_ingest or (
-            intent.want_live_quote and query_needs_stored_data(query)
+        should_ingest = (not valuation_only) and (
+            intent.want_background_ingest
+            or (intent.want_live_quote and query_needs_stored_data(query))
         )
         if not should_ingest:
             continue
@@ -93,7 +98,8 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
         if code == primary:
             payload["data_api"] = data_api
 
-        if intent.want_live_quote or needs_live_data(query):
+        wants_live = intent.valuation_focus or intent.want_live_quote or needs_live_data(query)
+        if wants_live:
             live: dict[str, Any] | None = None
             if ingest_actions:
                 for item in ingest_actions:
@@ -103,15 +109,18 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
                         if action.get("gap") == "market_snapshot" and action.get("live"):
                             live = action["live"]
                             break
-            if not live_quote_has_data(live):
+            if valuation_only:
+                live = fetch_valuation_snapshot(code)
+            elif not live_quote_has_data(live):
                 live = fetch_market_snapshot(code)
-            live = supplement_live_with_web_quote(live, code, query)
+            if not valuation_only:
+                live = supplement_live_with_web_quote(live, code, query)
             payload["live_by_stock"][code] = live
             tool_calls.append(
                 {
-                    "tool": "fetch_market_snapshot",
+                    "tool": "fetch_valuation_snapshot" if valuation_only else "fetch_market_snapshot",
                     "stock_code": code,
-                    "ok": live_quote_available(live),
+                    "ok": bool((live or {}).get("factor")) or live_quote_available(live),
                     "source": (live or {}).get("source"),
                 }
             )
@@ -142,8 +151,8 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
     payload["evidence_summary"] = _build_evidence_summary(payload, intent)
     if len(stocks) > 1:
         payload["answer_guidance"] = (
-            f"{payload['answer_guidance']} 本对话关注 {len(stocks)} 只股票："
-            f"{'、'.join(stocks)}；请按问题点名的标的作答，勿混用其它代码数据。"
+            f"{payload['answer_guidance']} 会话含 {len(stocks)} 只：{'、'.join(stocks)}；"
+            f"若问题涉及「他们/这几家」，尽量覆盖各标的，也可按用户要求只讲其中几只。"
         )
     return payload, tool_calls
 
@@ -207,7 +216,11 @@ def _build_evidence_summary(payload: dict[str, Any], intent: QueryIntent) -> dic
         }
     labels = list(intent.focused_metrics or [])
     stored = ((payload.get("data_api") or {}).get("stored")) or {}
-    if labels:
+    if labels and is_valuation_focus(labels):
+        val = extract_valuation_facts(payload.get("live_by_stock") or {}, labels)
+        if val:
+            summary["valuation_facts"] = val
+    elif labels:
         facts = extract_financial_facts(stored, labels)
         if facts:
             summary["financial_facts"] = facts
@@ -256,7 +269,7 @@ def _resolve_web_query(query: str, session: ChatSession, stock_code: str | None)
     context = " ".join([text, *recent[-3:]])
     if any(h in text for h in FOLLOWUP_HINTS) and len(text) <= 20:
         for message in reversed(session.messages):
-            if message.role != "user" or message.content.strip() == text:
+            if message.role not in {"user", "assistant"} or message.content.strip() == text:
                 continue
             prior = message.content.strip()
             if prior:

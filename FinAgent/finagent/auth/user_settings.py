@@ -16,6 +16,8 @@ class UserAPISettings:
     openai_api_key: str | None = None
     openai_base_url: str | None = None
     openai_model: str | None = None
+    chat_agent_mode: str | None = None
+    chat_max_steps: int | None = None
     updated_at: str | None = None
 
 
@@ -42,10 +44,22 @@ class UserSettingsStore:
         payload = self.load_raw(user_id)
         encrypted = str(payload.get("openai_api_key_enc") or "")
         api_key = decrypt_secret(encrypted) if encrypted else None
+        mode = str(payload.get("chat_agent_mode") or "").strip().lower()
+        if mode not in {"loop", "single"}:
+            mode = None
+        raw_steps = payload.get("chat_max_steps")
+        steps: int | None = None
+        if raw_steps is not None and str(raw_steps).strip() != "":
+            try:
+                steps = max(1, min(8, int(raw_steps)))
+            except (TypeError, ValueError):
+                steps = None
         return UserAPISettings(
             openai_api_key=api_key or None,
             openai_base_url=payload.get("openai_base_url") or None,
             openai_model=payload.get("openai_model") or None,
+            chat_agent_mode=mode,
+            chat_max_steps=steps,
             updated_at=payload.get("updated_at"),
         )
 
@@ -55,6 +69,8 @@ class UserSettingsStore:
         payload = {
             "openai_base_url": settings.openai_base_url or "",
             "openai_model": settings.openai_model or "",
+            "chat_agent_mode": settings.chat_agent_mode or "",
+            "chat_max_steps": settings.chat_max_steps if settings.chat_max_steps is not None else "",
             "updated_at": settings.updated_at or datetime.now().isoformat(timespec="seconds"),
         }
         if settings.openai_api_key is not None:
@@ -76,6 +92,8 @@ class UserSettingsStore:
         clear_api_key: bool = False,
         openai_base_url: str | None = None,
         openai_model: str | None = None,
+        chat_agent_mode: str | None = None,
+        chat_max_steps: int | None = None,
     ) -> UserAPISettings:
         from datetime import datetime
 
@@ -88,6 +106,11 @@ class UserSettingsStore:
             current.openai_base_url = openai_base_url.strip() or None
         if openai_model is not None:
             current.openai_model = openai_model.strip() or None
+        if chat_agent_mode is not None:
+            mode = str(chat_agent_mode).strip().lower()
+            current.chat_agent_mode = mode if mode in {"loop", "single"} else None
+        if chat_max_steps is not None:
+            current.chat_max_steps = max(1, min(8, int(chat_max_steps)))
         current.updated_at = datetime.now().isoformat(timespec="seconds")
         self.save(user_id, current)
         return current
@@ -116,8 +139,30 @@ class UserSettingsStore:
             "api_key_source": source,
             "openai_base_url": settings.openai_base_url or env.base_url or "",
             "openai_model": settings.openai_model or env.model or "gpt-4.1-mini",
+            "chat_agent_mode": settings.chat_agent_mode or _default_chat_agent_mode(),
+            "chat_max_steps": settings.chat_max_steps if settings.chat_max_steps is not None else _default_chat_max_steps(),
             "updated_at": settings.updated_at,
         }
+
+
+def _default_chat_agent_mode() -> str:
+    mode = (get_env("FINAGENT_CHAT_AGENT_MODE") or "loop").strip().lower()
+    return mode if mode in {"loop", "single"} else "loop"
+
+
+def _default_chat_max_steps() -> int:
+    try:
+        return max(1, min(8, int(get_env("FINAGENT_CHAT_MAX_STEPS", "4"))))
+    except ValueError:
+        return 4
+
+
+def resolve_chat_agent_options(settings: UserAPISettings | None) -> dict[str, Any]:
+    """合并用户设置与 .env 默认的对话 Agent 参数。"""
+    current = settings or UserAPISettings()
+    mode = current.chat_agent_mode or _default_chat_agent_mode()
+    steps = current.chat_max_steps if current.chat_max_steps is not None else _default_chat_max_steps()
+    return {"chat_agent_mode": mode, "chat_max_steps": steps}
 
 
 def _mask_api_key(value: str | None) -> str:

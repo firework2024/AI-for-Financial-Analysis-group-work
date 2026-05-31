@@ -1,7 +1,7 @@
 import pytest
 
 from finagent.chat.data_tools import resolve_stock_for_chat, resolve_stock_from_message
-from finagent.chat.stock_bind import message_requests_data_ingest, should_run_chat_bootstrap
+from finagent.chat.stock_bind import bind_stocks_from_chat, message_requests_data_ingest, should_run_chat_bootstrap
 from finagent.chat.store import ChatSession
 
 
@@ -34,3 +34,16 @@ def test_should_bootstrap_when_stock_mentioned_and_missing(monkeypatch):
     monkeypatch.setenv("FINAGENT_AUTO_INGEST_ON_NEW_CHAT", "true")
     session = ChatSession(id="s1", title="新对话", created_at="", updated_at="")
     assert should_run_chat_bootstrap(session, "002594", "看看比亚迪") is True
+
+
+def test_bind_from_company_name_without_sidebar():
+    session = ChatSession(id="s1", title="新对话", created_at="", updated_at="")
+    codes = bind_stocks_from_chat(session, "平安银行2025年净利润多少")
+    assert codes == ["000001"]
+    assert session.stock_codes == ["000001"]
+
+
+def test_should_bootstrap_on_financial_question(monkeypatch):
+    monkeypatch.setenv("FINAGENT_AUTO_INGEST_ON_NEW_CHAT", "true")
+    session = ChatSession(id="s1", title="新对话", created_at="", updated_at="", stock_codes=["000001"])
+    assert should_run_chat_bootstrap(session, ["000001"], "总资产多少") is True

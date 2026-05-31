@@ -43,6 +43,17 @@
           <label for="chatStockInput">股票（可多只）</label>
           <input id="chatStockInput" type="text" maxlength="120" placeholder="600519,比亚迪,300750" aria-label="股票代码或公司名称，逗号或空格分隔">
         </div>
+        <div class="rail-compose-field">
+          <label for="chatMaxSteps">思考步数（1–8）</label>
+          <input id="chatMaxSteps" type="number" min="1" max="8" step="1" value="4" aria-label="每轮对话 Agent 规划步数">
+        </div>
+        <div class="rail-compose-field">
+          <label for="chatAgentMode">对话模式</label>
+          <select id="chatAgentMode" aria-label="对话 Agent 模式">
+            <option value="loop">多轮思考（按需调工具）</option>
+            <option value="single">单次预取（更快）</option>
+          </select>
+        </div>
       </div>
 
       <div class="rail-segment" role="tablist">
@@ -142,7 +153,7 @@
         <div class="welcome-inner">
           <p class="welcome-eyebrow">A 股智能研究平台</p>
           <h1 class="welcome-title">从年报到多维度研报<br><span>一站式财务分析</span></h1>
-          <p class="welcome-lead">输入股票代码运行分析，或在对话里拖 PDF、绑定报告继续追问。所有结论可追溯至米筐数据与巨潮年报。</p>
+          <p class="welcome-lead">直接问公司名或指标即可（如「平安银行净利润」「比亚迪 PE」），系统会自动识别代码并入库；侧栏股票可选。也可拖 PDF、绑定报告追问。</p>
           <div class="welcome-actions">
             <button class="welcome-cta" type="button" id="welcomeChatBtn">开始对话</button>
             <button class="welcome-cta ghost" type="button" id="welcomeReportsBtn">浏览报告</button>
@@ -297,6 +308,17 @@
           <span>模型名称</span>
           <input id="settingsModel" type="text" placeholder="gpt-4.1-mini">
         </label>
+        <label class="settings-field">
+          <span>对话思考步数（1–8，仅 loop 模式）</span>
+          <input id="settingsChatMaxSteps" type="number" min="1" max="8" step="1" value="4">
+        </label>
+        <label class="settings-field">
+          <span>对话 Agent 模式</span>
+          <select id="settingsChatAgentMode">
+            <option value="loop">多轮思考（按需调工具）</option>
+            <option value="single">单次预取（更快）</option>
+          </select>
+        </label>
         <div class="settings-actions">
           <button class="ghost-btn" type="button" id="settingsTestBtn">测试连接</button>
           <button class="ghost-btn" type="button" id="settingsClearKeyBtn">清除 Key</button>
@@ -349,8 +371,8 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
   <script src="/assets/auth.js?v=20260531e"></script>
-  <script src="/assets/settings.js?v=20260531e"></script>
+  <script src="/assets/settings.js?v=20260531chatsteps"></script>
   <script src="/assets/app.js?v=20260531f"></script>
-  <script src="/assets/chat.js?v=20260531multistock"></script>
+  <script src="/assets/chat.js?v=20260531chatsteps"></script>
 </body>
 </html>

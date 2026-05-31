@@ -21,9 +21,26 @@ _METRIC_SPECS: list[tuple[tuple[str, ...], tuple[str, ...], str]] = [
         "经营现金流",
     ),
     (("净资产", "股东权益", "归属于母公司股东权益"), ("equity_parent_company",), "净资产"),
-    (("毛利率",), ("gross_margin",), "毛利率"),
+    (("毛利率",), ("gross_margin", "gross_profit_margin_ttm"), "毛利率"),
     (("净资产收益率", "roe"), ("roe", "roe_ttm"), "ROE"),
+    (
+        ("市盈率", "pe(ttm)", "pe ratio", "动态市盈率"),
+        ("pe_ratio_ttm",),
+        "市盈率",
+    ),
+    (("市净率", "pb(ttm)"), ("pb_ratio_ttm",), "市净率"),
+    (("市销率", "ps(ttm)"), ("ps_ratio_ttm",), "市销率"),
+    (("总市值", "市值"), ("market_cap",), "总市值"),
 ]
+
+_VALUATION_LABELS = frozenset({"市盈率", "市净率", "市销率", "总市值"})
+
+_FACTOR_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "市盈率": ("pe_ratio_ttm",),
+    "市净率": ("pb_ratio_ttm",),
+    "市销率": ("ps_ratio_ttm",),
+    "总市值": ("market_cap",),
+}
 
 _NARROW_HINTS = ("只要", "仅需", "仅", "就够", "别讲", "不要", "直接说", "直接给", "只说", "就答")
 _ROW_META_KEYS = ("year", "quarter", "report_year", "sec_name")
@@ -34,19 +51,80 @@ def narrow_answer_requested(query: str) -> bool:
     return any(h in q for h in _NARROW_HINTS)
 
 
+def _blob_has_pe(blob: str) -> bool:
+    if "市盈率" in blob or "pe(ttm)" in blob:
+        return True
+    return bool(re.search(r"(?<![a-z])pe(?![a-z])", blob))
+
+
 def resolve_focused_metrics(query: str, *, context: str = "") -> list[str]:
     """返回用户本轮关注的指标展示名（如「净利润」「总资产」），可多选。"""
-    blob = f"{context} {query}".strip().lower()
+    q = str(query or "").strip()
+    blob = f"{q} {context}".strip().lower()
     if not blob:
         return []
     found: list[str] = []
+    if _blob_has_pe(blob):
+        found.append("市盈率")
     for hints, _fields, label in _METRIC_SPECS:
+        if label in found:
+            continue
         for hint in sorted(hints, key=len, reverse=True):
-            if hint.lower() in blob:
-                if label not in found:
-                    found.append(label)
-                break
+            hl = hint.lower()
+            if len(hl) <= 3 and hl in {"pe", "pb", "ps", "roe"}:
+                if not re.search(rf"(?<![a-z]){re.escape(hl)}(?![a-z])", blob):
+                    continue
+            elif hl not in blob:
+                continue
+            found.append(label)
+            break
     return found
+
+
+def is_valuation_focus(labels: list[str] | None) -> bool:
+    return bool(labels) and all(label in _VALUATION_LABELS for label in labels)
+
+
+def slim_factor_block(factor: dict[str, Any] | None, labels: list[str]) -> dict[str, Any]:
+    if not isinstance(factor, dict) or not factor:
+        return {}
+    if not labels:
+        return dict(factor)
+    keep: dict[str, Any] = {}
+    for label in labels:
+        for field in _FACTOR_FIELD_ALIASES.get(label, fields_for_metrics([label])):
+            if field in factor and factor[field] is not None:
+                keep[field] = factor[field]
+    return keep
+
+
+def extract_valuation_facts(
+    live_by_stock: dict[str, Any],
+    labels: list[str],
+    *,
+    sec_names: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    if not live_by_stock or not labels:
+        return None
+    rows: list[dict[str, Any]] = []
+    for code, live in live_by_stock.items():
+        if not isinstance(live, dict):
+            continue
+        factor = slim_factor_block(live.get("factor"), labels)
+        if not factor:
+            continue
+        rows.append(
+            {
+                "stock_code": code,
+                "sec_name": (sec_names or {}).get(code) or live.get("sec_name"),
+                "as_of": live.get("end_date") or live.get("as_of"),
+                "source": live.get("source"),
+                **factor,
+            }
+        )
+    if not rows:
+        return None
+    return {"metrics": labels, "stocks": rows}
 
 
 def fields_for_metrics(labels: list[str]) -> list[str]:

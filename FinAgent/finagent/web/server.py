@@ -134,6 +134,8 @@ class ChatMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=8000)
     stock_code: str | None = Field(default=None, pattern=r"^\d{6}$")
     stocks: str | None = Field(default=None, max_length=500)
+    chat_max_steps: int | None = Field(default=None, ge=1, le=8)
+    chat_agent_mode: str | None = Field(default=None, pattern=r"^(loop|single)$")
 
 
 class AttachReportRequest(BaseModel):
@@ -163,6 +165,8 @@ class SettingsUpdateRequest(BaseModel):
     openai_base_url: str | None = None
     openai_model: str | None = None
     clear_api_key: bool = False
+    chat_agent_mode: str | None = Field(default=None, pattern=r"^(loop|single)$")
+    chat_max_steps: int | None = Field(default=None, ge=1, le=8)
 
 
 def _list_reports_for_user(user_id: str, report_owners: ReportOwnerStore) -> list[dict[str, Any]]:
@@ -683,6 +687,8 @@ def create_app() -> FastAPI:
             clear_api_key=request.clear_api_key,
             openai_base_url=request.openai_base_url,
             openai_model=request.openai_model,
+            chat_agent_mode=request.chat_agent_mode,
+            chat_max_steps=request.chat_max_steps,
         )
         return {"settings": user_settings_store.to_public(user.id)}
 
@@ -793,7 +799,16 @@ def create_app() -> FastAPI:
                 session_store.save(session)
             _schedule_bootstrap_if_needed(session, codes)
         session = session_store.get(user.id, session_id) or session
-        reply = chat_turn(session, request.message)
+        from ..auth.user_settings import resolve_chat_agent_options
+
+        user_cfg = user_settings_store.load(user.id)
+        agent_opts = resolve_chat_agent_options(user_cfg)
+        reply = chat_turn(
+            session,
+            request.message,
+            max_steps=request.chat_max_steps or agent_opts["chat_max_steps"],
+            agent_mode=request.chat_agent_mode or agent_opts["chat_agent_mode"],
+        )
         disk = session_store.get(user.id, session_id)
         if disk and isinstance(disk.data_bootstrap, dict):
             session.data_bootstrap = disk.data_bootstrap

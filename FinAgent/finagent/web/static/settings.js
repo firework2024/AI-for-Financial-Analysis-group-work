@@ -10,6 +10,8 @@ function initSettingsElements() {
     apiKey: document.getElementById("settingsApiKey"),
     baseUrl: document.getElementById("settingsBaseUrl"),
     model: document.getElementById("settingsModel"),
+    chatMaxSteps: document.getElementById("settingsChatMaxSteps"),
+    chatAgentMode: document.getElementById("settingsChatAgentMode"),
     openBtn: document.getElementById("openSettingsBtn"),
     mobileOpenBtn: document.getElementById("mobileSettingsBtn"),
     railOpenBtn: document.getElementById("railSettingsBtn"),
@@ -96,6 +98,18 @@ async function settingsAuthFetch(path, options = {}) {
   return response.json();
 }
 
+function applyChatAgentSettings(settings) {
+  const steps = Number(settings?.chat_max_steps);
+  const mode = settings?.chat_agent_mode === "single" ? "single" : "loop";
+  const stepVal = Number.isFinite(steps) ? Math.max(1, Math.min(8, steps)) : 4;
+  [settingsEls.chatMaxSteps, document.getElementById("chatMaxSteps")].forEach((el) => {
+    if (el) el.value = String(stepVal);
+  });
+  [settingsEls.chatAgentMode, document.getElementById("chatAgentMode")].forEach((el) => {
+    if (el) el.value = mode;
+  });
+}
+
 async function loadSettingsForm() {
   ensureSettingsAuth();
   const payload = await settingsAuthFetch("/api/settings");
@@ -103,6 +117,7 @@ async function loadSettingsForm() {
   if (settingsEls.baseUrl) settingsEls.baseUrl.value = settings.openai_base_url || "";
   if (settingsEls.model) settingsEls.model.value = settings.openai_model || "";
   if (settingsEls.apiKey) settingsEls.apiKey.value = "";
+  applyChatAgentSettings(settings);
   renderSettingsStatus(settings);
   return settings;
 }
@@ -145,9 +160,12 @@ function closeSettingsModal() {
 async function saveSettings(event) {
   event.preventDefault();
   ensureSettingsAuth();
+  const steps = parseInt(settingsEls.chatMaxSteps?.value, 10);
   const body = {
     openai_base_url: settingsEls.baseUrl?.value?.trim() ?? "",
     openai_model: settingsEls.model?.value?.trim() ?? "",
+    chat_max_steps: Number.isFinite(steps) ? Math.max(1, Math.min(8, steps)) : 4,
+    chat_agent_mode: settingsEls.chatAgentMode?.value === "single" ? "single" : "loop",
   };
   const apiKey = settingsEls.apiKey?.value?.trim();
   if (apiKey) body.openai_api_key = apiKey;
@@ -156,8 +174,9 @@ async function saveSettings(event) {
     body: JSON.stringify(body),
   });
   if (settingsEls.apiKey) settingsEls.apiKey.value = "";
+  applyChatAgentSettings(payload.settings);
   renderSettingsStatus(payload.settings);
-  showSettingsMessage("API 设置已保存");
+  showSettingsMessage("设置已保存");
   closeSettingsModal();
 }
 
@@ -223,12 +242,50 @@ function bindSettingsEvents() {
   syncSettingsButtonsVisible(Boolean(window.Auth?.getAuthToken?.()));
 }
 
+let chatAgentSaveTimer = null;
+
+async function persistChatAgentSettingsFromRail() {
+  try {
+    ensureSettingsAuth();
+    const steps = parseInt(document.getElementById("chatMaxSteps")?.value, 10);
+    const mode = document.getElementById("chatAgentMode")?.value === "single" ? "single" : "loop";
+    await settingsAuthFetch("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        chat_max_steps: Number.isFinite(steps) ? Math.max(1, Math.min(8, steps)) : 4,
+        chat_agent_mode: mode,
+      }),
+    });
+  } catch (_e) {
+    /* 侧栏静默保存，失败下次发消息仍会带当前输入 */
+  }
+}
+
+function scheduleChatAgentSave() {
+  window.clearTimeout(chatAgentSaveTimer);
+  chatAgentSaveTimer = window.setTimeout(() => {
+    persistChatAgentSettingsFromRail();
+  }, 600);
+}
+
+function bindChatAgentRailControls() {
+  ["chatMaxSteps", "chatAgentMode"].forEach((id) => {
+    const el = document.getElementById(id);
+    el?.addEventListener("change", scheduleChatAgentSave);
+  });
+}
+
 window.openSettingsModal = openSettingsModal;
 window.loadUserSettings = loadSettingsForm;
+window.applyChatAgentSettings = applyChatAgentSettings;
 window.syncSettingsButtonsVisible = syncSettingsButtonsVisible;
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bindSettingsEvents);
+  document.addEventListener("DOMContentLoaded", () => {
+    bindSettingsEvents();
+    bindChatAgentRailControls();
+  });
 } else {
   bindSettingsEvents();
+  bindChatAgentRailControls();
 }

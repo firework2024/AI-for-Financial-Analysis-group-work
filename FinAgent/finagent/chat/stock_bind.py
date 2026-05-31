@@ -56,12 +56,18 @@ def _bootstrap_done_for_code(boot: dict[str, Any], code: str) -> bool:
     return False
 
 
+def query_implies_financial_data(query: str, session: ChatSession | None = None) -> bool:
+    from .intent import classify_query_intent
+
+    return classify_query_intent(query, session).want_data_api
+
+
 def should_run_chat_bootstrap(
     session: ChatSession,
     stock_codes: list[str] | str | None,
     query: str,
 ) -> bool:
-    """对话中识别到股票后，是否后台跑 bootstrap（支持多只）。"""
+    """识别到股票且本条像在问财务/估值时，自动后台入库（无需用户说「入库」或先填侧栏）。"""
     codes = normalize_stock_codes_list(
         stock_codes if isinstance(stock_codes, list) else None,
         single=stock_codes if isinstance(stock_codes, str) else None,
@@ -73,22 +79,17 @@ def should_run_chat_bootstrap(
     if boot.get("status") == "running":
         return False
 
-    if message_requests_data_ingest(query):
-        return True
-
-    mentioned = parse_stock_codes_text(query)
     pending = [c for c in codes if not _bootstrap_done_for_code(boot, c)]
     if not pending:
         return False
 
-    if mentioned:
-        if any(stock_data_missing(c) for c in pending):
-            return True
-        if any(h in str(query or "") for h in _STOCK_CONTEXT_HINTS):
-            return any(stock_data_missing(c) for c in pending)
+    if message_requests_data_ingest(query):
         return True
-
-    return any(stock_data_missing(c) for c in pending)
+    if parse_stock_codes_text(query):
+        return True
+    if query_implies_financial_data(query, session):
+        return True
+    return False
 
 
 def bind_stocks_from_chat(
@@ -98,13 +99,14 @@ def bind_stocks_from_chat(
     sidebar_code: str | None = None,
     sidebar_stocks: str | None = None,
 ) -> list[str]:
-    """从本条消息与侧栏解析股票列表并写入 session。"""
-    from .data_tools import sec_name_for_code
+    """从本条消息、侧栏、会话历史与巨潮简称解析股票并写入 session（无需用户先填侧栏）。"""
+    from .data_tools import resolve_stocks_for_chat, sec_name_for_code
 
-    codes = normalize_stock_codes_list(
-        parse_stock_codes_text(message),
-        single=sidebar_code,
-        text=sidebar_stocks,
+    codes = resolve_stocks_for_chat(
+        message,
+        session,
+        sidebar_code=sidebar_code,
+        sidebar_stocks=sidebar_stocks,
     )
     if not codes:
         return list(session.stock_codes or [])

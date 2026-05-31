@@ -11,7 +11,7 @@ from ..llm_settings import has_llm_api_key
 from ..pdf_text import extract_mda, extract_pdf_text
 from .data_tools import extract_stock_code, live_quote_available
 from .intent import QueryIntent, classify_query_intent, is_fundamental_narrative_hit
-from .metrics import filter_financial_rows
+from .metrics import is_valuation_focus, slim_factor_block
 from .tools import gather_tool_context
 from .knowledge_graph import build_graph_from_report, build_graph_from_text, query_graph
 from .rag import TextChunk, chunk_text, format_hits, search_chunks
@@ -349,11 +349,8 @@ def _hits_from_data_api(
             )
 
     labels = list((intent.focused_metrics if intent else None) or [])
-    narrow = bool(intent and intent.narrow_answer)
     annual = stored.get("annual_report") or {}
     financial = annual.get("financial_data") or []
-    if labels:
-        financial = filter_financial_rows(financial, labels)
     if not quote_primary and financial and (
         labels or _query_mentions_financials(query) or _query_mentions_annual(query)
     ):
@@ -373,7 +370,7 @@ def _hits_from_data_api(
                 }
             )
 
-    if not quote_primary and not (narrow or labels):
+    if not quote_primary:
         for index, item in enumerate(annual.get("mda_hits") or []):
             if not isinstance(item, dict):
                 continue
@@ -393,10 +390,8 @@ def _hits_from_data_api(
         labels or "pit_financials" in matched_keys or _query_mentions_financials(query)
     ):
         pit = stored.get("pit_financials_cache") or {}
-        pit_rows = pit.get("rows") or []
-        if labels:
-            pit_rows = filter_financial_rows(pit_rows, labels)
-        for index, row in enumerate(pit_rows[-4:]):
+        pit_rows = (pit.get("rows") or [])[-4:]
+        for index, row in enumerate(pit_rows):
             hits.append(
                 {
                     "source": "datastore:pit_financials",
@@ -418,7 +413,24 @@ def _hits_from_data_api(
         "benchmark_index": 0.58,
     }
     for key, base_score in meta_scores.items():
-        if labels and (narrow or len(labels) <= 2):
+        if key == "factor" and labels and is_valuation_focus(labels):
+            block = stored.get(key)
+            if isinstance(block, dict) and block:
+                slim = slim_factor_block(block, labels)
+                if slim:
+                    hits.append(
+                        {
+                            "source": "datastore:factor",
+                            "score": 0.9,
+                            "text": json.dumps(slim, ensure_ascii=False)[:900],
+                            "meta": {
+                                "kind": "factor",
+                                "stock_code": stock,
+                                "priority": "local_db",
+                                "focused_metrics": labels,
+                            },
+                        }
+                    )
             continue
         block = stored.get(key)
         if not isinstance(block, dict) or not block:
@@ -434,6 +446,68 @@ def _hits_from_data_api(
             }
         )
 
+    return hits
+
+
+def _hits_from_tools_payload(
+    tools: dict[str, Any] | None,
+    query: str,
+    *,
+    intent: QueryIntent | None = None,
+) -> list[dict[str, Any]]:
+    if not tools:
+        return []
+    hits: list[dict[str, Any]] = []
+    quote_primary = bool(intent and intent.quote_primary)
+    labels = list((intent.focused_metrics if intent else None) or [])
+    valuation = is_valuation_focus(labels)
+
+    for code, live in (tools.get("live_by_stock") or {}).items():
+        if not isinstance(live, dict):
+            continue
+        factor = live.get("factor") or {}
+        if valuation and labels:
+            factor = slim_factor_block(factor, labels)
+        if factor:
+            hits.append(
+                {
+                    "source": "datastore:factor",
+                    "score": 0.92,
+                    "text": json.dumps(
+                        {"stock_code": code, "sec_name": live.get("sec_name"), **factor},
+                        ensure_ascii=False,
+                    )[:900],
+                    "meta": {
+                        "kind": "factor",
+                        "stock_code": code,
+                        "priority": "local_db",
+                        "focused_metrics": labels,
+                    },
+                }
+            )
+        elif quote_primary:
+            api = {
+                "stock_code": code,
+                "stored": (tools.get("data_by_stock") or {}).get(code, {}).get("stored"),
+            }
+            hits.extend(
+                _hits_from_data_api(api, query, quote_primary=True, intent=intent)
+            )
+
+    for code, api in (tools.get("data_by_stock") or {}).items():
+        if not isinstance(api, dict):
+            continue
+        hits.extend(_hits_from_data_api(api, query, quote_primary=quote_primary, intent=intent))
+
+    if not hits and tools.get("data_api"):
+        hits.extend(
+            _hits_from_data_api(
+                tools.get("data_api"),
+                query,
+                quote_primary=quote_primary,
+                intent=intent,
+            )
+        )
     return hits
 
 
@@ -468,14 +542,13 @@ def _merge_retrieved_hits(
     *,
     max_total: int = 8,
     quote_primary: bool = False,
-    narrow_answer: bool = False,
 ) -> list[dict[str, Any]]:
-    if quote_primary or narrow_answer:
+    if quote_primary:
         rag_hits = [
             h
             for h in rag_hits
             if not is_fundamental_narrative_hit(str(h.get("text") or ""))
-        ][:3 if quote_primary else 2]
+        ][:3]
         for hit in data_hits:
             kind = (hit.get("meta") or {}).get("kind")
             if kind in {"technical", "factor", "price"}:
@@ -572,18 +645,15 @@ def _llm_answer(
     from ..llm import llm_text
 
     system = (
-        "你是 FinAgent 研究助手，像同事聊天一样回答，口语自然、别写成研报八股。"
-        "以 question 为中心作答；tools / retrieved_chunks / graph_hits 都是证据，由你判断哪些与问题相关，"
-        "不要机械堆砌无关的营收、毛利率、行业分段长文。"
-        "若 tools.intent.narrow_answer 为 true 或 tools.evidence_summary.financial_facts 存在："
-        "只答用户点名的指标（列年份+数值），禁止净息差/原因分析/反问还要哪个指标。"
-        "tools.intent 与 tools.answer_guidance 供你判断优先级；缺证据时再说明。"
-        "股价/收盘类：优先 tools.evidence_summary.quote 或 tools.live_data.quote.close（最近交易日收盘价），"
-        "严禁把 quote.prev_close 当成用户所问日的收盘价；有 close 时直接报数，勿让用户自己去炒股软件查。"
-        "财务/年报类：再用 data_api.annual_report、retrieved_chunks；二者与纯股价问题勿混用。"
-        "clock 与披露节奏一致；数字须来自上下文，禁止编造。"
-        "session.binding_warnings 勿混用其它公司股票数据。"
-        "不要输出 JSON，不要写「作为 AI」套话，不要给买卖建议。"
+        "你是 FinAgent 研究助手，像同事聊天：自然、直接，可简可详，由你根据用户语气决定。"
+        "question 是中心；tools、retrieved_chunks、graph_hits、evidence_summary 都是可选证据，"
+        "选用哪些、写多长、是否对比多只股票、是否解释原因，都由你判断——"
+        "tools.intent 与 tools.answer_guidance 只是「倾向」提示，不是命令清单。"
+        "evidence_summary.valuation_facts / financial_facts 有则优先引用，没有也可从其它字段推断。"
+        "股价：quote.close 表最近交易日收盘价；prev_close 是昨收，不要和用户问的「当天收盘」混用。"
+        "数字尽量来自上下文；缺数就说明缺口，不要编造。注意 session.binding_warnings 里的股票绑定。"
+        "若 tools 或 session 中已有 stock_codes（含从公司名解析），勿要求用户填写侧栏股票代码。"
+        "不要输出 JSON，不要套话，不要给买卖建议。"
     )
     payload = {
         "clock": _chat_clock(),
@@ -614,7 +684,21 @@ def sync_session_stock(session: ChatSession, stock_code: str | None) -> None:
     session.stock_code = code
 
 
-def chat_turn(session: ChatSession, message: str) -> ChatMessage:
+def chat_turn(
+    session: ChatSession,
+    message: str,
+    *,
+    max_steps: int | None = None,
+    agent_mode: str | None = None,
+) -> ChatMessage:
+    from .agent_loop import chat_agent_mode, chat_turn_loop
+
+    if chat_agent_mode(agent_mode) == "loop":
+        return chat_turn_loop(session, message, max_steps=max_steps)
+    return _chat_turn_single(session, message)
+
+
+def _chat_turn_single(session: ChatSession, message: str) -> ChatMessage:
     query = str(message or "").strip()
     if not query:
         raise ValueError("消息不能为空")
@@ -633,19 +717,14 @@ def chat_turn(session: ChatSession, message: str) -> ChatMessage:
 
     intent = classify_query_intent(query, session)
     tools_payload, tool_calls = gather_tool_context(query, session)
-    data_hits = _hits_from_data_api(
-        tools_payload.get("data_api"),
-        query,
-        quote_primary=intent.quote_primary,
-        intent=intent,
-    )
+    data_hits = _hits_from_tools_payload(tools_payload, query, intent=intent)
     web_hits = _hits_from_web_search(tools_payload.get("web_search"))
+    max_hits = 16 if len(tools_payload.get("stock_codes") or []) > 1 else 10
     hits = _merge_retrieved_hits(
         rag_hits,
         [*data_hits, *web_hits],
-        max_total=10,
+        max_total=max_hits,
         quote_primary=intent.quote_primary,
-        narrow_answer=intent.narrow_answer,
     )
 
     try:

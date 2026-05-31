@@ -1705,11 +1705,23 @@ body.auth-locked .shell { filter: blur(6px); pointer-events: none; user-select: 
 .modal-card-wide { width: min(560px, 100%); }
 .settings-form { padding: 0 20px 20px; display: grid; gap: 14px; }
 .settings-field { display: grid; gap: 6px; font-size: 0.82rem; color: var(--muted); }
-.settings-field input {
+.settings-field input,
+.settings-field select,
+.rail-compose-field select {
   border: 1px solid var(--border); border-radius: 12px;
   padding: 11px 12px; font-size: 0.92rem; background: var(--bg); color: var(--text);
 }
-.settings-field input:focus { outline: none; border-color: rgba(16,163,127,0.45); box-shadow: 0 0 0 3px rgba(16,163,127,0.1); }
+.settings-field input:focus,
+.settings-field select:focus,
+.rail-compose-field select:focus { outline: none; border-color: rgba(16,163,127,0.45); box-shadow: 0 0 0 3px rgba(16,163,127,0.1); }
+.rail-compose-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-size: 0.82rem;
+}
 .settings-status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 28px; }
 .settings-pill {
   display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px;
