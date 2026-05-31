@@ -120,7 +120,10 @@ class QueryIntent:
     def answer_guidance(self) -> str:
         """软提示：供模型参考，不强制裁剪回答结构与篇幅。"""
         if self.quote_primary and not (self.fundamentals or self.annual):
-            return "倾向：股价/收盘价问题可先看 quote；若用户同时要基本面，可再补年报。"
+            return (
+                "【硬性】用户只问股价/收盘价；用 tools.live_data.quote 或 evidence_summary.quotes，"
+                "一两句写日期、收盘价、涨跌幅；禁止写净利润、营收、现金流、MD&A、研报摘要。"
+            )
         if self.valuation_focus and self.focused_metrics:
             names = "、".join(self.focused_metrics)
             return (
@@ -135,12 +138,15 @@ class QueryIntent:
             )
         if self.focused_metrics:
             names = "、".join(self.focused_metrics)
-            return f"倾向：与 {names} 相关的证据优先；其它内容按用户兴趣决定是否展开。"
+            return (
+                f"【硬性】只回答与「{names}」直接相关的内容；"
+                f"禁止附带用户未问到的其它财务指标、股价或研报段落。"
+            )
         if self.annual or self.disclosure:
             return "倾向：披露/年报可看 annual_report 与 retrieved_chunks。"
         if self.fundamentals:
             return "倾向：财务问题可结合 data_api 与年报字段。"
-        return "按 question 自选最相关证据；详略与是否对比由你根据对话判断。"
+        return "【硬性】只回答 question 直接问到的内容；未提及的指标、章节、背景数据一律不要写。"
 
 
 def _metric_context_from_session(session: Any | None, query: str) -> str:
@@ -157,25 +163,48 @@ def _metric_context_from_session(session: Any | None, query: str) -> str:
     return " ".join(parts[-3:])
 
 
+def _query_has_quote_intent(q: str) -> bool:
+    ql = str(q or "").lower()
+    return any(h in ql for h in _QUOTE_HINTS) or (
+        "最近" in q and any(h in q for h in ("价", "股价", "行情", "收盘"))
+    )
+
+
 def classify_query_intent(query: str, session: Any | None = None) -> QueryIntent:
     q = str(query or "").strip()
     ql = q.lower()
-    ctx = _metric_context_from_session(session, q)
-    focused = resolve_focused_metrics(q, context="" if resolve_focused_metrics(q) else ctx)
-    keys = _select_data_keys(f"{ctx} {q}".strip() if ctx else q)
-    narrow = narrow_answer_requested(q)
-    has_quote = any(h in ql for h in _QUOTE_HINTS) or (
-        "最近" in q and any(h in q for h in ("价", "股价", "行情", "收盘"))
-    )
+    has_quote = _query_has_quote_intent(q)
     has_fund = any(h in ql for h in _FUNDAMENTAL_HINTS)
+
+    # 会话上下文仅用于「总资产」「他们的 PE」等短追问；勿让上轮财报话题污染「股价」
+    ctx = _metric_context_from_session(session, q) if session else ""
+    use_ctx_metrics = (
+        bool(ctx)
+        and not has_quote
+        and not has_fund
+        and len(q) <= 20
+        and not narrow_answer_requested(q)
+    )
+    focused_from_q = resolve_focused_metrics(q)
+    focused = focused_from_q or (
+        resolve_focused_metrics(q, context=ctx) if use_ctx_metrics else []
+    )
+
+    keys = _select_data_keys(q)
+    narrow = narrow_answer_requested(q)
     annual = _mentions_annual(q) or extract_report_year(q) is not None
     disclosure = any(h in q for h in ("公告", "披露", "巨潮", "合规"))
     overview = any(h in ql for h in _OVERVIEW_HINTS)
-    fundamentals = has_fund or _mentions_financials(q) or "pit_financials" in keys
+    fundamentals = has_fund or _mentions_financials(q) or (
+        "pit_financials" in keys and not has_quote
+    )
 
     quote_primary = has_quote and not (fundamentals or annual or overview)
-    if not quote_primary and has_quote and len(q) <= 12 and not fundamentals:
+    if has_quote and len(q) <= 12 and not has_fund and not annual and "基本面" not in ql:
         quote_primary = True
+        if not has_fund:
+            fundamentals = False
+            focused = focused_from_q
 
     return QueryIntent(
         quote_primary=quote_primary,

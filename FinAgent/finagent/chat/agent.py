@@ -10,6 +10,12 @@ from typing import Any
 from ..llm_settings import has_llm_api_key
 from ..pdf_text import extract_mda, extract_pdf_text
 from .data_tools import extract_stock_code, live_quote_available
+from .evidence_filter import (
+    filter_graph_hits,
+    filter_retrieved_hits,
+    prune_tools_payload,
+    rag_top_k_for_intent,
+)
 from .intent import QueryIntent, classify_query_intent, is_fundamental_narrative_hit
 from .metrics import is_valuation_focus, slim_factor_block
 from .tools import gather_tool_context
@@ -406,6 +412,26 @@ def _hits_from_data_api(
                 }
             )
 
+    if quote_primary:
+        tech = stored.get("technical")
+        if isinstance(tech, dict) and tech.get("latest_close") is not None:
+            hits.append(
+                {
+                    "source": "datastore:technical",
+                    "score": 0.85,
+                    "text": json.dumps(
+                        {
+                            k: tech[k]
+                            for k in ("latest_close", "return_20d", "return_60d", "rsi_14")
+                            if tech.get(k) is not None
+                        },
+                        ensure_ascii=False,
+                    )[:900],
+                    "meta": {"kind": "technical", "stock_code": stock, "priority": "local_db"},
+                }
+            )
+        return hits
+
     meta_scores = {
         "technical": 0.68,
         "factor": 0.66,
@@ -645,12 +671,12 @@ def _llm_answer(
     from ..llm import llm_text
 
     system = (
-        "你是 FinAgent 研究助手，像同事聊天：自然、直接，可简可详，由你根据用户语气决定。"
-        "question 是中心；tools、retrieved_chunks、graph_hits、evidence_summary 都是可选证据，"
-        "选用哪些、写多长、是否对比多只股票、是否解释原因，都由你判断——"
-        "tools.intent 与 tools.answer_guidance 只是「倾向」提示，不是命令清单。"
-        "evidence_summary.valuation_facts / financial_facts 有则优先引用，没有也可从其它字段推断。"
-        "股价：quote.close 表最近交易日收盘价；prev_close 是昨收，不要和用户问的「当天收盘」混用。"
+        "你是 FinAgent 研究助手，像同事聊天：自然、直接。"
+        "【硬性】只回答 question 直接问到的内容；禁止附带用户未提及的指标、章节、背景数字。"
+        "tools.answer_guidance 与 tools.intent 必须遵守；retrieved_chunks 里与问题无关的片段一律忽略。"
+        "evidence_summary 有对应字段才引用；勿从其它字段「顺便」补充未问到的数据。"
+        "股价：quote.close 为最近交易日收盘价；prev_close 是昨收。"
+        "intent.quote_primary 时只答行情（日期、收盘价、涨跌幅），勿写净利润、营收、MD&A。"
         "数字尽量来自上下文；缺数就说明缺口，不要编造。注意 session.binding_warnings 里的股票绑定。"
         "若 tools 或 session 中已有 stock_codes（含从公司名解析），勿要求用户填写侧栏股票代码。"
         "不要输出 JSON，不要套话，不要给买卖建议。"
@@ -712,19 +738,35 @@ def _chat_turn_single(session: ChatSession, message: str) -> ChatMessage:
 
     chunks = _chunks_for_retrieval(session)
     watch_codes = list(session.stock_codes or []) or ([session.stock_code] if session.stock_code else [])
-    rag_hits = format_hits(search_chunks(chunks, query, top_k=6, stock_code=session.stock_code, stock_codes=watch_codes))
-    graph_hits = query_graph(session.knowledge_graph, query, limit=8)
-
     intent = classify_query_intent(query, session)
+    rag_hits = format_hits(
+        search_chunks(
+            chunks,
+            query,
+            top_k=rag_top_k_for_intent(intent),
+            stock_code=session.stock_code,
+            stock_codes=watch_codes,
+        ),
+    )
+    graph_hits = filter_graph_hits(
+        query_graph(session.knowledge_graph, query, limit=8),
+        intent,
+    )
+
     tools_payload, tool_calls = gather_tool_context(query, session)
+    tools_payload = prune_tools_payload(tools_payload, intent) or tools_payload
     data_hits = _hits_from_tools_payload(tools_payload, query, intent=intent)
     web_hits = _hits_from_web_search(tools_payload.get("web_search"))
     max_hits = 16 if len(tools_payload.get("stock_codes") or []) > 1 else 10
-    hits = _merge_retrieved_hits(
-        rag_hits,
-        [*data_hits, *web_hits],
-        max_total=max_hits,
-        quote_primary=intent.quote_primary,
+    hits = filter_retrieved_hits(
+        _merge_retrieved_hits(
+            rag_hits,
+            [*data_hits, *web_hits],
+            max_total=max_hits,
+            quote_primary=intent.quote_primary,
+        ),
+        intent,
+        query=query,
     )
 
     try:

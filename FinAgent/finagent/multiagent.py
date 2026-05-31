@@ -4,11 +4,12 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
 from .cninfo import default_as_of, normalize_stock_code, to_order_book_id
+from .concurrency import env_flag, finagent_max_workers, parallel_map
 from .env import get_env, load_dotenv
 from .llm import llm_json, llm_text
 from .chart_catalog import MARKET_TECH_SECTION
@@ -265,26 +266,96 @@ def data_executor_agent(
     available_factors = set(rqdatac.get_all_factor_names())
     factors = [name for name in FACTOR_CANDIDATES if name in available_factors]
 
-    price = rqdatac.get_price(
-        order_book_id,
-        start_date=start_date,
-        end_date=end_date,
-        frequency="1d",
-        fields=["open", "high", "low", "close", "volume", "total_turnover"],
+    rq_tasks: dict[str, Any] = {
+        "price": lambda: rqdatac.get_price(
+            order_book_id,
+            start_date=start_date,
+            end_date=end_date,
+            frequency="1d",
+            fields=["open", "high", "low", "close", "volume", "total_turnover"],
+        ),
+        "turnover": lambda: _safe_rq_call(
+            "get_turnover_rate",
+            lambda: rqdatac.get_turnover_rate(order_book_id, start_date=start_date, end_date=end_date),
+        ),
+        "capital": lambda: _safe_rq_call(
+            "get_capital_flow",
+            lambda: rqdatac.get_capital_flow(order_book_id, start_date=start_date, end_date=end_date),
+        ),
+        "price_change": lambda: _safe_rq_call(
+            "get_price_change_rate",
+            lambda: rqdatac.get_price_change_rate(order_book_id, start_date=start_date, end_date=end_date),
+        ),
+        "margin": lambda: _safe_rq_call(
+            "get_securities_margin",
+            lambda: rqdatac.get_securities_margin(order_book_id, start_date=start_date, end_date=end_date),
+        ),
+        "dividend": lambda: _safe_rq_call(
+            "get_dividend",
+            lambda: rqdatac.get_dividend(order_book_id, start_date=fundamentals_start, end_date=end_date),
+        ),
+        "shares": lambda: _safe_rq_call(
+            "get_shares",
+            lambda: rqdatac.get_shares(order_book_id, start_date=fundamentals_start, end_date=end_date),
+        ),
+        "suspended": lambda: _safe_rq_call(
+            "is_suspended",
+            lambda: rqdatac.is_suspended(order_book_id, start_date=start_date, end_date=end_date),
+        ),
+        "st_stock": lambda: _safe_rq_call(
+            "is_st_stock",
+            lambda: rqdatac.is_st_stock(order_book_id, start_date=start_date, end_date=end_date),
+        ),
+        "industry": lambda: _safe_rq_call(
+            "get_instrument_industry",
+            lambda: rqdatac.get_instrument_industry(order_book_id, source="citics_2019", level=1, date=end_date),
+        ),
+        "interbank_rate": lambda: _safe_rq_call(
+            "get_interbank_offered_rate",
+            lambda: rqdatac.get_interbank_offered_rate(start_date=macro_start, end_date=end_date),
+        ),
+        "yield_curve": lambda: _safe_rq_call(
+            "get_yield_curve",
+            lambda: rqdatac.get_yield_curve(start_date=macro_start, end_date=end_date),
+        ),
+    }
+    if factors:
+        rq_tasks["factor"] = lambda: rqdatac.get_factor(
+            order_book_id, factors, start_date=end_date, end_date=end_date
+        )
+        rq_tasks["factor_history"] = lambda: rqdatac.get_factor(
+            order_book_id, factors, start_date=start_date, end_date=end_date
+        )
+
+    rq_raw = parallel_map(
+        rq_tasks,
+        max_workers=finagent_max_workers(),
+        parallel=env_flag("FINAGENT_RQDATA_PARALLEL", default=True),
     )
-    turnover = _safe_rq_call("get_turnover_rate", lambda: rqdatac.get_turnover_rate(order_book_id, start_date=start_date, end_date=end_date))
-    capital = _safe_rq_call("get_capital_flow", lambda: rqdatac.get_capital_flow(order_book_id, start_date=start_date, end_date=end_date))
-    price_change = _safe_rq_call("get_price_change_rate", lambda: rqdatac.get_price_change_rate(order_book_id, start_date=start_date, end_date=end_date))
-    margin = _safe_rq_call("get_securities_margin", lambda: rqdatac.get_securities_margin(order_book_id, start_date=start_date, end_date=end_date))
-    dividend = _safe_rq_call("get_dividend", lambda: rqdatac.get_dividend(order_book_id, start_date=fundamentals_start, end_date=end_date))
-    shares = _safe_rq_call("get_shares", lambda: rqdatac.get_shares(order_book_id, start_date=fundamentals_start, end_date=end_date))
-    suspended = _safe_rq_call("is_suspended", lambda: rqdatac.is_suspended(order_book_id, start_date=start_date, end_date=end_date))
-    st_stock = _safe_rq_call("is_st_stock", lambda: rqdatac.is_st_stock(order_book_id, start_date=start_date, end_date=end_date))
-    industry = _safe_rq_call("get_instrument_industry", lambda: rqdatac.get_instrument_industry(order_book_id, source="citics_2019", level=1, date=end_date))
-    interbank_rate = _safe_rq_call("get_interbank_offered_rate", lambda: rqdatac.get_interbank_offered_rate(start_date=macro_start, end_date=end_date))
-    yield_curve = _safe_rq_call("get_yield_curve", lambda: rqdatac.get_yield_curve(start_date=macro_start, end_date=end_date))
-    factor = rqdatac.get_factor(order_book_id, factors, start_date=end_date, end_date=end_date) if factors else pd.DataFrame()
-    factor_history = rqdatac.get_factor(order_book_id, factors, start_date=start_date, end_date=end_date) if factors else pd.DataFrame()
+
+    def _rq_frame(key: str) -> pd.DataFrame:
+        value = rq_raw.get(key)
+        if isinstance(value, BaseException):
+            print(f"[rqdatac] {key} skipped: {type(value).__name__}: {value}")
+            return pd.DataFrame()
+        if value is None:
+            return pd.DataFrame()
+        return value if isinstance(value, pd.DataFrame) else pd.DataFrame()
+
+    price = _rq_frame("price")
+    turnover = _rq_frame("turnover")
+    capital = _rq_frame("capital")
+    price_change = _rq_frame("price_change")
+    margin = _rq_frame("margin")
+    dividend = _rq_frame("dividend")
+    shares = _rq_frame("shares")
+    suspended = _rq_frame("suspended")
+    st_stock = _rq_frame("st_stock")
+    industry = _rq_frame("industry")
+    interbank_rate = _rq_frame("interbank_rate")
+    yield_curve = _rq_frame("yield_curve")
+    factor = _rq_frame("factor")
+    factor_history = _rq_frame("factor_history")
 
     frames = {
         "price": _flatten_frame(price),
@@ -357,7 +428,7 @@ def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> Non
             from .cninfo import default_as_of
             from .rqdata_client import fetch_financials
 
-            report_year = int((annual or {}).get("report_year") or default_as_of().year)
+            report_year = int((annual or {}).get("report_year") or default_as_of(None).year)
             fetched = fetch_financials(stock_code, report_year, years=3)
             payload["pit_financials"] = {
                 "rows": fetched.rows,
@@ -389,13 +460,29 @@ def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> Non
 
 
 def section_writer_agents(*, plan: dict[str, Any], data: dict[str, Any], charts: dict[str, str]) -> dict[str, str]:
-    sections = {}
     specs = plan.get("sections") if isinstance(plan.get("sections"), list) else []
-    for spec in specs:
+    if not specs:
+        return {}
+
+    def _write_spec(spec: dict[str, Any]) -> tuple[str, str]:
         name = str(spec.get("name") or "分析章节")
         agent = str(spec.get("agent") or "section_writer")
         prompt_data = _compact_data_for_prompt(data, charts, name)
-        sections[name] = _write_section(agent=agent, section_name=name, data=prompt_data)
+        return name, _write_section(agent=agent, section_name=name, data=prompt_data)
+
+    parallel = bool(get_env("OPENAI_API_KEY")) and env_flag("FINAGENT_SECTION_PARALLEL", default=True)
+    if not parallel or len(specs) == 1:
+        return {name: content for name, content in (_write_spec(spec) for spec in specs)}
+
+    tasks = {str(spec.get("name") or f"section_{i}"): (lambda sp=spec: _write_spec(sp)) for i, spec in enumerate(specs)}
+    results = parallel_map(tasks, max_workers=finagent_max_workers(), parallel=True)
+    sections: dict[str, str] = {}
+    for key, result in results.items():
+        if isinstance(result, BaseException):
+            sections[key] = normalize_section_text(f"本节生成失败：{type(result).__name__}", key)
+            continue
+        name, content = result
+        sections[name] = content
     return sections
 
 
@@ -478,16 +565,16 @@ def revise_sections_with_validation(
     if not get_env("OPENAI_API_KEY") or not (feedback or action_items or has_relevance_rewrite):
         return sections
     revised = dict(sections)
-    for name, content in sections.items():
+    rewrite_jobs: dict[str, Callable[[], tuple[str, str]]] = {}
+
+    def _revise_one(name: str, content: str) -> tuple[str, str]:
         section_notes = _string_list(feedback.get(name))
         section_relevance = relevance.get(name) if isinstance(relevance.get(name), dict) else {}
         if section_relevance.get("decision") == "rewrite":
             section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
-        if not section_notes and not action_items:
-            continue
         prompt_data = _compact_data_for_prompt(data, charts, name)
         try:
-            revised[name] = normalize_section_text(
+            text = normalize_section_text(
                 llm_text(
                     f"你是 revise_agent。请根据验证 Agent 的意见，重写《{name}》章节。"
                     "只能使用 JSON 中已有数据；不要新增未采集来源；不要给买卖建议。"
@@ -514,8 +601,33 @@ def revise_sections_with_validation(
                 ),
                 name,
             )
+            return name, text
         except Exception:
-            revised[name] = normalize_section_text(content, name)
+            return name, normalize_section_text(content, name)
+
+    for name, content in sections.items():
+        section_notes = _string_list(feedback.get(name))
+        section_relevance = relevance.get(name) if isinstance(relevance.get(name), dict) else {}
+        if section_relevance.get("decision") == "rewrite":
+            section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
+        if not section_notes and not action_items:
+            continue
+        rewrite_jobs[name] = lambda n=name, c=content: _revise_one(n, c)
+
+    if not rewrite_jobs:
+        return revised
+    if len(rewrite_jobs) == 1 or not env_flag("FINAGENT_SECTION_PARALLEL", default=True):
+        for name, fn in rewrite_jobs.items():
+            key, text = fn()
+            revised[key] = text
+        return revised
+
+    for name, result in parallel_map(rewrite_jobs, max_workers=finagent_max_workers(), parallel=True).items():
+        if isinstance(result, BaseException):
+            revised[name] = normalize_section_text(sections.get(name, ""), name)
+        else:
+            key, text = result
+            revised[key] = text
     return revised
 
 

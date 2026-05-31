@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..cninfo import default_as_of, download_report, fetch_annual_reports, latest_annual_report, normalize_stock_code
+from ..concurrency import env_flag, finagent_max_workers, parallel_map
 from ..datastore.snapshot_merge import market_snapshot_is_stale
 from ..datastore.query import (
     _OVERVIEW_HINTS,
@@ -19,8 +20,10 @@ from ..datastore.query import (
 from .data_tools import fetch_market_snapshot, needs_live_data
 from .intent import classify_query_intent
 
-# 新对话一键入库：行情优先（先可用），年报最慢放最后
+# 新对话一键入库：行情 + PIT 可并行，年报（PDF）放最后
 BOOTSTRAP_GAPS = ("market_snapshot", "pit_financials", "annual_report")
+BOOTSTRAP_PARALLEL_GAPS = frozenset({"market_snapshot", "pit_financials"})
+FAST_INGEST_ORDER = ("market_snapshot", "pit_financials", "annual_report")
 
 _GAP_LABELS = {
     "market_snapshot": "行情快照",
@@ -36,41 +39,42 @@ def chat_bootstrap_enabled() -> bool:
     return flag not in {"0", "false", "no", "off"}
 
 
+def bootstrap_lookback_days() -> int:
+    from ..env import get_env
+
+    raw = str(get_env("FINAGENT_BOOTSTRAP_LOOKBACK_DAYS", "90") or "90").strip()
+    try:
+        return max(30, min(int(raw), 365))
+    except ValueError:
+        return 90
+
+
+def ingest_parallel_enabled() -> bool:
+    return env_flag("FINAGENT_INGEST_PARALLEL", default=True)
+
+
 def bootstrap_stock_data(
     stock_code: str,
     *,
     workdir: Path | None = None,
     report_year: int | None = None,
-    lookback_days: int = 120,
+    lookback_days: int | None = None,
     on_progress: Any | None = None,
 ) -> dict[str, Any]:
     """新对话预加载：行情 + PIT + 年报写入 SQLite（已存在步骤会跳过）。"""
     code = normalize_stock_code(stock_code)
     root = workdir or Path(".")
     year = report_year if report_year is not None else default_as_of(None).year - 1
-    actions: list[dict[str, Any]] = []
-    total = len(BOOTSTRAP_GAPS)
-
-    for index, gap in enumerate(BOOTSTRAP_GAPS, start=1):
-        label = _GAP_LABELS.get(gap, gap)
-        if on_progress:
-            on_progress(
-                gap=gap,
-                index=index,
-                total=total,
-                message=f"正在入库 {label}（{index}/{total}）…",
-            )
-        try:
-            if gap == "annual_report":
-                result = ingest_annual_report(code, report_year=year, workdir=root)
-            elif gap == "pit_financials":
-                result = ingest_pit_financials(code, report_year=year)
-            else:
-                result = ingest_market_snapshot(code, lookback_days=lookback_days)
-            actions.append({"gap": gap, **result})
-        except Exception as exc:
-            actions.append({"gap": gap, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
-
+    lb = lookback_days if lookback_days is not None else bootstrap_lookback_days()
+    actions = _run_ingest_plan(
+        code,
+        BOOTSTRAP_GAPS,
+        workdir=root,
+        report_year=year,
+        lookback_days=lb,
+        on_progress=on_progress,
+        parallel_prefetch=BOOTSTRAP_PARALLEL_GAPS,
+    )
     ok_count = sum(1 for item in actions if item.get("ok"))
     sec_name = next((a.get("sec_name") for a in actions if a.get("sec_name")), None)
     return {
@@ -131,21 +135,16 @@ def ensure_stored_data(stock_code: str, query: str, *, workdir: Path | None = No
         return None
 
     root = workdir or Path(".")
-    actions: list[dict[str, Any]] = []
-    ordered = [g for g in ("annual_report", "pit_financials", "market_snapshot") if g in gaps]
-
-    for gap in ordered:
-        try:
-            if gap == "annual_report":
-                result = ingest_annual_report(code, report_year=extract_report_year(query), workdir=root)
-            elif gap == "pit_financials":
-                result = ingest_pit_financials(code, report_year=extract_report_year(query))
-            else:
-                result = ingest_market_snapshot(code)
-            actions.append({"gap": gap, **result})
-        except Exception as exc:
-            actions.append({"gap": gap, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
-
+    year = extract_report_year(query)
+    ordered = [g for g in FAST_INGEST_ORDER if g in gaps]
+    actions = _run_ingest_plan(
+        code,
+        ordered,
+        workdir=root,
+        report_year=year,
+        lookback_days=bootstrap_lookback_days(),
+        parallel_prefetch=BOOTSTRAP_PARALLEL_GAPS,
+    )
     ok_count = sum(1 for item in actions if item.get("ok"))
     return {
         "stock_code": code,
@@ -201,8 +200,6 @@ def ingest_annual_report(
     from ..datastore.db import get_annual_report, save_annual_report_record
     from ..datastore.annual_text import mda_storage_payload
     from ..fallback import apply_financial_fallbacks
-    from ..pdf_text import extract_mda, extract_pdf_text
-    from ..rqdata_client import fetch_financials
 
     code = normalize_stock_code(stock_code)
     existing = get_annual_report(code, report_year=report_year) if report_year else get_annual_report(code)
@@ -221,16 +218,25 @@ def ingest_annual_report(
         raise RuntimeError(f"无法识别年报年份: {report.title}")
 
     root = workdir or Path(".")
-    pdf_path = download_report(report, root / "annual_reports", use_cache=True)
-    full_text = extract_pdf_text(pdf_path)
-    mda = extract_mda(full_text)
-    fetched = fetch_financials(code, report.report_year, years=3)
-    financial_data = apply_financial_fallbacks(fetched.rows, full_text)
+    parallel = ingest_parallel_enabled()
+    if parallel:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pdf_future = pool.submit(_download_and_parse_pdf, report, root)
+            fin_future = pool.submit(_financial_rows_for_annual, code, int(report.report_year))
+            pdf_path, full_text, mda = pdf_future.result()
+            fin_rows, order_book_id = fin_future.result()
+    else:
+        pdf_path, full_text, mda = _download_and_parse_pdf(report, root)
+        fin_rows, order_book_id = _financial_rows_for_annual(code, int(report.report_year))
+
+    financial_data = apply_financial_fallbacks(fin_rows, full_text)
     mda_payload = mda_storage_payload(mda)
     save_annual_report_record(
         stock_code=report.stock_code,
         report_year=report.report_year,
-        order_book_id=fetched.order_book_id,
+        order_book_id=order_book_id,
         sec_name=report.sec_name,
         title=report.title,
         pdf_path=str(pdf_path),
@@ -246,6 +252,98 @@ def ingest_annual_report(
         "pdf_path": str(pdf_path),
         "financial_rows": len(financial_data),
     }
+
+
+def _run_ingest_plan(
+    code: str,
+    gaps: tuple[str, ...] | list[str],
+    *,
+    workdir: Path,
+    report_year: int | None,
+    lookback_days: int,
+    on_progress: Any | None = None,
+    parallel_prefetch: frozenset[str] | set[str] | None = None,
+) -> list[dict[str, Any]]:
+    gap_list = list(gaps)
+    total = len(gap_list)
+    actions: list[dict[str, Any]] = []
+    prefetch = set(parallel_prefetch or ()) if ingest_parallel_enabled() else set()
+    batch = [g for g in gap_list if g in prefetch]
+    tail = [g for g in gap_list if g not in prefetch]
+
+    def _emit(gap: str, index: int) -> None:
+        if on_progress:
+            label = _GAP_LABELS.get(gap, gap)
+            on_progress(
+                gap=gap,
+                index=index,
+                total=total,
+                message=f"正在入库 {label}（{index}/{total}）…",
+            )
+
+    if batch:
+        tasks = {
+            gap: (lambda g=gap: _ingest_gap(code, g, workdir=workdir, report_year=report_year, lookback_days=lookback_days))
+            for gap in batch
+        }
+        for gap in batch:
+            _emit(gap, gap_list.index(gap) + 1)
+        results = parallel_map(tasks, max_workers=min(len(batch), finagent_max_workers()))
+        for gap in batch:
+            actions.append(_action_from_gap_result(gap, results.get(gap)))
+    for offset, gap in enumerate(tail):
+        _emit(gap, len(batch) + offset + 1)
+        actions.append(_action_from_gap_result(gap, _ingest_gap(code, gap, workdir=workdir, report_year=report_year, lookback_days=lookback_days)))
+    return actions
+
+
+def _ingest_gap(
+    code: str,
+    gap: str,
+    *,
+    workdir: Path,
+    report_year: int | None,
+    lookback_days: int,
+) -> dict[str, Any]:
+    if gap == "annual_report":
+        return ingest_annual_report(code, report_year=report_year, workdir=workdir)
+    if gap == "pit_financials":
+        return ingest_pit_financials(code, report_year=report_year)
+    if gap == "market_snapshot":
+        return ingest_market_snapshot(code, lookback_days=lookback_days)
+    raise ValueError(f"unknown gap: {gap}")
+
+
+def _action_from_gap_result(gap: str, result: Any) -> dict[str, Any]:
+    if isinstance(result, BaseException):
+        return {"gap": gap, "ok": False, "error": f"{type(result).__name__}: {result}"}
+    if isinstance(result, dict):
+        return {"gap": gap, **result}
+    return {"gap": gap, "ok": False, "error": "unknown result"}
+
+
+def _download_and_parse_pdf(report: Any, workdir: Path) -> tuple[Path, str, Any]:
+    from ..pdf_text import extract_mda, extract_pdf_text
+
+    pdf_path = download_report(report, workdir / "annual_reports", use_cache=True)
+    full_text = extract_pdf_text(pdf_path)
+    mda = extract_mda(full_text)
+    return pdf_path, full_text, mda
+
+
+def _financial_rows_for_annual(stock_code: str, report_year: int) -> tuple[list[dict[str, Any]], str]:
+    from ..cninfo import to_order_book_id
+    from ..datastore.db import get_pit_financials
+    from ..rqdata_client import fetch_financials
+
+    code = normalize_stock_code(stock_code)
+    pit = get_pit_financials(code)
+    rows = (pit or {}).get("rows") if isinstance(pit, dict) else None
+    if rows and int((pit or {}).get("report_year") or report_year) == int(report_year):
+        obid = str((pit or {}).get("order_book_id") or to_order_book_id(code))
+        return list(rows), obid
+    fetched = fetch_financials(code, report_year, years=3)
+    return fetched.rows, fetched.order_book_id
 
 
 def _resolve_annual_report(stock_code: str, report_year: int | None, as_of):
@@ -339,22 +437,18 @@ def fetch_stock_data_full(
     code = normalize_stock_code(stock_code)
     root = workdir or Path(".")
     year = report_year or extract_report_year("") or (default_as_of(None).year - 1)
-    actions: list[dict[str, Any]] = []
-    for gap in ("annual_report", "pit_financials", "market_snapshot"):
-        try:
-            if gap == "annual_report":
-                result = ingest_annual_report(code, report_year=year, workdir=root)
-            elif gap == "pit_financials":
-                result = ingest_pit_financials(code, report_year=year)
-            else:
-                result = ingest_market_snapshot(code)
-            actions.append({"gap": gap, **result})
-        except Exception as exc:
-            actions.append({"gap": gap, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+    actions = _run_ingest_plan(
+        code,
+        FAST_INGEST_ORDER,
+        workdir=root,
+        report_year=year,
+        lookback_days=bootstrap_lookback_days(),
+        parallel_prefetch=BOOTSTRAP_PARALLEL_GAPS,
+    )
     ok_count = sum(1 for item in actions if item.get("ok"))
     return {
         "stock_code": code,
-        "requested_gaps": [gap for gap in ("annual_report", "pit_financials", "market_snapshot")],
+        "requested_gaps": list(FAST_INGEST_ORDER),
         "actions": actions,
         "ok": ok_count > 0,
         "message": _ingest_message(actions),

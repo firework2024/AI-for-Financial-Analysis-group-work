@@ -6,6 +6,9 @@ const chatState = {
   activeSessionId: null,
   activeSession: null,
   sending: false,
+  bootstrapToastKeys: new Set(),
+  bootstrapModalDismissed: new Set(),
+  bootstrapModalEpoch: "",
 };
 
 const chatEls = {};
@@ -24,7 +27,6 @@ function initChatElements() {
     chatDropZone: document.getElementById("chatDropZone"),
     chatPdfInput: document.getElementById("chatPdfInput"),
     chatAttachReportBtn: document.getElementById("chatAttachReportBtn"),
-    chatAnalyzeBtn: document.getElementById("chatAnalyzeBtn"),
     chatStockInput: document.getElementById("chatStockInput"),
     chatMaxSteps: document.getElementById("chatMaxSteps"),
     chatAgentMode: document.getElementById("chatAgentMode"),
@@ -32,6 +34,10 @@ function initChatElements() {
     reportPickerModal: document.getElementById("reportPickerModal"),
     reportPickerList: document.getElementById("reportPickerList"),
     reportPickerClose: document.getElementById("reportPickerClose"),
+    bootstrapModal: document.getElementById("bootstrapModal"),
+    bootstrapModalMessage: document.getElementById("bootstrapModalMessage"),
+    bootstrapModalSpinner: document.getElementById("bootstrapModalSpinner"),
+    bootstrapModalDismiss: document.getElementById("bootstrapModalDismiss"),
   });
 }
 
@@ -129,15 +135,16 @@ function setChatThinking(active) {
   }
 }
 
-function renderChatMessages(session) {
-  if (!chatEls.chatMessages) return;
-  const messages = session?.messages || [];
-  if (!messages.length) {
-    chatEls.chatMessages.innerHTML = `
+function renderChatWelcomeHtml(session) {
+  const bound = reportLabelForSession(session);
+  const lead = bound
+    ? `已绑定「${escapeHtml(bound.title)}」，可直接追问结论、风险点、财务指标或股价。`
+    : "上传 PDF、绑定历史报告，或直接提问。FinAgent 会结合上下文给出可追溯的分析。";
+  return `
       <div class="chat-welcome-card">
         <img class="chat-welcome-icon" src="/assets/logo.png" alt="">
         <h3>有什么可以帮你？</h3>
-        <p>上传 PDF、绑定历史报告，或直接提问。FinAgent 会结合上下文给出可追溯的分析。</p>
+        <p>${lead}</p>
         <div class="chat-suggestions">
           <button class="chat-suggestion" type="button" data-prompt="这份报告的核心风险是什么？">
             <span class="chat-suggestion-label">解读报告核心风险</span>
@@ -153,6 +160,13 @@ function renderChatMessages(session) {
           </button>
         </div>
       </div>`;
+}
+
+function renderChatMessages(session) {
+  if (!chatEls.chatMessages) return;
+  const messages = messagesForDisplay(session);
+  if (!messages.length) {
+    chatEls.chatMessages.innerHTML = renderChatWelcomeHtml(session);
     chatEls.chatMessages.querySelectorAll(".chat-suggestion").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (!chatEls.chatInput) return;
@@ -191,9 +205,17 @@ function renderChatMessages(session) {
   scrollChatToBottom();
 }
 
+function bootstrapToastKey(sessionId, status) {
+  return `${sessionId || ""}:${status || ""}`;
+}
+
 function toastBootstrapStatus(session) {
   const boot = session?.data_bootstrap;
-  if (!boot || boot.status === "running") return;
+  const sid = session?.id || chatState.activeSessionId;
+  if (!boot || boot.status === "running" || !sid) return;
+  const key = bootstrapToastKey(sid, boot.status);
+  if (chatState.bootstrapToastKeys.has(key)) return;
+  chatState.bootstrapToastKeys.add(key);
   if (boot.status === "completed") {
     App.toast(boot.message || "数据已入库", "success");
     return;
@@ -201,6 +223,149 @@ function toastBootstrapStatus(session) {
   if (boot.status === "failed") {
     App.toast(boot.error || boot.message || "数据预加载失败", "error");
   }
+}
+
+function analyzeIntroReportId(content) {
+  const match = String(content || "").match(/报告已生成[（(]([^）)]+)[）)]/);
+  return match ? match[1].trim() : null;
+}
+
+function isStaleAnalyzeIntroMessage(msg, session) {
+  if (!msg || msg.role !== "assistant") return false;
+  const introId = analyzeIntroReportId(msg.content);
+  if (!introId) return false;
+  const bound = session?.report_id;
+  if (!bound) return false;
+  return introId !== bound;
+}
+
+function messagesForDisplay(session) {
+  const raw = session?.messages || [];
+  return raw.filter((msg) => !isStaleAnalyzeIntroMessage(msg, session));
+}
+
+function dismissBootstrapModalForSession(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (sid) chatState.bootstrapModalDismissed.add(sid);
+  hideBootstrapModal();
+}
+
+function showBootstrapModal(session) {
+  const boot = session?.data_bootstrap;
+  const sid = String(session?.id || chatState.activeSessionId || "").trim();
+  if (!boot || boot.status !== "running" || !chatEls.bootstrapModal) return;
+  if (sid && chatState.bootstrapModalDismissed.has(sid)) return;
+  const cur = boot.current || boot.stock_code;
+  const titleEl = document.getElementById("bootstrapModalTitle");
+  if (titleEl) titleEl.textContent = "正在入库";
+  if (chatEls.bootstrapModalMessage) {
+    chatEls.bootstrapModalMessage.textContent =
+      boot.message || (cur ? `${cur} 入库中…` : "后台下载数据中…");
+  }
+  if (chatEls.bootstrapModalSpinner) {
+    chatEls.bootstrapModalSpinner.className = "bootstrap-spinner";
+  }
+  chatEls.bootstrapModal.classList.remove("hidden");
+}
+
+function hideBootstrapModal() {
+  chatEls.bootstrapModal?.classList.add("hidden");
+}
+
+function syncBootstrapModal(session) {
+  const boot = session?.data_bootstrap;
+  const sid = String(session?.id || chatState.activeSessionId || "").trim();
+  const epoch = sid
+    ? `${sid}:${boot?.status || ""}:${boot?.started_at || boot?.updated_at || ""}`
+    : "";
+  if (boot?.status === "running") {
+    if (epoch && epoch !== chatState.bootstrapModalEpoch) {
+      chatState.bootstrapModalEpoch = epoch;
+      chatState.bootstrapModalDismissed.delete(sid);
+    }
+    if (!chatState.bootstrapModalDismissed.has(sid)) {
+      showBootstrapModal(session);
+    }
+    return;
+  }
+  chatState.bootstrapModalEpoch = "";
+  hideBootstrapModal();
+  if (boot?.status === "completed" && chatEls.bootstrapModalSpinner) {
+    chatEls.bootstrapModalSpinner.className = "bootstrap-spinner done";
+  }
+  if (boot?.status === "failed" && chatEls.bootstrapModalSpinner) {
+    chatEls.bootstrapModalSpinner.className = "bootstrap-spinner failed";
+  }
+}
+
+function reportLabelForSession(session) {
+  const reportId = session?.report_id;
+  if (!reportId) return null;
+  const summary = (App.state?.reports || []).find((item) => item.id === reportId);
+  const code = summary?.stock_code || reportStockPrefix(reportId) || reportId.split("_")[0];
+  const title = summary?.title || (code ? `${code} 多智能体研报` : reportId);
+  return { code, title, reportId };
+}
+
+function buildComposerContext(session) {
+  if (!session) return { pills: [], sub: "上传 PDF 或绑定报告后开始提问" };
+
+  const boot = session?.data_bootstrap;
+  if (boot?.status === "running") {
+    const cur = boot.current || boot.stock_code;
+    return {
+      pills: [
+        `<span class="context-pill context-pill--progress">${escapeHtml(cur ? `入库中 · ${cur}` : "入库中…")}</span>`,
+      ],
+      sub: "数据准备完成后即可提问",
+    };
+  }
+
+  const bound = reportLabelForSession(session);
+  if (bound) {
+    return {
+      pills: [
+        `<span class="context-pill context-pill--bound" title="${escapeHtml(bound.reportId)}">已绑定 · <strong>${escapeHtml(bound.title)}</strong></span>`,
+      ],
+      sub: "基于已绑定报告追问；侧栏可更换报告",
+    };
+  }
+  if (session.pdf_name) {
+    return {
+      pills: [`<span class="context-pill context-pill--bound">PDF · ${escapeHtml(session.pdf_name)}</span>`],
+      sub: "基于已上传 PDF 追问",
+    };
+  }
+  const codes = Array.isArray(session.stock_codes) ? session.stock_codes.filter(Boolean) : [];
+  if (codes.length > 1) {
+    return {
+      pills: [`<span class="context-pill">标的 ${escapeHtml(codes.join("、"))}</span>`],
+      sub: "可直接提问；也可绑定报告获得更完整上下文",
+    };
+  }
+  if (session.stock_code) {
+    return {
+      pills: [`<span class="context-pill">标的 ${escapeHtml(session.stock_code)}</span>`],
+      sub: "可直接提问；也可绑定报告获得更完整上下文",
+    };
+  }
+  return { pills: [], sub: "拖 PDF、绑定报告，或直接输入公司名提问" };
+}
+
+function syncComposerChrome(session) {
+  const bound = Boolean(session?.report_id);
+  if (chatEls.chatAttachReportBtn) {
+    const text = bound ? "更换报告" : "绑定报告";
+    const label = chatEls.chatAttachReportBtn.querySelector("[data-bind-label]");
+    if (label) {
+      label.textContent = text;
+    } else {
+      const nodes = [...chatEls.chatAttachReportBtn.childNodes];
+      const textNode = nodes.find((n) => n.nodeType === Node.TEXT_NODE && String(n.textContent || "").trim());
+      if (textNode) textNode.textContent = ` ${text}`;
+    }
+  }
+  App.updateChatAttachButton?.();
 }
 
 async function pollSessionBootstrap(sessionId) {
@@ -214,11 +379,13 @@ async function pollSessionBootstrap(sessionId) {
       if (chatState.activeSessionId === sessionId && boot?.status === "running") {
         chatState.activeSession = session;
         updateChatHeader(session);
+        syncBootstrapModal(session);
       }
       if (!boot || boot.status !== "running") {
         if (chatState.activeSessionId === sessionId) {
           chatState.activeSession = session;
           updateChatHeader(session);
+          syncBootstrapModal(session);
           await loadChatSessions();
         }
         toastBootstrapStatus(session);
@@ -238,54 +405,49 @@ function updateChatHeader(session) {
   if (chatEls.chatTitle) {
     chatEls.chatTitle.textContent = session?.title || "新对话";
   }
-  if (!chatEls.chatContextPill) return;
-  const bits = [];
-  if (session?.report_id) bits.push(`报告 ${session.report_id.split("_")[0]}`);
-  if (session?.pdf_name) bits.push(`PDF · ${session.pdf_name}`);
-  const codes = Array.isArray(session?.stock_codes) ? session.stock_codes.filter(Boolean) : [];
-  if (codes.length > 1) bits.push(`标的 ${codes.join("、")}`);
-  else if (session?.stock_code) bits.push(`代码 ${session.stock_code}`);
-  const boot = session?.data_bootstrap;
-  if (boot?.status === "running") {
-    const cur = boot.current || boot.stock_code;
-    bits.push(cur ? `入库中 ${cur}…` : "入库中…");
+  const ctx = buildComposerContext(session);
+  if (chatEls.chatContextPill) {
+    chatEls.chatContextPill.innerHTML = ctx.pills.length
+      ? ctx.pills.join("")
+      : `<span class="context-pill muted">拖 PDF、绑定报告，或直接问公司名</span>`;
   }
-  if (boot?.status === "completed") bits.push("已入库");
-  if (boot?.status === "failed") bits.push("入库失败");
-  if (!bits.length) {
-    chatEls.chatContextPill.innerHTML = `<span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>`;
-  } else {
-    chatEls.chatContextPill.innerHTML = bits.map((bit) => `<span class="context-pill">${escapeHtml(bit)}</span>`).join("");
-  }
-  const subText = bits.length ? bits.join(" · ") : "上传 PDF 或绑定报告后开始提问";
   if (chatEls.chatHeadSub) {
-    chatEls.chatHeadSub.textContent = subText;
+    chatEls.chatHeadSub.textContent = ctx.sub;
+    chatEls.chatHeadSub.classList.toggle("hidden", Boolean(ctx.pills.length));
   }
   if (chatEls.chatDeleteBtn) {
     chatEls.chatDeleteBtn.disabled = !chatState.activeSessionId;
   }
+  syncComposerChrome(session);
+  syncBootstrapModal(session);
   if (App.isMobileLayout?.()) {
-    App.syncMobileBar(session?.title || "新对话", bits.join(" · "));
+    const mobileSub = ctx.pills.length ? ctx.sub : "";
+    App.syncMobileBar(session?.title || "新对话", mobileSub);
   }
 }
 
-async function openChatSession(sessionId) {
+async function openChatSession(sessionId, options = {}) {
+  const { stayOnReport = false } = options;
   const session = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
   chatState.activeSessionId = sessionId;
   chatState.activeSession = session;
   if (session.report_id) {
     App.setActiveReportId(session.report_id);
   }
+  if (!stayOnReport) {
+    App.navigate("chat");
+    App.setSidebarPanel("chat");
+    App.closeReportChatDrawer?.();
+  }
   renderChatSessions();
   renderChatMessages(session);
   updateChatHeader(session);
   syncChatStockInput(session);
   if (session.data_bootstrap?.status === "running") {
-    App.toast(session.data_bootstrap.message || "正在后台下载年报并入库…", "info");
     pollSessionBootstrap(sessionId);
+  } else {
+    toastBootstrapStatus(session);
   }
-  App.navigate("chat");
-  App.setSidebarPanel("chat");
   App.renderReportList();
 }
 
@@ -335,9 +497,13 @@ function syncChatStockInput(session) {
   }
 }
 
-async function createChatSession() {
+async function createChatSession(options = {}) {
+  const { stayOnReport = false, resetStockInput = false } = options;
+  if (resetStockInput && chatEls.chatStockInput) {
+    chatEls.chatStockInput.value = "";
+  }
   const stock = String(chatEls.chatStockInput?.value || "").trim();
-  if (!stock) {
+  if (!stock && !stayOnReport && !resetStockInput) {
     App.toast("侧栏股票可选；在对话里直接问公司名也会自动识别并入库", "info");
   }
   const payload = await api("/api/chat/sessions", {
@@ -348,7 +514,49 @@ async function createChatSession() {
     }),
   });
   await loadChatSessions();
-  await openChatSession(payload.id);
+  await openChatSession(payload.id, { stayOnReport });
+}
+
+async function ensureReportChatSession() {
+  const reportId = App.state?.activeReportId;
+  if (!reportId) {
+    throw new Error("请先打开一份报告");
+  }
+  const bound = chatState.activeSession?.report_id;
+  if (chatState.activeSessionId && bound === reportId) {
+    await openChatSession(chatState.activeSessionId, { stayOnReport: true });
+    return;
+  }
+  await createChatSessionForReport();
+}
+
+async function createChatSessionForReport() {
+  const reportId = App.state?.activeReportId;
+  const report = App.state?.activeReport;
+  const stock = report?.stock_code || reportStockPrefix(reportId);
+  const reportType = report?._ui?.report_type || (report?.sections ? "multi_analyze" : "annual_analyze");
+  const title =
+    stock && reportType === "annual_analyze"
+      ? `${stock} 年报问答`
+      : stock
+        ? `${stock} 报告问答`
+        : "新对话";
+  if (chatEls.chatStockInput && stock) {
+    chatEls.chatStockInput.value = stock;
+  }
+  const payload = await api("/api/chat/sessions", {
+    method: "POST",
+    body: JSON.stringify({
+      title,
+      ...(stock ? { stock_code: stock } : {}),
+    }),
+  });
+  chatState.bootstrapModalDismissed.delete(payload.id);
+  await loadChatSessions();
+  await openChatSession(payload.id, { stayOnReport: true });
+  if (reportId) {
+    await attachReportById(reportId, { preferActiveReport: true });
+  }
 }
 
 async function sendChatMessage() {
@@ -380,8 +588,9 @@ async function sendChatMessage() {
     updateChatHeader(payload.session);
     syncChatStockInput(payload.session);
     if (payload.session?.data_bootstrap?.status === "running") {
-      App.toast(payload.session.data_bootstrap.message || "正在识别股票并入库…", "info");
       pollSessionBootstrap(chatState.activeSessionId);
+    } else {
+      toastBootstrapStatus(payload.session);
     }
     await loadChatSessions();
   } catch (error) {
@@ -470,20 +679,6 @@ async function ensureIsolatedSessionForReport(reportId) {
   App.toast("已为新报告创建独立对话，避免上下文混淆");
 }
 
-async function ensureIsolatedSessionForAnalyze(stock) {
-  if (!chatState.activeSessionId) return;
-  const session = chatState.activeSession;
-  if (!sessionHasHistory(session)) return;
-  const currentStock = String(session?.stock_code || "");
-  const currentReportStock = reportStockPrefix(session?.report_id || "");
-  const mismatch =
-    (currentStock && currentStock !== stock) ||
-    (currentReportStock && currentReportStock !== stock);
-  if (!mismatch) return;
-  await createContextIsolatedSession(stock);
-  App.toast("检测到股票已切换，已创建新对话");
-}
-
 function renderReportPicker() {
   if (!chatEls.reportPickerList) return;
   const reports = App.state.reports || [];
@@ -542,59 +737,41 @@ async function attachReportById(reportId) {
   renderChatMessages(session);
   updateChatHeader(session);
   syncChatStockInput(session);
+  App.syncReportBindFab?.();
   await loadChatSessions();
   closeReportPicker();
-  App.navigate("chat");
-  App.setSidebarPanel("chat");
+  if (App.state.view === "report") {
+    App.renderReportList?.();
+  } else {
+    App.navigate("chat");
+    App.setSidebarPanel("chat");
+  }
   App.closeMobileRail?.();
   App.toast("报告已绑定到当前对话");
+  App.syncReportBindFab?.();
 }
 
-async function attachActiveReportToChat() {
+async function attachActiveReportToChat(options = {}) {
+  const { preferActiveReport = false } = options;
   await ensureReportsLoaded();
   if (!App.state.reports.length) {
     App.toast("暂无历史报告，请先在侧栏生成分析", "error");
     return;
   }
-  if (App.state.activeReportId) {
+  const onReportView =
+    preferActiveReport && App.state.view === "report" && App.state.activeReportId;
+  const alreadyBound = chatState.activeSession?.report_id === App.state.activeReportId;
+  if (onReportView && !alreadyBound) {
     return attachReportById(App.state.activeReportId);
   }
   await openReportPicker();
 }
 
-async function analyzeInChat() {
-  const stock = String(chatEls.chatStockInput?.value || "").trim();
-  if (!/^\d{6}$/.test(stock)) {
-    App.toast("请输入 6 位股票代码", "error");
-    return;
-  }
-  if (!chatState.activeSessionId) {
-    await createChatSession();
-  }
-  await ensureIsolatedSessionForAnalyze(stock);
-  const response = await api(`/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/analyze`, {
-    method: "POST",
-    body: JSON.stringify({ stock, mode: "multi" }),
-  });
-  App.setTaskState("running", "正在生成报告并写入对话…");
-  App.els.taskBox.classList.remove("hidden");
-  App.navigate("chat");
-  App.setSidebarPanel("chat");
-  await App.pollTask(response.task_id, {
-    stayOnChat: true,
-    onComplete: async (reportId) => {
-      if (reportId) {
-        App.setActiveReportId(reportId);
-      }
-      await openChatSession(chatState.activeSessionId);
-    },
-  });
-  App.toast("报告已生成并绑定到对话");
-}
-
 function bindChatEvents() {
   initChatElements();
-  chatEls.chatNewBtn?.addEventListener("click", () => createChatSession().catch((e) => App.toast(e.message, "error")));
+  chatEls.chatNewBtn?.addEventListener("click", () =>
+    createChatSession({ resetStockInput: true }).catch((e) => App.toast(e.message, "error")),
+  );
   chatEls.chatDeleteBtn?.addEventListener("click", () => {
     if (!chatState.activeSessionId) return;
     deleteChatSession(chatState.activeSessionId).catch((e) => App.toast(e.message, "error"));
@@ -612,8 +789,11 @@ function bindChatEvents() {
     chatEls.chatInput.style.height = `${Math.min(chatEls.chatInput.scrollHeight, 160)}px`;
   });
   chatEls.chatAttachReportBtn?.addEventListener("click", () => attachActiveReportToChat().catch((e) => App.toast(e.message, "error")));
-  chatEls.chatAnalyzeBtn?.addEventListener("click", () => analyzeInChat().catch((e) => App.toast(e.message, "error")));
   chatEls.reportPickerClose?.addEventListener("click", closeReportPicker);
+  chatEls.bootstrapModalDismiss?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    dismissBootstrapModalForSession(chatState.activeSessionId);
+  });
   chatEls.reportPickerModal?.addEventListener("click", (event) => {
     if (event.target === chatEls.reportPickerModal) closeReportPicker();
   });
@@ -623,8 +803,13 @@ function bindChatEvents() {
     attachReportById(item.dataset.pickId).catch((e) => App.toast(e.message, "error"));
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && chatEls.reportPickerModal && !chatEls.reportPickerModal.classList.contains("hidden")) {
+    if (event.key !== "Escape") return;
+    if (chatEls.reportPickerModal && !chatEls.reportPickerModal.classList.contains("hidden")) {
       closeReportPicker();
+      return;
+    }
+    if (chatEls.bootstrapModal && !chatEls.bootstrapModal.classList.contains("hidden")) {
+      dismissBootstrapModalForSession(chatState.activeSessionId);
     }
   });
   chatEls.chatPdfInput?.addEventListener("change", (event) => {
@@ -676,13 +861,17 @@ window.resetChatState = () => {
   updateChatHeader(null);
 };
 
-window.openChatWithReport = () => attachActiveReportToChat().catch((e) => App.toast(e.message, "error"));
+window.openChatWithReport = () =>
+  attachActiveReportToChat({ preferActiveReport: true }).catch((e) => App.toast(e.message, "error"));
 window.attachReportById = attachReportById;
 window.renderReportPicker = renderReportPicker;
 window.getChatState = () => chatState;
 window.loadChatSessions = loadChatSessions;
 window.filterChatSessions = filterChatSessions;
-window.createChatSessionQuick = () => createChatSession().catch((e) => App.toast(e.message, "error"));
+window.createChatSessionQuick = () =>
+  createChatSession({ resetStockInput: true }).catch((e) => App.toast(e.message, "error"));
+window.createChatSessionForReport = () => createChatSessionForReport().catch((e) => App.toast(e.message, "error"));
+window.ensureReportChatSession = () => ensureReportChatSession().catch((e) => App.toast(e.message, "error"));
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", bindChatEvents);

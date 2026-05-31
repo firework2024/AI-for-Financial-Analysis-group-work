@@ -8,7 +8,9 @@ const state = {
   searchQuery: "",
   sidebar: "chat",
   view: "chat",
+  reportChatOpen: false,
   reportOutlineOpen: typeof window !== "undefined" ? window.innerWidth > 900 : true,
+  chatViewAnchor: null,
   tocObserver: null,
   railCollapsed: localStorage.getItem("finagent_rail_collapsed") === "1",
 };
@@ -32,7 +34,14 @@ const els = {
   welcomeChatBtn: document.getElementById("welcomeChatBtn"),
   welcomeReportsBtn: document.getElementById("welcomeReportsBtn"),
   brandHome: document.getElementById("brandHome"),
+  mainStage: document.getElementById("mainStage"),
+  rail: document.getElementById("rail"),
   reportView: document.getElementById("reportView"),
+  reportLayout: document.getElementById("reportLayout"),
+  reportChatMount: document.getElementById("reportChatMount"),
+  reportChatToggle: document.getElementById("reportChatToggle"),
+  chatDockCloseBtn: document.getElementById("chatDockCloseBtn"),
+  railCompose: document.getElementById("railCompose"),
   reportEmptyView: document.getElementById("reportEmptyView"),
   chatView: document.getElementById("chatView"),
   reportTags: document.getElementById("reportTags"),
@@ -47,6 +56,7 @@ const els = {
   reportOutline: document.getElementById("reportOutline"),
   reportOutlineBackdrop: document.getElementById("reportOutlineBackdrop"),
   reportScroll: document.getElementById("reportScroll"),
+  reportBindBtn: document.getElementById("reportBindBtn"),
   reportOutlineClose: document.getElementById("reportOutlineClose"),
   reportOutlineToggle: document.getElementById("reportOutlineToggle"),
   reportOutlineToggleHead: document.getElementById("reportOutlineToggleHead"),
@@ -156,7 +166,92 @@ function updateMobileBarForView(view) {
   }
 }
 
+function hasActiveChatSession() {
+  return Boolean(chatStateRef()?.activeSessionId);
+}
+
+function rememberChatViewAnchor() {
+  if (!els.chatView || !els.mainStage || state.chatViewAnchor) return;
+  state.chatViewAnchor = {
+    parent: els.mainStage,
+    next: els.reportView,
+  };
+}
+
+function restoreChatViewToStage() {
+  if (!els.chatView || !state.chatViewAnchor) return;
+  const { parent, next } = state.chatViewAnchor;
+  if (next && next.parentNode === parent) {
+    parent.insertBefore(els.chatView, next);
+  } else {
+    parent.appendChild(els.chatView);
+  }
+  els.chatView.classList.remove("pane-chat--dock");
+}
+
+function syncReportChatUi() {
+  const open = Boolean(state.reportChatOpen);
+  els.reportView?.classList.toggle("report-chat-open", open);
+  els.reportChatMount?.setAttribute("aria-hidden", open ? "false" : "true");
+  els.reportChatToggle?.setAttribute("aria-expanded", open ? "true" : "false");
+  els.reportChatToggle?.classList.toggle("is-active", open);
+  els.rail?.classList.toggle("rail--report-chat", open && state.view === "report");
+  els.chatDockCloseBtn?.classList.toggle("hidden", !open);
+  document.body.classList.toggle("report-chat-drawer-open", open && state.view === "report");
+}
+
+function closeReportChatDrawer() {
+  if (!state.reportChatOpen) return;
+  state.reportChatOpen = false;
+  restoreChatViewToStage();
+  if (state.view === "report") {
+    els.chatView?.classList.add("hidden");
+  }
+  syncReportChatUi();
+}
+
+async function openReportChatDrawer() {
+  if (!state.activeReport) {
+    toast("请先打开一份报告", "error");
+    return false;
+  }
+  rememberChatViewAnchor();
+  if (state.view !== "report") {
+    navigate("report");
+  }
+  state.reportChatOpen = true;
+  els.reportChatMount?.appendChild(els.chatView);
+  els.chatView?.classList.remove("hidden");
+  els.chatView?.classList.add("pane-chat--dock");
+  syncReportChatUi();
+  setSidebarPanel("reports");
+
+  try {
+    if (typeof window.ensureReportChatSession === "function") {
+      await window.ensureReportChatSession();
+    } else if (typeof window.createChatSessionForReport === "function") {
+      await window.createChatSessionForReport();
+    }
+  } catch (error) {
+    toast(error.message || "无法打开对话", "error");
+    return false;
+  }
+  closeMobileRail();
+  return true;
+}
+
+function toggleReportChatDrawer() {
+  if (state.reportChatOpen) {
+    closeReportChatDrawer();
+    return;
+  }
+  openReportChatDrawer().catch((e) => toast(e.message, "error"));
+}
+
 function navigate(view) {
+  if (view !== "report" && state.reportChatOpen) {
+    closeReportChatDrawer();
+  }
   state.view = view;
   els.welcomeView?.classList.toggle("hidden", view !== "welcome");
   els.chatView?.classList.toggle("hidden", view !== "chat");
@@ -166,7 +261,18 @@ function navigate(view) {
     els.reportView?.classList.add("hidden");
     els.reportEmptyView?.classList.remove("hidden");
   }
-  updateMobileBarForView(view === "report" && !state.activeReport ? "report-empty" : view);
+  if (view === "chat") {
+    restoreChatViewToStage();
+    els.chatView?.classList.remove("pane-chat--dock");
+  }
+  if (view === "report" && state.reportChatOpen) {
+    els.chatView?.classList.remove("hidden");
+  }
+
+  syncReportChatUi();
+  updateMobileBarForView(
+    view === "report" && !state.activeReport ? "report-empty" : view,
+  );
   if (view !== "welcome" && isMobileLayout()) closeMobileRail();
 }
 
@@ -406,17 +512,31 @@ function updateChatAttachButton() {
   if (!els.chatAttachReportBtn) return;
   const hasReports = state.reports.length > 0;
   els.chatAttachReportBtn.disabled = !hasReports;
+  const chat = chatStateRef?.();
+  const boundId = chat?.activeSession?.report_id;
   if (!hasReports) {
     els.chatAttachReportBtn.title = "暂无历史报告，请先生成或上传";
     return;
   }
-  if (state.activeReportId) {
-    const summary = state.reports.find((item) => item.id === state.activeReportId);
-    const label = summary?.title || state.activeReportId.split("_")[0];
-    els.chatAttachReportBtn.title = `绑定「${label}」到当前对话（也可选择其他报告）`;
-  } else {
-    els.chatAttachReportBtn.title = "从历史报告中选择并绑定到当前对话";
+  if (boundId) {
+    const summary = state.reports.find((item) => item.id === boundId);
+    const label = summary?.title || boundId.split("_")[0];
+    els.chatAttachReportBtn.title = `当前已绑定「${label}」，点击可更换其它报告`;
+    return;
   }
+  els.chatAttachReportBtn.title = "从历史报告中选择一份绑定到当前对话";
+}
+
+function syncReportBindFab() {
+  const btn = els.reportBindBtn;
+  if (!btn) return;
+  const reportId = state.activeReportId;
+  const session = chatStateRef()?.activeSession;
+  const bound = Boolean(reportId && session?.report_id === reportId);
+  btn.disabled = !reportId;
+  btn.textContent = bound ? "已绑定" : "绑定";
+  btn.classList.toggle("is-bound", bound);
+  btn.title = bound ? "已绑定到当前对话，点击可重新绑定" : "将本报告绑定到当前对话";
 }
 
 function setActiveReportId(reportId, reportPayload = null) {
@@ -428,6 +548,7 @@ function setActiveReportId(reportId, reportPayload = null) {
   }
   renderReportList();
   updateChatAttachButton();
+  syncReportBindFab();
   if (typeof window.renderReportPicker === "function") {
     window.renderReportPicker();
   }
@@ -479,7 +600,7 @@ async function loadReports() {
 }
 
 async function loadReport(filename, options = {}) {
-  const { navigateToReport = true } = options;
+  const { navigateToReport = true, openChat = false } = options;
   try {
     const report = await api(`/api/reports/${encodeURIComponent(filename)}`);
     setActiveReportId(filename, report);
@@ -490,6 +611,9 @@ async function loadReport(filename, options = {}) {
       setSidebarPanel("reports");
       navigate("report");
       closeMobileRail();
+      if (openChat) {
+        await openReportChatDrawer();
+      }
     }
     return report;
   } catch (error) {
@@ -980,6 +1104,7 @@ function renderReportDetail(report) {
   } else {
     renderAnnualReport(report, anchors);
   }
+  syncReportBindFab();
 }
 
 async function pollTask(taskId, options = {}) {
@@ -1117,7 +1242,16 @@ async function bootstrap() {
     loadReport(item.dataset.id).catch(() => {});
     closeMobileRail();
   });
-  els.backToChatBtn?.addEventListener("click", () => navigate("welcome"));
+  els.backToChatBtn?.addEventListener("click", () => {
+    if (state.reportChatOpen) {
+      closeReportChatDrawer();
+      return;
+    }
+    navigate("welcome");
+  });
+  els.reportChatToggle?.addEventListener("click", () => toggleReportChatDrawer());
+  els.chatDockCloseBtn?.addEventListener("click", () => closeReportChatDrawer());
+  rememberChatViewAnchor();
   els.brandHome?.addEventListener("click", () => navigate("welcome"));
   els.brandHome?.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -1135,7 +1269,14 @@ async function bootstrap() {
     if (isMobileLayout()) openMobileRail();
   });
   els.askReportBtn?.addEventListener("click", () => {
-    if (typeof window.openChatWithReport === "function") window.openChatWithReport();
+    openReportChatDrawer().catch((e) => toast(e.message || "无法打开对话", "error"));
+  });
+  els.reportBindBtn?.addEventListener("click", () => {
+    if (!state.activeReportId) return;
+    if (typeof window.attachReportById !== "function") return;
+    window
+      .attachReportById(state.activeReportId, { preferActiveReport: true })
+      .catch((e) => toast(e.message, "error"));
   });
   els.mobileMenuBtn?.addEventListener("click", toggleMobileRail);
   els.railCollapseBtn?.addEventListener("click", () => setRailCollapsed(true));
@@ -1175,12 +1316,16 @@ window.App = {
   api,
   toast,
   navigate,
+  openReportChatDrawer,
+  closeReportChatDrawer,
+  toggleReportChatDrawer,
   setSidebarPanel,
   loadReports,
   loadReport,
   setActiveReportId,
   renderReportList,
   updateChatAttachButton,
+  syncReportBindFab,
   pollTask,
   setTaskState,
   reportTypeLabel,

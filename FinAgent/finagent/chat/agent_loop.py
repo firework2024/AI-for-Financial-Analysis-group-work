@@ -17,6 +17,12 @@ from .agent import (
     _merge_retrieved_hits,
     _now,
 )
+from .evidence_filter import (
+    filter_graph_hits,
+    filter_retrieved_hits,
+    prune_tools_payload,
+    rag_top_k_for_intent,
+)
 from .intent import classify_query_intent
 from .rag import format_hits, search_chunks
 from .store import ChatMessage, ChatSession
@@ -193,7 +199,7 @@ def _plan_next_step(
         "- thought 说明本步打算做什么，勿写最终给用户的长答案。"
         "- 用户提到公司名但 session 无代码时，先 resolve_stocks（勿让用户去填侧栏）。"
         "- 库无数据时用 ensure_data；多只股票时先 get_session，再逐只拉数。"
-        "- 估值/PE 优先 fetch_factor；纯股价用 fetch_market；年报财务用 query_database。"
+        "- 估值/PE 优先 fetch_factor；纯股价/收盘用 fetch_market，勿 query_database 拉年报；年报财务用 query_database。"
         f"{_TOOL_CATALOG}"
     )
     payload = {
@@ -243,10 +249,11 @@ def _synthesize_answer(
 ) -> str:
     system = (
         "你是 FinAgent 研究助手。用户已看到调度过程；请根据 observations 与证据给出最终回答。"
-        "可简可详，由你判断；tools.intent / answer_guidance 仅为倾向。"
-        "observations 里已有 stock_codes 或 resolve_stocks 结果时，直接作答，勿让用户去侧栏填代码。"
-        "auto_ingest 表示后台正在入库，可先说明进度并回答已有数据。"
-        "数字来自 observations，勿编造；quote.close 为最近交易日收盘，prev_close 为昨收。"
+        "【硬性】只回答 question 直接问到的内容；禁止附带未提及的指标、章节或背景数字。"
+        "tools.answer_guidance 必须遵守；与问题无关的 observation 片段一律忽略。"
+        "observations 里已有 stock_codes 时直接作答，勿让用户去侧栏填代码。"
+        "数字来自 observations，勿编造；quote.close 为最近交易日收盘。"
+        "intent.quote_primary 或用户只问「股价」时，只答行情，勿写净利润/营收/MD&A。"
         "不要输出 JSON，不要套话，不要给买卖建议。"
     )
     payload = {
@@ -340,17 +347,28 @@ def chat_turn_loop(
     chunks = _chunks_for_retrieval(session)
     watch_codes = list(session.stock_codes or []) or ([session.stock_code] if session.stock_code else [])
     rag_hits = format_hits(
-        search_chunks(chunks, query, top_k=6, stock_code=session.stock_code, stock_codes=watch_codes),
+        search_chunks(
+            chunks,
+            query,
+            top_k=rag_top_k_for_intent(intent),
+            stock_code=session.stock_code,
+            stock_codes=watch_codes,
+        ),
     )
-    graph_hits = query_graph(session.knowledge_graph, query, limit=8)
+    graph_hits = filter_graph_hits(query_graph(session.knowledge_graph, query, limit=8), intent)
+    tools_payload = prune_tools_payload(tools_payload, intent) or tools_payload
     data_hits = _hits_from_tools_payload(tools_payload, query, intent=intent)
     web_hits = _hits_from_web_search(tools_payload.get("web_search"))
     max_hits = 16 if len(tools_payload.get("stock_codes") or []) > 1 else 10
-    hits = _merge_retrieved_hits(
-        rag_hits,
-        [*data_hits, *web_hits],
-        max_total=max_hits,
-        quote_primary=intent.quote_primary,
+    hits = filter_retrieved_hits(
+        _merge_retrieved_hits(
+            rag_hits,
+            [*data_hits, *web_hits],
+            max_total=max_hits,
+            quote_primary=intent.quote_primary,
+        ),
+        intent,
+        query=query,
     )
 
     try:

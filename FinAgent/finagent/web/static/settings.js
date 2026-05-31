@@ -98,15 +98,109 @@ async function settingsAuthFetch(path, options = {}) {
   return response.json();
 }
 
-function applyChatAgentSettings(settings) {
-  const steps = Number(settings?.chat_max_steps);
-  const mode = settings?.chat_agent_mode === "single" ? "single" : "loop";
-  const stepVal = Number.isFinite(steps) ? Math.max(1, Math.min(8, steps)) : 4;
-  [settingsEls.chatMaxSteps, document.getElementById("chatMaxSteps")].forEach((el) => {
-    if (el) el.value = String(stepVal);
+function clampAgentSteps(raw) {
+  const steps = Number(raw);
+  return Number.isFinite(steps) ? Math.max(1, Math.min(8, Math.round(steps))) : 4;
+}
+
+function updateAgentControlUI(root, { mode, steps }) {
+  if (!root) return;
+  const modeVal = mode === "single" ? "single" : "loop";
+  const stepVal = clampAgentSteps(steps);
+  const modeInput = root.querySelector("[data-agent-mode-input]");
+  const stepsInput = root.querySelector("[data-agent-steps-input]");
+  const stepsRange = root.querySelector("[data-agent-steps-range]");
+  const stepsValue = root.querySelector("[data-agent-steps-value]");
+  const stepsBlock = root.querySelector("[data-agent-steps]");
+
+  if (modeInput) modeInput.value = modeVal;
+  if (stepsInput) stepsInput.value = String(stepVal);
+  if (stepsRange) stepsRange.value = String(stepVal);
+  if (stepsValue) stepsValue.textContent = String(stepVal);
+
+  root.querySelectorAll("[data-agent-mode-tab]").forEach((tab) => {
+    const active = tab.getAttribute("data-agent-mode-tab") === modeVal;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-pressed", active ? "true" : "false");
   });
-  [settingsEls.chatAgentMode, document.getElementById("chatAgentMode")].forEach((el) => {
-    if (el) el.value = mode;
+
+  if (stepsBlock) {
+    const off = modeVal === "single";
+    stepsBlock.classList.toggle("is-disabled", off);
+    stepsBlock.classList.toggle("is-hidden", off);
+    stepsBlock.setAttribute("aria-hidden", off ? "true" : "false");
+  }
+}
+
+function updateComposerAgentBadge() {
+  const badge = document.getElementById("composerAgentBadge");
+  const mode = document.getElementById("chatAgentMode")?.value === "single" ? "single" : "loop";
+  const steps = clampAgentSteps(document.getElementById("chatMaxSteps")?.value);
+  if (!badge) return;
+  badge.textContent = mode === "single" ? "快速" : `深度 · ${steps} 步`;
+}
+
+const COMPOSER_AGENT_OPEN_KEY = "finagent_composer_agent_open";
+
+function bindComposerAgentCollapse() {
+  const details = document.getElementById("composerAgentControl");
+  if (!details || details.tagName !== "DETAILS") return;
+  details.open = localStorage.getItem(COMPOSER_AGENT_OPEN_KEY) === "1";
+  details.addEventListener("toggle", () => {
+    localStorage.setItem(COMPOSER_AGENT_OPEN_KEY, details.open ? "1" : "0");
+  });
+}
+
+function applyChatAgentSettings(settings) {
+  const steps = clampAgentSteps(settings?.chat_max_steps);
+  const mode = settings?.chat_agent_mode === "single" ? "single" : "loop";
+  document.querySelectorAll("[data-agent-control]").forEach((root) => {
+    updateAgentControlUI(root, { mode, steps });
+  });
+  updateComposerAgentBadge();
+}
+
+function wireAgentControlBlock(root, onChange) {
+  if (!root || root.dataset.agentWired === "1") return;
+  root.dataset.agentWired = "1";
+
+  const modeInput = root.querySelector("[data-agent-mode-input]");
+  const stepsInput = root.querySelector("[data-agent-steps-input]");
+  const stepsRange = root.querySelector("[data-agent-steps-range]");
+
+  const emit = () => {
+    updateComposerAgentBadge();
+    onChange?.();
+  };
+
+  const setMode = (mode) => {
+    updateAgentControlUI(root, {
+      mode,
+      steps: stepsInput?.value ?? stepsRange?.value ?? 4,
+    });
+    emit();
+  };
+
+  const setSteps = (raw) => {
+    updateAgentControlUI(root, {
+      mode: modeInput?.value ?? "loop",
+      steps: raw,
+    });
+    emit();
+  };
+
+  root.querySelectorAll("[data-agent-mode-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      setMode(tab.getAttribute("data-agent-mode-tab"));
+    });
+  });
+
+  stepsRange?.addEventListener("input", () => setSteps(stepsRange.value));
+  root.querySelector("[data-agent-steps-down]")?.addEventListener("click", () => {
+    setSteps(clampAgentSteps(stepsInput?.value) - 1);
+  });
+  root.querySelector("[data-agent-steps-up]")?.addEventListener("click", () => {
+    setSteps(clampAgentSteps(stepsInput?.value) + 1);
   });
 }
 
@@ -269,9 +363,9 @@ function scheduleChatAgentSave() {
 }
 
 function bindChatAgentRailControls() {
-  ["chatMaxSteps", "chatAgentMode"].forEach((id) => {
-    const el = document.getElementById(id);
-    el?.addEventListener("change", scheduleChatAgentSave);
+  document.querySelectorAll("[data-agent-control]").forEach((root) => {
+    const persist = root.hasAttribute("data-agent-persist");
+    wireAgentControlBlock(root, persist ? scheduleChatAgentSave : undefined);
   });
 }
 
@@ -284,8 +378,10 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     bindSettingsEvents();
     bindChatAgentRailControls();
+    bindComposerAgentCollapse();
   });
 } else {
   bindSettingsEvents();
   bindChatAgentRailControls();
+  bindComposerAgentCollapse();
 }
