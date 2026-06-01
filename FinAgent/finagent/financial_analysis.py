@@ -15,25 +15,48 @@ def analyze_financials(
     metric_factor_values: dict[int, dict[str, float]] | None = None,
     company_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from .progress import step, info, sub_section, data_table
+
+    step("计算财务指标", f"{len(enriched_rows)} 行 × {len(FIELD_MAP)} 个字段")
     rows = sorted(enriched_rows, key=lambda item: item["year"])
     metrics = [_metrics_for_row(row) for row in rows]
     _add_trend_metrics(metrics)
     _apply_metric_factor_fallbacks(metrics, metric_factor_values or {})
+    info(f"衍生指标计算完成: {len(metrics)} 行")
 
+    sub_section("规则引擎 — 结构化信号 + 组合信号")
     signal_pack = _build_signal_pack(rows, metrics)
+    structured = signal_pack.get("structured_signals", [])
+    compound = signal_pack.get("compound_signals", [])
+    info(f"结构化信号: {len(structured)} 条, 组合异常信号: {len(compound)} 条")
+    if structured:
+        data_table(
+            ["指标 / 标题", "方向", "严重性", "类别"],
+            [[s.get("metric_cn") or s.get("title", "")[:20], s.get("polarity", ""), s.get("severity", ""), s.get("category", "")[:16]] for s in structured[:6]],
+        )
+    if compound:
+        data_table(
+            ["组合信号", "方向", "严重性"],
+            [[s.get("title", "")[:30], s.get("polarity", ""), s.get("severity", "")] for s in compound[:4]],
+        )
+
     evidence = _build_llm_evidence(rows, metrics, signal_pack, company_context or {})
+    info(f"LLM 证据包构建完成: {len(evidence.get('rows', []))} 行")
 
     if has_llm_api_key():
+        sub_section("LLM 信号审核")
         try:
             analysis = financial_signal_review_agent(
                 evidence=evidence,
                 framework_text=load_financial_framework_excerpt(),
                 company_context=company_context or {},
             )
+            info("LLM 信号审核完成")
             return _finalize_signal_review(analysis, signal_pack, rows, metrics)
         except Exception:
-            pass
+            info("LLM 审核失败，回退到本地规则审核")
 
+    step("本地规则审核模式")
     return _finalize_signal_review(_local_signal_review(signal_pack), signal_pack, rows, metrics)
 
 

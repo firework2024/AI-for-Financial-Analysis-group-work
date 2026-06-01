@@ -186,15 +186,29 @@ def enrich_financial_analysis_with_mda(
     mda_text: str,
 ) -> dict[str, Any]:
     """在财务分析结果上附加勾稽检查与 MD&A 对照包。"""
+    from .progress import info
+
     enriched = dict(financial_analysis)
     metrics = enriched.get("metrics") or []
     enriched["articulation_checks"] = build_articulation_checks(metrics)
+    checks = enriched["articulation_checks"]
     enriched["mda_crosswalk"] = build_mda_financial_crosswalk(mda_text, financial_analysis=enriched)
+    crosswalk = enriched["mda_crosswalk"]
+    info(f"MD&A 勾稽检查: {len(checks)} 项, MD&A 对照: {len(crosswalk)} 条")
     return enriched
 
 
-def build_annual_context_from_store(annual: dict[str, Any]) -> dict[str, Any] | None:
-    """从 SQLite 年报记录构建含勾稽的多智能体上下文。"""
+def build_annual_context_from_store(
+    annual: dict[str, Any],
+    *,
+    with_director: bool = False,
+) -> dict[str, Any] | None:
+    """从 SQLite 年报记录构建含勾稽的多智能体上下文。
+
+    当 ``with_director=True`` 时，额外调用投资总监 LLM 分析并注入
+    ``investment_director`` 与 ``_financial_analysis_raw`` 字段，
+    供多智能体流程的基本面章节使用。
+    """
     if not annual:
         return None
     financial_data = annual.get("financial_data") if isinstance(annual.get("financial_data"), list) else []
@@ -208,7 +222,9 @@ def build_annual_context_from_store(annual: dict[str, Any]) -> dict[str, Any] | 
     }
     if not financial_data:
         context["mda_excerpt"] = mda_text[:6000]
-        context["mda_crosswalk"] = build_mda_financial_crosswalk(mda_text, financial_analysis={"metrics": [], "reviewed_signals": []})
+        context["mda_crosswalk"] = build_mda_financial_crosswalk(
+            mda_text, financial_analysis={"metrics": [], "reviewed_signals": []}
+        )
         return context
 
     from .financial_analysis import analyze_financials
@@ -230,8 +246,24 @@ def build_annual_context_from_store(annual: dict[str, Any]) -> dict[str, Any] | 
             "mda_crosswalk": analysis.get("mda_crosswalk"),
             "reviewed_signals": (analysis.get("reviewed_signals") or [])[:8],
             "mda_excerpt": mda_text[:6000],
+            "_financial_analysis_raw": analysis,
         }
     )
+
+    if with_director:
+        from .llm import investment_director_analysis
+
+        try:
+            context["investment_director"] = investment_director_analysis(
+                mda_text, analysis, company_context
+            )
+        except Exception as exc:
+            context["investment_director"] = (
+                f"投资总监分析生成失败（{type(exc).__name__}: {exc}），"
+                "请参考下方财务信号审核与 MD&A 勾稽信息。"
+            )
+            context["_director_error"] = str(exc)
+
     return context
 
 

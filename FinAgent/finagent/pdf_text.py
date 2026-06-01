@@ -34,12 +34,17 @@ END_PATTERNS = [
 
 
 def extract_pdf_text(pdf_path: Path) -> str:
+    from .progress import info
+
     doc = fitz.open(pdf_path)
+    info(f"PDF 共 {len(doc)} 页, 文件: {pdf_path.name}")
     parts: list[str] = []
-    for page in doc:
+    for i, page in enumerate(doc):
         parts.append(page.get_text("text"))
     doc.close()
-    return "\n".join(parts)
+    result = "\n".join(parts)
+    info(f"PDF 文本提取完成: {len(result)} 字符")
+    return result
 
 
 def extract_mda(text: str) -> MdaExtraction:

@@ -34,3 +34,17 @@ def test_section_candidates_only_use_known_charts():
     for charts in DEFAULT_SECTION_CHART_CANDIDATES.values():
         for name in charts:
             assert name in CHART_CAPTIONS
+
+
+def test_industry_charts_are_prioritized_for_operating_quality_section():
+    candidates = DEFAULT_SECTION_CHART_CANDIDATES["经营质量分析"]
+
+    assert candidates[:2] == (
+        "industry_profitability_compare",
+        "industry_growth_leverage_compare",
+    )
+    assert CHART_CAPTIONS["industry_dbscan_anomaly"] == "DBSCAN 同行异常识别"
+    assert "industry_valuation_compare" not in candidates
+    assert "valuation_percentile" not in candidates
+    assert "valuation_factors" not in candidates
+    assert "latest_valuation_snapshot" not in candidates

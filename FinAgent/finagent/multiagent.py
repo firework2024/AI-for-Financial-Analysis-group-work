@@ -15,6 +15,7 @@ from .llm import llm_json, llm_text
 from .chart_catalog import MARKET_TECH_SECTION
 from .multi_report import (
     apply_chart_placements,
+    apply_chart_placements_agent,
     build_multi_json_payload,
     multi_report_display_title,
     render_multi_html,
@@ -22,11 +23,21 @@ from .multi_report import (
 )
 from .visual_placement import resolve_section_visuals
 from .report_format import normalize_section_text, normalize_sections, section_writing_style_hint
-from .report_writing import analytical_writing_core, build_analytical_evidence, section_opening_conclusion_rule, summarize_annual_financial_data
+from .report_writing import (
+    analytical_writing_core,
+    annual_director_structure_guide,
+    annual_director_system_prompt,
+    build_analytical_evidence,
+    section_opening_conclusion_rule,
+    summarize_annual_financial_data,
+)
 from .rqdata_client import _init_rqdata
 from .chart_plots import chart_agent
 from .latex_exporter import export_latex
+from .peer_analysis import FACTOR_LABELS, PEER_FACTOR_CANDIDATES, fetch_industry_comparison
 import re
+
+OPERATING_QUALITY_SECTION = "经营质量分析"
 
 TOOL_REGISTRY = {
     "get_price": "量价行情：open/high/low/close/volume/total_turnover",
@@ -47,7 +58,7 @@ TOOL_REGISTRY = {
 
 DEFAULT_SECTIONS = [
     {"name": MARKET_TECH_SECTION, "agent": "market_tech_writer", "data": ["get_price", "get_price_change_rate", "get_turnover_rate"]},
-    {"name": "基本面与估值", "agent": "fundamental_writer", "data": ["get_factor", "get_pit_financials_ex", "get_dividend", "get_shares"]},
+    {"name": OPERATING_QUALITY_SECTION, "agent": "fundamental_writer", "data": ["get_factor", "get_pit_financials_ex", "get_dividend", "get_shares"]},
     {"name": "资金与交易结构", "agent": "capital_flow_writer", "data": ["get_capital_flow", "get_securities_margin"]},
     {"name": "宏观利率背景", "agent": "macro_rate_writer", "data": ["get_interbank_offered_rate", "get_yield_curve"]},
     {"name": "综合风险与数据局限", "agent": "risk_synthesis_writer", "data": ["all_collected_data", "is_suspended", "is_st_stock"]},
@@ -61,6 +72,7 @@ FACTOR_CANDIDATES = [
     "ps_ratio_ttm",
     "gross_profit_margin_ttm",
     "net_profit_margin_ttm",
+    "roe_ttm",
     "debt_to_asset_ratio",
     "current_ratio",
     "quick_ratio",
@@ -69,8 +81,10 @@ FACTOR_CANDIDATES = [
     "net_profit_parent_company_growth_ratio_ttm",
     "operating_profit_growth_ratio_ttm",
     "gross_profit_growth_ratio_ttm",
+    "operating_revenue_growth_ratio_ttm",
     "account_receivable_turnover_rate_ttm",
     "current_asset_turnover_ttm",
+    *PEER_FACTOR_CANDIDATES,
 ]
 
 CHART_QUALITY_REQUIREMENTS = [
@@ -99,6 +113,8 @@ class MultiAgentOptions:
 
 
 def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
+    from .progress import step, info, ok, warn, section, sub_section, data_table
+
     load_dotenv()
     root = Path(options.workdir)
     output_path = Path(options.output) if options.output else root / "outputs" / f"{normalize_stock_code(options.stock)}_multi_agent_report.md"
@@ -107,14 +123,112 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
     stock_code = normalize_stock_code(options.stock)
     order_book_id = to_order_book_id(stock_code)
 
+    section("多智能体研究报告流程")
+    info(f"股票代码: {stock_code} → 米筐合约: {order_book_id}")
+    info(f"截止日期: {as_of_date}, 回看天数: {options.lookback_days}")
+
+    # ── 第 1 步：规划 ──
+    section("步骤 1/8：规划 Agent — 制定研究计划")
     plan = planner_agent(stock_code=stock_code, order_book_id=order_book_id, as_of=as_of_date, lookback_days=options.lookback_days)
+    objectives = str(plan.get("objective", ""))[:120]
+    info(f"研究目标: {objectives}")
+    tools = plan.get("tools", [])
+    sections_spec = plan.get("sections", [])
+    info(f"计划使用的米筐函数: {len(tools)} 个")
+    info(f"计划生成的章节: {len(sections_spec)} 个")
+    data_table(
+        ["章节名称", "写作 Agent", "数据源"],
+        [[s.get("name", ""), s.get("agent", ""), ", ".join(s.get("data", [])[:3])] for s in sections_spec],
+    )
+
+    # ── 第 2 步：数据采集 ──
+    section("步骤 2/8：数据执行 Agent — 采集米筐数据")
+    step("初始化 RQData 并拉取全量数据")
     data = data_executor_agent(order_book_id=order_book_id, as_of=as_of_date, lookback_days=options.lookback_days, output_dir=output_path.parent)
+    sec_name = data.get("sec_name", "")
+    info(f"公司名称: {sec_name or '（未获取）'}")
+    info(f"数据区间: {data.get('start_date')} → {data.get('end_date')}")
+
+    # 打印各数据集行数
+    data_inventory = [
+        ("量价行情", data.get("price", {}).get("row_count", 0)),
+        ("日涨跌幅", data.get("price_change_rate", {}).get("row_count", 0)),
+        ("换手率", data.get("turnover", {}).get("row_count", 0)),
+        ("资金流向", data.get("capital_flow", {}).get("row_count", 0)),
+        ("融资融券", data.get("securities_margin", {}).get("row_count", 0)),
+        ("分红方案", data.get("dividend", {}).get("row_count", 0)),
+        ("股本结构", data.get("shares", {}).get("row_count", 0)),
+        ("估值因子", data.get("factor", {}).get("row_count", 0) if isinstance(data.get("factor"), dict) else "N/A"),
+        ("Shibor", data.get("interbank_rate", {}).get("row_count", 0)),
+        ("收益率曲线", data.get("yield_curve", {}).get("row_count", 0)),
+    ]
+    data_table(["数据集", "记录数"], [[name, str(count)] for name, count in data_inventory])
+
+    industry = data.get("industry", {})
+    if industry:
+        info(f"行业归属: {industry}")
+
+    technical = data.get("technical", {})
+    if technical:
+        info(f"最新收盘价: {technical.get('latest_close')}")
+        info(f"20日收益: {technical.get('return_20d')}, 60日收益: {technical.get('return_60d')}")
+        info(f"MA20: {technical.get('ma20')}, MA60: {technical.get('ma60')}")
+        info(f"RSI14: {technical.get('rsi14')}")
+
+    pit = data.get("pit_financials", {})
+    if pit:
+        info(f"PIT 财务数据: {pit.get('row_count', 0)} 行, 最新报告期: {pit.get('report_year')}")
+
+    # ── 第 3 步：生成图表 ──
+    section("步骤 3/8：图表 Agent — 生成可视化图表")
     chart_output_dir = output_path.parent / "charts" / output_path.stem
+    step("执行 chart_agent", f"输出目录: {chart_output_dir}")
     chart_files = chart_agent(data=data, output_dir=chart_output_dir)
     charts = {name: _markdown_path(path, output_path.parent) for name, path in chart_files.items()}
+    info(f"生成 {len(charts)} 张图表:")
+    for name in charts:
+        info(f"  └ {name}")
+    if len(charts) < 8:
+        warn(f"图表数量 ({len(charts)}) 不足 8 张，验证阶段可能要求补充")
+
+    # ── 第 4 步：章节写作 ──
+    section("步骤 4/8：章节写作 Agent — 各分段智能体并行写作")
+    step("启动 section_writer_agents", f"共 {len(sections_spec)} 个章节")
     sections = section_writer_agents(plan=plan, data=data, charts=charts)
+    for name, content in sections.items():
+        info(f"  ✓ 《{name}》写作完成 ({len(content)} 字符)")
+
+    # ── 第 5 步：生成草稿 ──
+    section("步骤 5/8：渲染草稿 Markdown")
     draft_markdown = _render_draft_markdown(plan=plan, data=data, charts=charts, sections=sections)
+    info(f"草稿长度: {len(draft_markdown)} 字符")
+
+    # ── 第 6 步：验证 ──
+    section("步骤 6/8：验证 Agent — 质量与一致性审查")
+    step("执行 validation_agent")
     validation = validation_agent(plan=plan, data=data, charts=charts, sections=sections, draft_markdown=draft_markdown)
+    score = validation.get("score", "N/A")
+    decision = validation.get("final_decision", "N/A")
+    info(f"验证评分: {score}/100")
+    info(f"验证结论: {decision}")
+    action_items = validation.get("action_items", [])
+    if action_items:
+        sub_section("验证修改建议")
+        for item in action_items[:8]:
+            info(f"  • {item}")
+    unsupported = validation.get("unsupported_claims", [])
+    if unsupported:
+        warn(f"疑似未支撑表述: {unsupported[:3]}")
+    structural = validation.get("structural_feedback", [])
+    if structural:
+        sub_section("结构反馈")
+        for fb in structural[:5]:
+            if isinstance(fb, dict):
+                info(f"  [{fb.get('section', '?')}] {fb.get('issue', '')}: {fb.get('suggestion', '')[:100]}")
+
+    # ── 精炼循环（数据/图表补采） ──
+    section("步骤 6b/8：精炼循环 — 数据/图表补采（如需）")
+    step("检查是否需要补充数据或图表")
     data, charts, validation = refinement_loop(
         plan=plan,
         data=data,
@@ -126,7 +240,25 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
         output_dir=output_path.parent,
         chart_output_dir=chart_output_dir,
     )
+    refined = validation.get("refinement_performed")
+    if refined:
+        info(f"补采数据: {refined.get('refresh_data')}, 补图: {refined.get('refresh_charts')}")
+        info(f"原因: {refined.get('reason', '')[:120]}")
+        if refined.get("refresh_charts"):
+            ok(f"图表已更新为 {len(charts)} 张")
+    else:
+        info("无需补采，草稿质量合格")
+
+    # ── 第 7 步：修订章节 ──
+    section("步骤 7/8：修订 Agent — 根据验证反馈改写章节")
+    step("执行 revise_sections_with_validation")
     sections = revise_sections_with_validation(plan=plan, data=data, charts=charts, sections=sections, validation=validation)
+    for name, content in sections.items():
+        info(f"  ✓ 《{name}》修订完成 ({len(content)} 字符)")
+
+    # ── 第 8 步：组装最终报告 ──
+    section("步骤 8/8：最终组装 — 生成 MD + HTML + JSON + LaTeX")
+    step("生成执行摘要")
     final_markdown, payload = _assemble_multi_report(
         plan=plan,
         data=data,
@@ -136,18 +268,30 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
         output_path=output_path,
         json_path=output_path.with_suffix(".json"),
     )
+    step("写入 Markdown", str(output_path))
     output_path.write_text(final_markdown, encoding="utf-8")
+    ok(f"Markdown 报告已写入 ({output_path.stat().st_size} 字节)")
+
+    step("写入 JSON", str(output_path.with_suffix(".json")))
     json_path = output_path.with_suffix(".json")
     json_path.write_text(json.dumps(_json_ready(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+    ok(f"JSON 数据已写入 ({json_path.stat().st_size} 字节)")
+
     payload["output_markdown"] = str(output_path)
     payload["output_json"] = str(json_path)
     payload["output_html"] = payload.get("meta", {}).get("output_html") or str(output_path.with_suffix(".html"))
+
+    # 检查 HTML 是否存在
+    html_path = payload["output_html"]
+    if Path(html_path).exists():
+        ok(f"HTML 报告已生成: {html_path}")
 
     if get_env("EXPORT_LATEX", "true").lower() == "true":
         from .latex_exporter import export_latex
         try:
             tex_path = output_path.with_suffix(".tex")
             compile_pdf = get_env("COMPILE_PDF", "false").lower() == "true"
+            step("LaTeX 导出", f"编译 PDF: {compile_pdf}")
             export_latex(
                 markdown_text=final_markdown,
                 output_tex_path=tex_path,
@@ -162,8 +306,20 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
             payload["output_tex"] = str(tex_path)
             if compile_pdf:
                 payload["output_pdf"] = str(tex_path.with_suffix(".pdf"))
+            ok(f"LaTeX 导出完成: {tex_path}")
         except Exception as e:
-            print(f"LaTeX 导出失败: {e}")
+            warn(f"LaTeX 导出失败: {e}")
+
+    # 输出总结
+    section("报告生成汇总")
+    info(f"Markdown: {payload['output_markdown']}")
+    info(f"HTML:     {payload['output_html']}")
+    info(f"JSON:     {payload['output_json']}")
+    if payload.get("output_tex"):
+        info(f"LaTeX:    {payload['output_tex']}")
+    if payload.get("output_pdf"):
+        info(f"PDF:      {payload['output_pdf']}")
+    info(f"图表:     {len(charts)} 张于 {chart_output_dir}/")
 
     return payload
 
@@ -264,7 +420,7 @@ def data_executor_agent(
     fundamentals_start = end_date - timedelta(days=730)
     macro_start = end_date - timedelta(days=120)
     available_factors = set(rqdatac.get_all_factor_names())
-    factors = [name for name in FACTOR_CANDIDATES if name in available_factors]
+    factors = list(dict.fromkeys(name for name in FACTOR_CANDIDATES if name in available_factors))
 
     rq_tasks: dict[str, Any] = {
         "price": lambda: rqdatac.get_price(
@@ -356,6 +512,23 @@ def data_executor_agent(
     yield_curve = _rq_frame("yield_curve")
     factor = _rq_frame("factor")
     factor_history = _rq_frame("factor_history")
+    try:
+        industry_comparison = fetch_industry_comparison(
+            rqdatac,
+            order_book_id=order_book_id,
+            as_of=end_date,
+            available_factors=available_factors,
+        )
+    except Exception as exc:
+        print(f"[peer_analysis] industry comparison skipped: {type(exc).__name__}: {exc}")
+        industry_comparison = {
+            "industry": {"source": "citics_2019", "selected_level": None},
+            "peers": {"selected_level": None, "candidate_count": 0, "effective_count": 0, "order_book_ids": [], "sample_order_book_ids": []},
+            "metrics": {},
+            "relative_signals": [],
+            "cluster_anomalies": {"method": "DBSCAN", "status": "skipped", "reason": str(exc)},
+            "data_notes": [f"行业对比数据获取失败：{type(exc).__name__}: {exc}"],
+        }
 
     frames = {
         "price": _flatten_frame(price),
@@ -394,6 +567,7 @@ def data_executor_agent(
         "yield_curve": _frame_summary(frames["yield_curve"], tail=120),
         "factor": _latest_row(frames["factor"]),
         "factor_history": _frame_summary(_flatten_frame(factor_history), tail=max(260, lookback_days)),
+        "industry_comparison": industry_comparison,
         "technical": _technical_summary(frames["price"]),
     }
     _enrich_multi_factor_payload(payload, stock_code)
@@ -483,7 +657,7 @@ def _safe_number(value: Any) -> float | None:
 
 
 def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> None:
-    """挂载本地 SQLite 中的 PIT 财务与年报 MD&A，供基本面章节深度分析。"""
+    """挂载本地 SQLite 中的 PIT 财务与年报 MD&A，供经营质量章节深度分析。"""
     annual = None
     try:
         from .datastore.db import get_annual_report, get_pit_financials
@@ -502,7 +676,7 @@ def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> Non
 
     if not payload.get("pit_financials"):
         try:
-            from .cninfo import default_as_of
+            from .stock_utils import default_as_of
             from .rqdata_client import fetch_financials
 
             report_year = int((annual or {}).get("report_year") or default_as_of(None).year)
@@ -520,11 +694,30 @@ def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> Non
         return
     from .mda_analysis import build_annual_context_from_store
 
-    ctx = build_annual_context_from_store(annual)
+    # ── 加载年报上下文。multi-agent 路径不再额外生成投资总监成品文本。 ──
+    try:
+        ctx = build_annual_context_from_store(annual, with_director=False)
+    except Exception as exc:
+        print(f"[annual_analysis] context path failed ({type(exc).__name__}: {exc}), falling back to basic context")
+        ctx = None
     if ctx:
+        # 提取结构化财务分析，保持 annual_report_context 向后兼容。
+        financial_analysis_raw = ctx.pop("_financial_analysis_raw", None)
         payload["annual_report_context"] = ctx
+
+        # 注入多智能体专用的 annual_analysis 字段（独立于 pit_financials）
+        annual_analysis: dict[str, Any] = {
+            "report_year": ctx.get("report_year"),
+            "sec_name": ctx.get("sec_name"),
+            "financial_data": annual.get("financial_data") or [],
+            "financial_analysis": financial_analysis_raw,
+            "mda_full_text": annual.get("mda_text") or "",
+        }
+        if financial_analysis_raw:
+            payload["annual_analysis"] = annual_analysis
         return
 
+    # 降级路径：SQLite 有记录但 build_annual_context 返回空
     financial_data = annual.get("financial_data") if isinstance(annual.get("financial_data"), list) else []
     payload["annual_report_context"] = {
         "report_year": annual.get("report_year"),
@@ -590,7 +783,7 @@ def validation_agent(
                 "## 整体报告质量要求\n"
                 "除了逐图审核外，你还需要从整体视角评估报告的可读性和逻辑连贯性：\n"
                 "1. **图文布局**：图表不应全部挤在「可视化」章节，应尽量分散到对应分析段落附近（例如在量价分析段插入价格图，在资金流段插入资金图）。\n"
-                "2. **章节衔接**：相邻章节之间是否有过渡句或逻辑联系？例如「基本面与估值」之后是否自然引出「资金与交易结构」。\n"
+                "2. **章节衔接**：相邻章节之间是否有过渡句或逻辑联系？例如「经营质量分析」之后是否自然引出「资金与交易结构」。\n"
                 "3. **段落冗长**：是否有大段纯文字堆砌，缺乏小标题、列表或图表支撑？建议拆分为更易读的子段落。\n"
                 "4. **结论先行**：每个章节开头应有小结或关键结论，避免让读者在段落中寻找要点。\n"
                 "5. **图表引用**：正文中是否明确引用了图表（如“如图1所示”）？如果图表与正文脱节，应在 `action_items` 中要求补充引用。\n"
@@ -650,18 +843,26 @@ def revise_sections_with_validation(
         if section_relevance.get("decision") == "rewrite":
             section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
         prompt_data = _compact_data_for_prompt(data, charts, name)
+        revise_director_guidance = ""
+        if _is_operating_quality_section(name):
+            revise_director_guidance = _operating_quality_writer_guidance()
+        revise_industry_guidance = _industry_comparison_writer_guidance(name, prompt_data)
         try:
             text = normalize_section_text(
                 llm_text(
                     f"你是 revise_agent。请根据验证 Agent 的意见，重写《{name}》章节。"
                     "只能使用 JSON 中已有数据；不要新增未采集来源；不要给买卖建议。"
                     "需要补充图表解读、数据局限和更可追溯的数字表述。"
+                    "正文和表格展示层不要输出 raw JSON 字段路径或嵌套键名，例如 factor_trend.latest.xxx、data.xxx、margin_trajectory.xxx；"
+                    "需要说明来源时用自然语言口径描述，例如“最新估值因子”“两融轨迹”“同比增长因子”。"
                     f"{analytical_writing_core()} "
                     f"{section_opening_conclusion_rule()} "
                     f"{section_writing_style_hint(name)} "
+                    f"{revise_director_guidance}"
+                    f"{revise_industry_guidance}"
                     "优先引用 data.analytical_evidence；多年数据须用 Markdown 表格（表头清晰、多指标对比优先宽表≥3列，禁止两行两列敷衍）；"
                     "若有 mda_crosswalk，融入盈利/现金流段落对照 MD&A，勿设独立勾稽章节。"
-                    "每一段都必须回到目标股票本身：引用目标股票代码、目标股票的米筐数据字段、目标股票图表或目标股票对应行业归属。"
+                    "每一段都必须回到目标股票本身：引用目标股票代码、具体指标、目标股票图表或目标股票对应行业归属。"
                     "如果原文有泛泛讲宏观、行业、市场或方法论但没有连接目标股票的句子，请删除或改写。"
                     "直接输出 Markdown 正文，不要写「好的」「根据您的反馈」「遵照您的指示」等开场白，不要重复章节标题。",
                     json.dumps(
@@ -730,6 +931,7 @@ def refinement_loop(
     next_lookback = max(lookback_days, int(requests.get("lookback_days") or lookback_days))
     if requests.get("refresh_data"):
         data = data_executor_agent(order_book_id=order_book_id, as_of=as_of, lookback_days=next_lookback, output_dir=output_dir)
+        data.pop("_chart_metadata", None)  # 显式清除旧元数据，防止 stale metadata 传递到组装阶段
     if requests.get("refresh_charts"):
         chart_files = chart_agent(data=data, output_dir=chart_output_dir)
         charts = {name: _markdown_path(path, output_dir) for name, path in chart_files.items()}
@@ -791,11 +993,12 @@ def _assemble_multi_report(
         validation=validation,
     )
 
-    sections_inline, unused = apply_chart_placements(
+    sections_inline, unused = apply_chart_placements_agent(
         normalized,
         charts,
         placement,
         data=data,
+        figure_notes=None,
     )
 
     executive_summary = generate_multi_executive_summary(data=data, sections=sections_inline)
@@ -981,7 +1184,17 @@ def layout_optimizer(markdown_text: str, charts: dict[str, str]) -> str:
         "量价与趋势": ["price_volume", "moving_averages", "cumulative_return", "drawdown", "turnover_rate"],
         "技术因素": ["technical_indicators"],
         "资金与交易结构": ["capital_flow", "cumulative_capital_flow", "buy_sell_value", "margin_enhanced"],
-        "基本面与估值": ["valuation_percentile", "latest_quality_snapshot", "share_structure_pie", "dividend_spread"],
+        OPERATING_QUALITY_SECTION: [
+            "industry_profitability_compare",
+            "industry_growth_leverage_compare",
+            "industry_dbscan_anomaly",
+            "latest_quality_snapshot",
+            "profitability_factors",
+            "growth_factors",
+            "liquidity_factors",
+            "debt_ratio_trend",
+            "share_structure_pie",
+        ],
         "宏观利率背景": ["shibor_rates", "gov_yield_trend", "yield_curve_snapshot"],
     }
 
@@ -1030,20 +1243,37 @@ def _write_section(*, agent: str, section_name: str, data: dict[str, Any]) -> st
     if not get_env("OPENAI_API_KEY"):
         return f"{agent} 本地摘要：{section_name} 已基于可用数据完成。"
     style_hint = section_writing_style_hint(section_name)
+
+    director_guidance = _operating_quality_writer_guidance() if _is_operating_quality_section(section_name) else ""
+    industry_guidance = _industry_comparison_writer_guidance(section_name, data)
+
     try:
+        role_prompt = (
+            annual_director_system_prompt()
+            if _is_operating_quality_section(section_name)
+            else f"你是 {agent}。请写研报中的《{section_name}》章节。"
+        )
+        max_chars = 36000 if _is_operating_quality_section(section_name) else 24000
         return normalize_section_text(
             llm_text(
-                f"你是 {agent}。请写研报中的《{section_name}》章节。"
+                role_prompt
+                + " "
                 "只能使用用户提供的 JSON 数据，不得补充外部来源、宏观、行业、新闻、Wind、券商预测或未采集信息。"
                 "所有数值结论必须能从 JSON 中追溯；没有数据就写数据局限。不要给买卖建议。"
+                "正文和表格展示层不要输出 raw JSON 字段路径或嵌套键名，例如 factor_trend.latest.xxx、data.xxx、margin_trajectory.xxx；"
+                "需要说明来源时用自然语言口径描述，例如“最新估值因子”“两融轨迹”“同比增长因子”。"
                 f"{analytical_writing_core()} "
                 f"{section_opening_conclusion_rule()} "
                 f"{style_hint} "
-                "优先引用 analytical_evidence 中的日期、窗口统计与多年表；"
-                "若有 mda_crosswalk，在盈利/现金流/风险相关段落中用「报表…，MD&A…」对照写法融入，勿设独立勾稽章节；"
+                f"{director_guidance}"
+                f"{industry_guidance}"
+                "优先使用 annual_financial_analysis 中的完整财务画像（全部 reviewed_signals、metrics、articulation_checks），"
+                "以及 analytical_evidence 中的日期、窗口统计与多年表；"
+                "若有 mda_crosswalk 或 mda_full_text，在盈利/现金流/风险相关段落中做「报表数据 + MD&A 管理层解释 + 独立判断」三者对照，"
+                "勿设独立勾稽章节；数值结论必须可从 JSON 追溯；"
                 "有 pit_financials_table / financial_years 时必须输出 Markdown 对比表。"
                 "直接输出 Markdown 正文，不要写「好的」「根据您提供的」等开场白，不要重复章节标题。",
-                json.dumps(data, ensure_ascii=False)[:24000],
+                json.dumps(data, ensure_ascii=False)[:max_chars],
             ),
             section_name,
         )
@@ -1129,6 +1359,7 @@ def _data_inventory(data: dict[str, Any]) -> dict[str, Any]:
 
 def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections: dict[str, str], draft_markdown: str) -> dict[str, Any]:
     action_items = []
+    section_feedback: dict[str, list[str]] = {}
     chart_review = _chart_quality_review(data=data, charts=charts)
     relevance_review = _stock_relevance_review(data=data, sections=sections)
     narrative_review = _section_narrative_review(sections=sections)
@@ -1146,6 +1377,10 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
         value = data.get(key)
         if isinstance(value, dict) and int(value.get("row_count") or 0) == 0:
             action_items.append(f"{key} 没有返回可用行，需要在报告中说明数据局限。")
+    industry_feedback = _industry_comparison_section_feedback(data, sections)
+    for section_name, notes in industry_feedback.items():
+        section_feedback.setdefault(section_name, []).extend(notes)
+        action_items.extend(f"章节 {section_name} 缺少同行横向比较：{note}" for note in notes)
     unsupported = []
     for token in ("Wind", "券商预测", "新闻", "管理层指引"):
         if token in draft_markdown:
@@ -1153,7 +1388,7 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
     return {
         "score": 80 if not unsupported and len(charts) >= 8 else 65,
         "action_items": action_items,
-        "section_feedback": {},
+        "section_feedback": section_feedback,
         "unsupported_claims": unsupported,
         "missing_data_notes": action_items,
         "chart_quality_review": chart_review,
@@ -1172,17 +1407,22 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
 def _sanitize_validation(validation: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     result = dict(validation) if isinstance(validation, dict) else {}
     result["score"] = int(_float(result.get("score")) or fallback["score"])
-    result["action_items"] = _string_list(result.get("action_items")) or fallback["action_items"]
+    result["action_items"] = _dedupe([*_string_list(fallback.get("action_items")), *_string_list(result.get("action_items"))])
     result["unsupported_claims"] = _string_list(result.get("unsupported_claims"))
-    result["missing_data_notes"] = _string_list(result.get("missing_data_notes"))
+    result["missing_data_notes"] = _dedupe([*_string_list(fallback.get("missing_data_notes")), *_string_list(result.get("missing_data_notes"))])
     chart_review = result.get("chart_quality_review")
     result["chart_quality_review"] = chart_review if isinstance(chart_review, dict) else fallback.get("chart_quality_review", {})
     relevance_review = result.get("stock_relevance_review")
     result["stock_relevance_review"] = relevance_review if isinstance(relevance_review, dict) else fallback.get("stock_relevance_review", {})
     feedback = result.get("section_feedback")
-    result["section_feedback"] = feedback if isinstance(feedback, dict) else {}
+    result["section_feedback"] = _merge_section_feedback(
+        fallback.get("section_feedback") if isinstance(fallback.get("section_feedback"), dict) else {},
+        feedback if isinstance(feedback, dict) else {},
+    )
     decision = str(result.get("final_decision") or fallback["final_decision"]).lower()
     result["final_decision"] = decision if decision in {"pass", "revise", "block"} else "revise"
+    if fallback.get("final_decision") == "revise" and result["section_feedback"]:
+        result["final_decision"] = "revise"
     requests = result.get("refinement_requests")
     result["refinement_requests"] = requests if isinstance(requests, dict) else fallback.get("refinement_requests", {})
     structural = result.get("structural_feedback")
@@ -1373,6 +1613,317 @@ def _string_list(value: Any) -> list[str]:
     return []
 
 
+_INDUSTRY_METRIC_PRIORITY = (
+    "gross_profit_margin_ttm",
+    "net_profit_margin_ttm",
+    "roe_ttm",
+    "operating_revenue_growth_ratio_ttm",
+    "net_profit_parent_company_growth_ratio_ttm",
+    "debt_to_asset_ratio",
+    "current_ratio",
+    "quick_ratio",
+)
+
+_VALUATION_METRICS = {"pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm", "dividend_yield_ttm"}
+_VALUATION_KEY_PARTS = ("pe_ratio", "pb_ratio", "ps_ratio", "dividend_yield")
+
+_DECIMAL_PERCENT_METRICS = {
+    "gross_profit_margin_ttm",
+    "net_profit_margin_ttm",
+    "roe_ttm",
+    "net_profit_growth_ratio_ttm",
+    "net_profit_parent_company_growth_ratio_ttm",
+    "operating_profit_growth_ratio_ttm",
+    "gross_profit_growth_ratio_ttm",
+    "operating_revenue_growth_ratio_ttm",
+    "dividend_yield_ttm",
+}
+
+_POINT_PERCENT_METRICS = {"debt_to_asset_ratio"}
+_MULTIPLE_METRICS = {"pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm", "current_ratio", "quick_ratio"}
+
+
+def _industry_comparison_prompt_summary(industry_comparison: Any) -> dict[str, Any] | None:
+    if not isinstance(industry_comparison, dict):
+        return None
+    metrics = industry_comparison.get("metrics") if isinstance(industry_comparison.get("metrics"), dict) else {}
+    rows = []
+    for key in _ordered_industry_metric_keys(metrics):
+        item = metrics.get(key)
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "metric": key,
+                "label": _industry_metric_label(key, item),
+                "target": item.get("target"),
+                "mean": item.get("mean"),
+                "median": item.get("median"),
+                "p25": item.get("p25"),
+                "p75": item.get("p75"),
+                "percentile": item.get("percentile"),
+                "relative_label": item.get("relative_label"),
+                "valid_count": item.get("valid_count"),
+            }
+        )
+    cluster = industry_comparison.get("cluster_anomalies")
+    cluster_summary = cluster if isinstance(cluster, dict) else {}
+    if "points" in cluster_summary:
+        cluster_summary = {k: v for k, v in cluster_summary.items() if k != "points"}
+    return {
+        "industry": industry_comparison.get("industry"),
+        "peers": industry_comparison.get("peers"),
+        "metric_rows": rows,
+        "relative_signals": _string_list_or_dicts(industry_comparison.get("relative_signals"))[:8],
+        "cluster_anomalies": cluster_summary,
+        "data_notes": _string_list(industry_comparison.get("data_notes"))[:8],
+    }
+
+
+def _operating_quality_industry_summary(industry_comparison: Any) -> dict[str, Any] | None:
+    summary = _industry_comparison_prompt_summary(industry_comparison)
+    if not isinstance(summary, dict):
+        return None
+    rows = summary.get("metric_rows") if isinstance(summary.get("metric_rows"), list) else []
+    summary["metric_rows"] = [row for row in rows if isinstance(row, dict) and row.get("metric") not in _VALUATION_METRICS]
+    cluster = summary.get("cluster_anomalies") if isinstance(summary.get("cluster_anomalies"), dict) else {}
+    if cluster:
+        for key in ("top_contributors", "single_metric_anomalies"):
+            items = cluster.get(key)
+            if isinstance(items, list):
+                valuation_items = [item for item in items if isinstance(item, dict) and item.get("metric") in _VALUATION_METRICS]
+                cluster[key] = [item for item in items if isinstance(item, dict) and item.get("metric") not in _VALUATION_METRICS]
+                if valuation_items:
+                    cluster["valuation_contributors_excluded"] = True
+        features = cluster.get("features")
+        if isinstance(features, list):
+            cluster["operating_quality_features"] = [item for item in features if item not in _VALUATION_METRICS]
+    return summary
+
+
+def _industry_comparison_prompt_brief(industry_comparison: Any) -> str:
+    summary = _industry_comparison_prompt_summary(industry_comparison) if not _is_industry_summary(industry_comparison) else industry_comparison
+    if not isinstance(summary, dict):
+        return ""
+    industry = summary.get("industry") if isinstance(summary.get("industry"), dict) else {}
+    peers = summary.get("peers") if isinstance(summary.get("peers"), dict) else {}
+    level = industry.get("selected_level")
+    selected_name = industry.get("selected_industry_name") or industry.get(f"level{level}_name") if level else None
+    metric_rows = summary.get("metric_rows") if isinstance(summary.get("metric_rows"), list) else []
+    notes = _string_list(summary.get("data_notes"))
+
+    if not metric_rows:
+        reason = "；".join(notes[:3]) or "未形成有效同行池。"
+        return f"同行对比状态：未形成有效同行池；原因：{reason}写作时只说明数据局限，不得编造行业均值、中位数或聚类结论。"
+
+    peer_count = peers.get("effective_count")
+    level_text = f"中信 2019 {level}级行业" if level else "中信 2019 行业"
+    heading = selected_name or "所选同行池"
+    lines = [
+        f"同行池口径：{level_text}「{heading}」，有效同行 {peer_count} 家。",
+        "可直接用于写作的横向对比要点：",
+    ]
+    for row in metric_rows[:8]:
+        key = str(row.get("metric") or "")
+        percentile = _float(row.get("percentile"))
+        lines.append(
+            "- "
+            f"{_industry_metric_label(key, row)}：目标公司 {_format_industry_metric_value(key, row.get('target'))}，"
+            f"行业中位数 {_format_industry_metric_value(key, row.get('median'))}，"
+            f"行业均值 {_format_industry_metric_value(key, row.get('mean'))}，"
+            f"行业分位 {_format_percentile(percentile)}，{row.get('relative_label') or '接近行业中位区间'}。"
+        )
+
+    cluster = summary.get("cluster_anomalies") if isinstance(summary.get("cluster_anomalies"), dict) else {}
+    if cluster.get("status") == "ok":
+        contributors = cluster.get("top_contributors") if isinstance(cluster.get("top_contributors"), list) else []
+        contributor_text = "、".join(_industry_metric_label(str(item.get("metric") or ""), item) for item in contributors[:3] if isinstance(item, dict))
+        noise_text = "被 DBSCAN 标记为噪声点" if cluster.get("is_noise") else f"未被 DBSCAN 标记为噪声点，所属簇规模 {cluster.get('cluster_size')} 家"
+        lines.extend(
+            [
+                f"DBSCAN 异常识别显示目标公司{noise_text}；异常分数约 {_format_plain_number(cluster.get('anomaly_score'))}。"
+                + (f"主要贡献指标为{contributor_text}。" if contributor_text else ""),
+            ]
+        )
+        single_metric = cluster.get("single_metric_anomalies") if isinstance(cluster.get("single_metric_anomalies"), list) else []
+        if single_metric:
+            single_text = "、".join(_industry_metric_label(str(item.get("metric") or ""), item) for item in single_metric[:3] if isinstance(item, dict))
+            lines.append(f"同时存在单指标 robust z-score 超过阈值的异常项：{single_text}。")
+        if cluster.get("valuation_contributors_excluded"):
+            lines.append("DBSCAN 原始贡献指标包含估值因子；经营质量章节只使用非估值贡献项，估值驱动的聚类证据不用于经营质量结论。")
+    else:
+        reason = cluster.get("reason") or "样本数或有效特征不足"
+        lines.append(f"DBSCAN 本次未执行：{reason}；行业判断主要依据分位数和四分位区间。")
+    if notes:
+        lines.append(f"数据局限：{'；'.join(notes[:3])}")
+    return "\n".join(lines)
+
+
+def _industry_comparison_writer_guidance(section_name: str, data: dict[str, Any]) -> str:
+    if not _section_uses_industry_comparison(section_name) or not data.get("industry_comparison"):
+        return ""
+    brief = str(data.get("industry_comparison_brief") or "").strip()
+    if _is_operating_quality_section(section_name):
+        return (
+            "本章节必须把同行对比作为经营质量分析坐标，而不是附录。写作时按以下要求处理："
+            "1) 在「同行横向坐标」中说明实际采用的同行池层级和有效同行数量；"
+            "2) 只使用经营质量指标做横向比较，如毛利率、净利率、ROE、收入/利润增长、资产负债率、流动比率、速动比率；"
+            "3) 至少选择 2-3 个经营类关键指标说明目标公司相对行业均值、中位数和分位；"
+            "4) DBSCAN 可用时只解释经营质量相关贡献指标；若主要异常来自估值因子，则说明聚类证据不用于经营质量结论；"
+            "5) 禁止写 PE/PB/PS、股息率、估值分位、估值吸引力或估值匹配判断。"
+            "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
+            + (f"同行对比写作简报：{brief}" if brief else "")
+        )
+    if "基本面" in section_name or "估值" in section_name:
+        return (
+            "本章节必须把同行对比作为分析坐标，而不是附录。写作时按以下顺序组织判断："
+            "1) 先说明实际采用的同行池层级和有效同行数量；"
+            "2) 估值必须说明 PE/PB/PS 至少一个指标相对行业的分位、均值和中位数；"
+            "3) 盈利、成长、杠杆/偿债中至少选择 2-3 个关键指标做同行比较；"
+            "4) DBSCAN 可用时说明是否为噪声点和主要贡献指标，不可用时说明样本或特征局限。"
+            "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
+            "可以设置「行业横向坐标」这类小标题，但内容必须由你自然写成，不要机械复述字段名。"
+            + (f"同行对比写作简报：{brief}" if brief else "")
+        )
+    return (
+        "本章节可引用 industry_comparison_summary 的异常识别和数据局限作为风险证据；"
+        "若同行池无效或 DBSCAN 跳过，只说明局限，不得编造行业结论。"
+        + (f"同行对比写作简报：{brief}" if brief else "")
+    )
+
+
+def _operating_quality_writer_guidance() -> str:
+    return (
+        "本章节是投资总监式「经营质量分析」，直接基于年报 MD&A、财务信号审核、PIT 财务表和同行经营质量数据写作，"
+        "不得再转述或引用 investment_director_analysis 成品文本。"
+        "必须采用以下结构：**核心经营表现概述**、**业务/收入结构变化**、**利润与费用驱动**、"
+        "**现金流质量**、**营运资本与偿债**、**同行横向坐标**、**核心矛盾汇总**、"
+        "**关注事项与数据局限**、**总结**。"
+        "请复用投资总监的克制、可追溯、结论先行风格，围绕经营质量和核心矛盾组织，而不是按估值/盈利/成长/杠杆四段机械拆分。"
+        f"投资总监结构参考：{annual_director_structure_guide()}"
+        "本章节必须丢弃估值信息：禁止输出 PE/PB/PS、股息率、估值分位、估值吸引力或估值与基本面匹配判断。"
+    )
+
+
+def _ordered_industry_metric_keys(metrics: dict[str, Any]) -> list[str]:
+    ordered = [key for key in _INDUSTRY_METRIC_PRIORITY if key in metrics]
+    ordered.extend(key for key in metrics if key not in ordered)
+    return ordered
+
+
+def _industry_metric_label(key: str, item: Any | None = None) -> str:
+    if isinstance(item, dict) and item.get("label"):
+        return str(item["label"])
+    return FACTOR_LABELS.get(key, key)
+
+
+def _format_industry_metric_value(key: str, value: Any) -> str:
+    number = _float(value)
+    if number is None:
+        return "N/A"
+    if key in _DECIMAL_PERCENT_METRICS:
+        return f"{number * 100:.2f}%"
+    if key in _POINT_PERCENT_METRICS:
+        return f"{number:.2f}%"
+    if key in _MULTIPLE_METRICS:
+        return f"{number:.2f}x"
+    return _format_plain_number(number)
+
+
+def _format_percentile(value: float | None) -> str:
+    if value is None:
+        return "N/A"
+    return f"{value * 100:.0f}%"
+
+
+def _format_plain_number(value: Any) -> str:
+    number = _float(value)
+    if number is None:
+        return "N/A"
+    return f"{number:.2f}"
+
+
+def _is_industry_summary(value: Any) -> bool:
+    return isinstance(value, dict) and "metric_rows" in value
+
+
+def _string_list_or_dicts(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if item]
+
+
+def _merge_section_feedback(*sources: dict[str, Any]) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {}
+    for source in sources:
+        for section_name, value in source.items():
+            notes = _string_list(value)
+            if notes:
+                merged.setdefault(str(section_name), [])
+                merged[str(section_name)] = _dedupe([*merged[str(section_name)], *notes])
+    return merged
+
+
+def _industry_comparison_section_feedback(data: dict[str, Any], sections: dict[str, str]) -> dict[str, list[str]]:
+    comparison = data.get("industry_comparison") if isinstance(data.get("industry_comparison"), dict) else {}
+    metrics = comparison.get("metrics") if isinstance(comparison.get("metrics"), dict) else {}
+    if not metrics:
+        return {}
+    feedback: dict[str, list[str]] = {}
+    for section_name, content in sections.items():
+        is_operating = _is_operating_quality_section(section_name)
+        if not is_operating and "基本面" not in section_name and "估值" not in section_name:
+            continue
+        text = str(content or "")
+        if is_operating and _section_mentions_valuation(text):
+            feedback.setdefault(section_name, []).append("经营质量分析不应出现 PE/PB/PS、股息率、估值分位或估值吸引力判断。")
+        if not _section_mentions_peer_comparison(text):
+            feedback[section_name] = [
+                *feedback.get(section_name, []),
+                "已有经营类 industry_comparison 数据，但正文没有明确使用同行池、经营类指标的行业均值/中位数、行业分位或 DBSCAN/样本局限；请重写为主动横向比较。",
+            ]
+    return feedback
+
+
+def _section_mentions_peer_comparison(content: str) -> bool:
+    text = str(content or "")
+    peer_terms = ("同行", "横向", "同业")
+    statistic_terms = ("分位", "中位数", "均值", "P25", "P75", "四分位")
+    anomaly_terms = ("DBSCAN", "聚类", "噪声点", "样本不足", "有效同行")
+    has_peer = any(term in text for term in peer_terms)
+    has_statistic = any(term in text for term in statistic_terms)
+    has_anomaly_or_count = any(term in text for term in anomaly_terms)
+    return has_peer and has_statistic and has_anomaly_or_count
+
+
+def _section_mentions_valuation(content: str) -> bool:
+    text = str(content or "")
+    forbidden = ("PE", "PB", "PS", "市盈率", "市净率", "市销率", "股息率", "估值分位", "估值吸引力", "估值匹配")
+    return any(term in text for term in forbidden)
+
+
+def _is_operating_quality_section(section_name: str) -> bool:
+    return OPERATING_QUALITY_SECTION in str(section_name or "")
+
+
+def _strip_valuation_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _strip_valuation_fields(item) for key, item in value.items() if not _is_valuation_key(key)}
+    if isinstance(value, list):
+        return [_strip_valuation_fields(item) for item in value]
+    return value
+
+
+def _is_valuation_key(key: Any) -> bool:
+    text = str(key or "").lower()
+    return any(part in text for part in _VALUATION_KEY_PARTS)
+
+
+def _filter_operating_quality_charts(charts: dict[str, str]) -> dict[str, str]:
+    blocked = {"industry_valuation_compare", "valuation_percentile", "valuation_factors", "latest_valuation_snapshot", "dividend_spread"}
+    return {name: path for name, path in charts.items() if name not in blocked}
+
+
 def _compact_data_for_prompt(data: dict[str, Any], charts: dict[str, str], section_name: str) -> dict[str, Any]:
     tail = 20 if "量价" in section_name or "技术" in section_name else 12
     payload = {
@@ -1403,14 +1954,36 @@ def _compact_data_for_prompt(data: dict[str, Any], charts: dict[str, str], secti
         },
         "charts": charts,
     }
-    if "基本面" in section_name or "风险" in section_name:
+    if _section_uses_industry_comparison(section_name):
+        industry_summary = (
+            _operating_quality_industry_summary(data.get("industry_comparison"))
+            if _is_operating_quality_section(section_name)
+            else _industry_comparison_prompt_summary(data.get("industry_comparison"))
+        )
+        payload["industry_comparison_summary"] = industry_summary
+        payload["industry_comparison"] = industry_summary
+        payload["industry_comparison_brief"] = _industry_comparison_prompt_brief(industry_summary)
+    if _is_operating_quality_section(section_name):
+        payload["factor"] = _strip_valuation_fields(payload.get("factor"))
+        payload["factor_history_recent"] = _strip_valuation_fields(payload.get("factor_history_recent"))
+        payload["dividend_recent"] = []
+        payload["charts"] = _filter_operating_quality_charts(payload.get("charts", {}))
+    if _is_operating_quality_section(section_name) or "基本面" in section_name or "风险" in section_name:
         payload["pit_financials"] = data.get("pit_financials")
         ctx = data.get("annual_report_context")
         payload["annual_report_context"] = ctx
         if isinstance(ctx, dict):
             payload["mda_crosswalk"] = ctx.get("mda_crosswalk")
             payload["articulation_checks"] = ctx.get("articulation_checks")
+        # ── 完整年报财务分析（经营质量与风险章节使用，无截断） ──
+        annual = data.get("annual_analysis") if isinstance(data.get("annual_analysis"), dict) else {}
+        if annual.get("financial_analysis") and isinstance(annual["financial_analysis"], dict):
+            payload["annual_financial_analysis"] = annual["financial_analysis"]
     return payload
+
+
+def _section_uses_industry_comparison(section_name: str) -> bool:
+    return _is_operating_quality_section(section_name) or any(token in section_name for token in ("基本面", "估值", "风险"))
 
 
 def _markdown_path(path: str, base_dir: Path) -> str:

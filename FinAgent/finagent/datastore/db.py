@@ -36,7 +36,7 @@ SERIES_KEYS = (
     "pit_financials",
 )
 
-META_KEYS = ("factor", "industry", "industry_l2", "technical", "benchmark_index")
+META_KEYS = ("factor", "industry", "industry_l2", "industry_comparison", "technical", "benchmark_index")
 
 
 def get_db_path() -> Path:

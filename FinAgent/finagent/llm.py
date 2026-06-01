@@ -28,11 +28,14 @@ def financial_signal_review_agent(
     framework_text: str,
     company_context: dict[str, Any],
 ) -> dict[str, Any]:
+    from .progress import info
+
     if not has_llm_api_key():
         raise RuntimeError("OPENAI_API_KEY is required for the LLM financial analysis path.")
 
     client = _openai_client()
     model = llm_model()
+    info(f"调用 LLM (financial_signal_review_agent): model={model}")
     prompt = _build_financial_prompt(framework_text, evidence, company_context)
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
@@ -72,11 +75,15 @@ def financial_analysis_agent(
 
 
 def investment_director_analysis(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
+    from .progress import info
+
     if not has_llm_api_key():
+        info("投资总监分析：未配置 API Key，使用本地规则摘要模式")
         return normalize_section_text(_local_summary(mda_text, financial_analysis, company_context), "投资总监分析")
 
     client = _openai_client()
     model = llm_model()
+    info(f"调用 LLM (investment_director_analysis): model={model}")
     prompt = _build_prompt(mda_text, financial_analysis, company_context)
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
@@ -88,15 +95,20 @@ def investment_director_analysis(mda_text: str, financial_analysis: dict[str, An
             max_tokens=int(get_env("OPENAI_DIRECTOR_MAX_TOKENS", "4096")),
         )
     )
+    info("投资总监分析 LLM 调用完成")
     return normalize_section_text(_clean_model_text(response.choices[0].message.content or ""), "投资总监分析")
 
 
 def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
+    from .progress import info
+
     if not has_llm_api_key():
+        info("MD&A 摘要：未配置 API Key，使用本地规则摘要模式")
         return normalize_section_text(_local_mda_summary(mda_text), "MD&A 摘要")
     try:
         name = company_context.get("sec_name") or company_context.get("stock_code") or "目标公司"
         year = company_context.get("report_year") or ""
+        info("调用 LLM (mda_summary_agent)")
         result = llm_text(
             "你是年报 MD&A 摘要 Agent。只基于给定 MD&A 原文提炼经营要点，不给买卖建议。"
             "输出 Markdown：先 1 句总括，再 4-6 条 bullet；每条不超过 45 字，保留关键数字；"
@@ -112,10 +124,13 @@ def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
 
 
 def llm_text(system: str, user: str) -> str:
+    from .progress import info
+
     if not has_llm_api_key():
         raise RuntimeError("OPENAI_API_KEY is required for LLM text generation.")
     client = _openai_client(timeout=float(get_env("OPENAI_TIMEOUT", "1800")))
     model = llm_model()
+    info(f"  → LLM 文本生成: model={model}, 系统={len(system)}B, 用户={len(user)}B")
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
@@ -125,14 +140,19 @@ def llm_text(system: str, user: str) -> str:
             ],
         )
     )
-    return _clean_model_text(response.choices[0].message.content or "")
+    result = _clean_model_text(response.choices[0].message.content or "")
+    info(f"  ← LLM 返回: {len(result)} 字符")
+    return result
 
 
 def llm_json(system: str, user: str) -> dict[str, Any]:
+    from .progress import info
+
     if not has_llm_api_key():
         raise RuntimeError("OPENAI_API_KEY is required for LLM JSON generation.")
     client = _openai_client(timeout=float(get_env("OPENAI_TIMEOUT", "1800")))
     model = llm_model()
+    info(f"  → LLM JSON: model={model}, 系统={len(system)}B, 用户={len(user)}B")
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
@@ -144,6 +164,7 @@ def llm_json(system: str, user: str) -> dict[str, Any]:
         )
     )
     content = _clean_model_text(response.choices[0].message.content or "{}")
+    info(f"  ← LLM 返回: {len(content)} 字符")
     return json.loads(_extract_json_object(content))
 
 

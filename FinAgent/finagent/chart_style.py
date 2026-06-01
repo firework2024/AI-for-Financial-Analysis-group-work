@@ -327,6 +327,8 @@ def plot_line(
     *,
     color: str,
     linewidth: float = 1.75,
+    marker: str | None = None,
+    markersize: float | None = None,
     label: str | None = None,
     alpha: float = 1.0,
     zorder: int = 3,
@@ -344,6 +346,8 @@ def plot_line(
         label=label,
         alpha=alpha,
         zorder=zorder,
+        marker=marker,
+        markersize=markersize,
         **LINE_STYLE,
     )
 
@@ -356,13 +360,14 @@ def bar_on_dates(
     color: str | list[str],
     alpha: float = 0.82,
     width: float = 0.82,
+    label: str | None = None,
     zorder: int = 2,
 ) -> Any:
     import pandas as pd
 
     x, _ = prepare_date_index(dates)
     values = pd.to_numeric(pd.Series(y), errors="coerce").reset_index(drop=True)
-    return ax.bar(x, values, color=color, alpha=alpha, width=width, zorder=zorder)
+    return ax.bar(x, values, color=color, alpha=alpha, width=width, label=label, zorder=zorder)
 
 
 def label(name: str) -> str:

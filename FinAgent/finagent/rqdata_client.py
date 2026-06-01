@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from .cninfo import to_order_book_id
+from .stock_utils import to_order_book_id
 from .env import prepare_rqdata_env
 from .fields import FIELD_NAMES
 
@@ -32,6 +32,8 @@ class FinancialFetchResult:
 
 
 def fetch_financials(stock_code: str, report_year: int, years: int = 3) -> FinancialFetchResult:
+    from .progress import info
+
     import rqdatac
 
     _init_rqdata(rqdatac)
@@ -39,6 +41,7 @@ def fetch_financials(stock_code: str, report_year: int, years: int = 3) -> Finan
     start_year = report_year - years + 1
     start_quarter = f"{start_year}q4"
     end_quarter = f"{report_year}q4"
+    info(f"米筐三表查询: {order_book_id}, 区间 {start_quarter} ~ {end_quarter}, 字段数 {len(FIELD_NAMES)}")
     df = _execute_rqdata_call(
         "获取年报口径财务数据",
         rqdatac.get_pit_financials_ex,
@@ -50,9 +53,11 @@ def fetch_financials(stock_code: str, report_year: int, years: int = 3) -> Finan
         market="cn",
     )
     if df is None or df.empty:
+        info("米筐三表接口返回空，使用空行占位")
         rows = [{"year": year, "quarter": f"{year}q4"} for year in range(start_year, report_year + 1)]
     else:
         rows = _frame_to_rows(df)
+        info(f"米筐三表返回 {len(rows)} 行原始数据")
     wanted = [f"{year}q4" for year in range(start_year, report_year + 1)]
     by_quarter = {row["quarter"]: row for row in rows}
     completed = []
@@ -149,6 +154,8 @@ def _factor_date(rqdatac_module: Any, as_of: date) -> date:
 
 
 def _init_rqdata(rqdatac_module: Any) -> None:
+    from .progress import info
+
     prepare_rqdata_env()
     user = os.getenv("RQ_USER")
     password = os.getenv("RQ_PASSWORD")
@@ -161,14 +168,20 @@ def _init_rqdata(rqdatac_module: Any) -> None:
                 host_arg = (host_name, int(port))
             except ValueError:
                 host_arg = host
+        info(f"使用 RQ_USER/RQ_PASSWORD/RQ_HOST 认证")
         _execute_rqdata_call("初始化米筐连接", rqdatac_module.init, user, password, host_arg)
         return
+    info("使用本机米筐默认配置初始化")
     _execute_rqdata_call("初始化米筐连接", rqdatac_module.init)
 
 
 def _execute_rqdata_call(label: str, func: Any, *args: Any, **kwargs: Any) -> Any:
+    from .progress import info
+
     try:
-        return func(*args, **kwargs)
+        result = func(*args, **kwargs)
+        info(f"米筐 {label}: 成功")
+        return result
     except Exception as exc:
         raise RuntimeError(_format_rqdata_error(label, exc)) from exc
 

@@ -1,5 +1,6 @@
 from finagent.mda_analysis import (
     build_articulation_checks,
+    build_annual_context_from_store,
     build_mda_financial_crosswalk,
     enrich_financial_analysis_with_mda,
     format_crosswalk_markdown,
@@ -67,3 +68,41 @@ def test_mda_crosswalk_links_statement_and_mda_text():
     md = format_crosswalk_markdown(crosswalk, limit=3)
     assert "报表事实" in md
     assert "MD&A 相关表述" in md
+
+
+def test_annual_context_without_director_still_returns_structured_financial_analysis():
+    annual = {
+        "stock_code": "600000",
+        "sec_name": "测试公司",
+        "report_year": 2025,
+        "title": "2025年年度报告",
+        "mda_text": "公司营业收入增长，但经营现金流承压，应收账款增加。",
+        "mda_meta": {},
+        "financial_data": [
+                {
+                    "year": 2024,
+                    "quarter": "2024q4",
+                    "fields": {
+                        "revenue": {"value": 100.0, "source": "rqdata"},
+                        "net_profit_parent_company": {"value": 10.0, "source": "rqdata"},
+                        "cash_flow_from_operating_activities": {"value": 8.0, "source": "rqdata"},
+                },
+            },
+                {
+                    "year": 2025,
+                    "quarter": "2025q4",
+                    "fields": {
+                        "revenue": {"value": 120.0, "source": "rqdata"},
+                        "net_profit_parent_company": {"value": 9.0, "source": "rqdata"},
+                        "cash_flow_from_operating_activities": {"value": 4.0, "source": "rqdata"},
+                },
+            },
+        ],
+    }
+
+    context = build_annual_context_from_store(annual, with_director=False)
+
+    assert context is not None
+    assert "_financial_analysis_raw" in context
+    assert "investment_director" not in context
+    assert "financial_years" in context

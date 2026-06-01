@@ -63,9 +63,11 @@ def test_summarize_pit_and_annual_rows():
     assert annual[0]["revenue"] == 179.49
 
 
-def test_section_writing_guide_requires_tables_for_fundamentals():
-    guide = section_writing_guide("基本面与估值")
+def test_section_writing_guide_requires_tables_for_operating_quality():
+    guide = section_writing_guide("经营质量分析")
     assert "多年对比表" in guide or "pit" in guide.lower()
+    assert "PE/PB/PS" in guide
+    assert "禁止" in guide
 
 
 def test_normalize_section_text_strips_thinking_blocks():

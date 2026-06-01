@@ -19,6 +19,7 @@ DATA_KEY_TO_TOOL: dict[str, str] = {
     "st_stock": "is_st_stock",
     "industry": "get_instrument_industry",
     "industry_l2": "get_instrument_industry(level=2)",
+    "industry_comparison": "get_industry + get_factor(peer cross-section)",
     "interbank_rate": "get_interbank_offered_rate",
     "yield_curve": "get_yield_curve",
     "factor": "get_factor(latest)",
@@ -98,6 +99,10 @@ CHART_DATA_SOURCE: dict[str, str] = {
     "valuation_percentile": "factor_history",
     "share_structure_pie": "shares",
     "dividend_spread": "yield_curve",
+    "industry_valuation_compare": "industry_comparison",
+    "industry_profitability_compare": "industry_comparison",
+    "industry_growth_leverage_compare": "industry_comparison",
+    "industry_dbscan_anomaly": "industry_comparison",
 }
 
 
@@ -123,6 +128,8 @@ def data_available_for_chart(chart_key: str, data: dict[str, Any]) -> bool:
     if not data_key:
         return True
     value = data.get(data_key)
+    if data_key == "industry_comparison":
+        return isinstance(value, dict) and bool(value.get("metrics"))
     if chart_key.startswith("latest_"):
         return isinstance(value, dict) and bool(value)
     if chart_key == "relative_return":

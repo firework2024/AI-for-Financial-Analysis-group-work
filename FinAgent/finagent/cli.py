@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--as-of", default=None, help="查询截止日期，格式 YYYY-MM-DD")
     analyze.add_argument("--years", type=int, default=3, help="财务数据年数，默认 3")
     analyze.add_argument("--output", default=None, help="Markdown 输出路径")
-    analyze.add_argument("--no-download-cache", action="store_true", help="忽略本地 PDF 缓存，重新下载")
+    analyze.add_argument("--no-download-cache", action="store_true", help="（新浪财经模式不适用此参数）忽略缓存，重新获取")
     multi = subparsers.add_parser("multi-analyze", help="运行多智能体 A 股研究报告")
     multi.add_argument("--stock", required=True, help="6 位 A 股代码，例如 600519")
     multi.add_argument("--as-of", default=None, help="查询截止日期，格式 YYYY-MM-DD")
@@ -29,11 +29,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    from .progress import start, end, step, info, ok, fail, section
+
     load_dotenv()
     prepare_rqdata_env()
     args = build_parser().parse_args()
+
+    start()
+    step("参数解析", f"命令: {args.command}, 股票: {args.stock}, 截止日: {args.as_of or '今天'}")
+
     try:
         if args.command == "analyze":
+            info("工作模式: 基础年报分析（财务 + MD&A + 投资总监总结）")
             result = run(
                 WorkflowOptions(
                     stock=args.stock,
@@ -43,9 +50,10 @@ def main() -> None:
                     no_download_cache=args.no_download_cache,
                 )
             )
-            print(f"Markdown report: {result['output_markdown']}")
-            print(f"JSON data: {result['output_json']}")
+            ok(f"Markdown 报告已生成: {result['output_markdown']}")
+            info(f"JSON 数据已保存: {result['output_json']}")
         elif args.command == "multi-analyze":
+            info("工作模式: 多智能体深度研究报告（量价 + 基本面 + 资金流 + 技术 + 图表）")
             result = run_multi_agent(
                 MultiAgentOptions(
                     stock=args.stock,
@@ -54,15 +62,18 @@ def main() -> None:
                     output=args.output,
                 )
             )
-            print(f"Markdown report: {result['output_markdown']}")
+            ok(f"Markdown 报告已生成: {result['output_markdown']}")
             html_path = result.get("output_html") or (result.get("meta") or {}).get("output_html")
             if html_path:
-                print(f"HTML report: {html_path}")
-            print(f"JSON data: {result['output_json']}")
+                ok(f"HTML 报告已生成: {html_path}")
+            ok(f"JSON 数据已保存: {result['output_json']}")
         elif args.command == "serve":
             from .web.server import serve
 
-            print(f"FinAgent Web: http://{args.host}:{args.port}")
+            step("启动 Web 界面", f"http://{args.host}:{args.port}")
             serve(host=args.host, port=args.port, reload=args.reload)
     except Exception as exc:
+        fail(f"工作流异常终止: {exc}")
+        end()
         raise SystemExit(str(exc)) from exc
+    end()

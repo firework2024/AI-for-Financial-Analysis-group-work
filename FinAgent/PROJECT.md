@@ -6,16 +6,16 @@
 
 当前仓库内容主要包括：
 
-- `finagent/`：核心 Python 包，负责工作流编排、巨潮年报抓取、PDF 文本解析、米筐数据获取、财务字段回退、LLM 提示词构造和报告输出。
+- `finagent/`：核心 Python 包，负责工作流编排、新浪财经年报纯文本获取、MD&A 提取、米筐数据获取、财务字段回退、LLM 提示词构造和报告输出。
 - `tests/`：针对代码分类、MD&A 提取、字段回退、`.env` 加载等关键行为的单元测试。
 - `财务分析智能体_知识框架提炼.md`：财务分析智能体的分析框架原文，当前 LLM 财务分析路径会直接读取该文档作为约束输入。
-- `巨潮资讯网年报批量下载指南.md`：巨潮资讯查询与 PDF 下载方式说明。
+- `巨潮资讯网年报批量下载指南.md`：巨潮资讯查询与 PDF 下载方式说明（**当前主数据源已切换至新浪财经，见下文**）。
 - `README.md`：用户向说明，偏运行和使用层面。
 - `annual_reports/`、`outputs/`：运行产物目录。
 
 项目当前的核心任务：
 
-1. 从巨潮资讯获取正式年报 PDF。
+1. 从新浪财经获取正式年报纯文本。
 2. 从年报中提取 MD&A 文本。
 3. 从米筐获取近三年 `q4` 财务数据，并在字段或指标缺失时进行回补。
 4. 让财务分析智能体先识别结构化财务信号与组合异常，再在知识框架约束下输出 `positive_signals`、`negative_signals`、`key_risks`、`reviewed_signals`、`data_notes`。
@@ -23,7 +23,7 @@
 
 ## Key Dependencies
 
-- `requests`：调用巨潮资讯接口并下载 PDF。
+- `requests`：调用新浪财经接口获取年报纯文本。
 - `pandas`：处理米筐返回的 DataFrame。
 - `PyMuPDF`：从 PDF 中提取全文。
 - `rqdatac`：获取财务原始字段与因子回补数据。
@@ -37,10 +37,9 @@
 flowchart TD
     A["CLI: `python -m finagent analyze`"] --> B["`workflow.run()`"]
     B --> C["`env.load_dotenv()`"]
-    B --> D["`cninfo.latest_annual_report()` + `download_report()`"]
-    D --> E["PDF file"]
-    E --> F["`pdf_text.extract_pdf_text()`"]
-    F --> G["`pdf_text.extract_mda()`"]
+    B --> D["`sina_finance.latest_annual_report()`"]
+    D --> E["`save_report_text()` → text file"]
+    E --> G["`pdf_text.extract_mda()`"]
     B --> H["`rqdata_client.fetch_financials()`"]
     B --> I["`rqdata_client.fetch_factor_fallbacks()`"]
     B --> J["`rqdata_client.fetch_metric_factor_fallbacks()`"]
@@ -48,7 +47,7 @@ flowchart TD
     I --> L["field-level factor fallbacks"]
     K --> M["`fallback.apply_financial_fallbacks()`"]
     L --> M
-    F --> M
+    E -.-> M
     M --> N["enriched financial data"]
     N --> O["`financial_analysis.analyze_financials()`"]
     O --> P["Rule signals + LLM review or local review"]
@@ -69,8 +68,12 @@ flowchart TD
   负责命令行参数解析，当前只暴露 `analyze` 子命令。
 - `workflow.py`：
   主编排层，负责按固定顺序调用各模块，并写出 Markdown / JSON 结果。
+- `stock_utils.py`：
+  提供 A 股代码分类、格式化、年份解析等通用工具函数，被其他模块复用。
+- `sina_finance.py`：
+  负责从新浪财经获取年报纯文本（替代原有的 cninfo PDF 下载路径），直接返回可用的文本内容。
 - `cninfo.py`：
-  负责 A 股代码分类、巨潮参数拼装、公告过滤、正式年报选择和 PDF 下载。
+  巨潮资讯网数据获取模块（遗留/备用），保留用于回退。
 - `pdf_text.py`：
   负责全文提取和 MD&A 定位；当前通过标题模式 + 目录命中规避逻辑做切分。
 - `rqdata_client.py`：
@@ -95,9 +98,9 @@ flowchart TD
 最关键的执行主线在 [workflow.py](D:/BigFiles/FinAgent/finagent/workflow.py)：
 
 1. `load_dotenv()`：确保 `.env` 中的 `OPENAI_API_KEY`、`RQDATAC2_CONF` 等在运行前可用。
-2. `latest_annual_report()`：通过巨潮接口查出最新正式年报。
-3. `download_report()`：下载 PDF 并使用本地缓存。
-4. `extract_pdf_text()` 与 `extract_mda()`：得到全文和 MD&A 片段。
+2. `latest_annual_report()`：通过新浪财经接口获取最新正式年报（含纯文本正文）。
+3. `save_report_text()`：保存文本到本地缓存。
+4. `extract_mda()`：从纯文本中提取 MD&A 片段（无需 PDF 解析）。
 5. `fetch_financials()`：取近三年 `q4` 三表字段。
 6. `fetch_factor_fallbacks()`、`fetch_metric_factor_fallbacks()`：用 LYR 因子补字段和指标。
 7. `apply_financial_fallbacks()`：形成带来源标记的统一字段结构。
@@ -109,18 +112,19 @@ flowchart TD
 
 #### 1. 年报获取
 
-巨潮查询核心在 `cninfo.fetch_annual_reports()`。它会：
+新浪财经查询核心在 `sina_finance.latest_annual_report()`。它会：
 
-- 自动根据股票代码决定 `column`、`plate` 和米筐 `order_book_id` 后缀。
+- 通过 HTTP GET 请求 `ndbg.phtml` 列表页，解析公告 ID 和标题。
 - 使用正则过滤 `摘要`、`英文版`、`更正`、`修订`、`补充` 等非正式版本。
-- 通过 `parse_report_year()` 从标题中抽出报告年份，后续财务数据查询依赖这个年份。
+- 通过详情页提取纯文本（从最大 `<td>` 标签取得），无需 PDF 解析。
+- 自动处理 GBK 编码，通过 `parse_report_year()` 从标题中抽出报告年份。
 
 #### 2. MD&A 提取
 
 `pdf_text.extract_mda()` 的核心思路是：
 
-- 先提取整份 PDF 的文本。
-- 通过 `START_PATTERNS` 找“管理层讨论与分析 / 经营情况讨论与分析 / 董事会报告”。
+- 输入为纯文本（来自新浪财经的 HTML 提取，无需 PDF 解析）。
+- 通过 `START_PATTERNS` 找”管理层讨论与分析 / 经营情况讨论与分析 / 董事会报告”。
 - 使用 `_looks_like_toc_hit()` 排除目录中的假命中。
 - 通过 `END_PATTERNS` 在后续正文中寻找“第四节”等边界。
 

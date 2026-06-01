@@ -34,6 +34,7 @@ from .chart_style import (
     style_twin_axes,
     to_percent_points,
 )
+from .peer_analysis import FACTOR_LABELS
 from .technical import (
     enrich_price_frame,
     moving_average_plot_frame,
@@ -46,9 +47,12 @@ from .technical import (
 
 
 def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] | None = None) -> dict[str, str]:
+    from .progress import step, info
+
     setup_matplotlib()
     output_dir.mkdir(parents=True, exist_ok=True)
     stock = str(data.get("order_book_id") or "")
+    step("读取数据帧", f"股票: {stock}")
     price = pd.DataFrame(data["price"]["rows"])
     price_change = pd.DataFrame(data.get("price_change_rate", {}).get("rows", []))
     index_benchmark = pd.DataFrame(data.get("index_benchmark", {}).get("rows", []))
@@ -56,6 +60,7 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
     turnover = pd.DataFrame(data["turnover"]["rows"])
     capital = pd.DataFrame(data["capital_flow"]["rows"])
     margin = pd.DataFrame(data.get("securities_margin", {}).get("rows", []))
+    info(f"量价数据: {len(price)} 行, 换手率: {len(turnover)} 行, 资金流: {len(capital)} 行, 两融: {len(margin)} 行")
     dividend = pd.DataFrame(data.get("dividend", {}).get("rows", []))
     shares = pd.DataFrame(data.get("shares", {}).get("rows", []))
     interbank_rate = pd.DataFrame(data.get("interbank_rate", {}).get("rows", []))
@@ -63,6 +68,7 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
     factor_history = pd.DataFrame(data.get("factor_history", {}).get("rows", []))
     factor_latest = data.get("factor") if isinstance(data.get("factor"), dict) else {}
     charts: dict[str, str] = {}
+    charts.update(_plot_industry_comparison_charts(data.get("industry_comparison"), output_dir, stock))
 
     if not price.empty:
         price = enrich_price_frame(price)
@@ -737,6 +743,425 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             close_figure(fig)
             charts[name] = str(path)
 
+    # ── 年报财务图表（来自 annual_analysis / workflow 格式财务数据） ──
+    annual_analysis = data.get("annual_analysis") if isinstance(data.get("annual_analysis"), dict) else {}
+    pit_fin = annual_analysis.get("financial_data") if isinstance(annual_analysis.get("financial_data"), list) else []
+    if pit_fin:
+        info(f"年报财务数据: {len(pit_fin)} 年, 生成年报财务图表")
+        charts.update(_plot_annual_financial_charts(pit_fin, output_dir, stock))
+
+    # ── 图表元数据（供 placement 智能体使用） ──
+    data["_chart_metadata"] = _build_chart_metadata(data, charts)
+
     if only_keys:
         charts = {name: path for name, path in charts.items() if name in only_keys}
+    info(f"图表生成完成: {len(charts)} 张 ({', '.join(charts.keys())})")
+    return charts
+
+
+def _plot_industry_comparison_charts(industry_comparison: Any, output_dir: Path, stock: str) -> dict[str, str]:
+    if not isinstance(industry_comparison, dict):
+        return {}
+    metrics = industry_comparison.get("metrics") if isinstance(industry_comparison.get("metrics"), dict) else {}
+    if not metrics:
+        return {}
+    charts: dict[str, str] = {}
+    groups = {
+        "industry_valuation_compare": ["pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"],
+        "industry_profitability_compare": ["gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm"],
+        "industry_growth_leverage_compare": [
+            "operating_revenue_growth_ratio_ttm",
+            "net_profit_parent_company_growth_ratio_ttm",
+            "debt_to_asset_ratio",
+            "current_ratio",
+        ],
+    }
+    for name, keys in groups.items():
+        rows = _industry_compare_rows(metrics, keys)
+        if not rows:
+            continue
+        fig, ax = new_figure()
+        labels_list = [row["label"] for row in rows]
+        y = list(range(len(rows)))
+        height = 0.24
+        ax.barh([item - height for item in y], [row["target"] for row in rows], height=height, color=PALETTE["negative"], alpha=0.78, label="目标公司")
+        ax.barh(y, [row["median"] for row in rows], height=height, color=PALETTE["secondary"], alpha=0.72, label="行业中位数")
+        ax.barh([item + height for item in y], [row["mean"] for row in rows], height=height, color=PALETTE["accent"], alpha=0.72, label="行业均值")
+        ax.set_yticks(y)
+        ax.set_yticklabels(labels_list)
+        ax.invert_yaxis()
+        style_axes(ax, title=chart_title(stock, name), xlabel="指标值（百分比指标已换算为 %）")
+        style_legend(ax, loc="lower right")
+        path = output_dir / f"{name}.png"
+        save_chart(fig, path)
+        close_figure(fig)
+        charts[name] = str(path)
+
+    cluster = industry_comparison.get("cluster_anomalies")
+    if isinstance(cluster, dict) and cluster.get("status") == "ok":
+        points = cluster.get("points") if isinstance(cluster.get("points"), list) else []
+        plot_features = cluster.get("plot_features") if isinstance(cluster.get("plot_features"), list) else []
+        if points and len(plot_features) >= 2:
+            fig, ax = new_figure()
+            peer_points = [point for point in points if not point.get("is_target")]
+            normal = [point for point in peer_points if not point.get("is_noise")]
+            noise = [point for point in peer_points if point.get("is_noise")]
+            target_points = [point for point in points if point.get("is_target")]
+            if normal:
+                ax.scatter([p["x"] for p in normal], [p["y"] for p in normal], s=26, color=PALETTE["secondary"], alpha=0.52, label="同行样本")
+            if noise:
+                ax.scatter([p["x"] for p in noise], [p["y"] for p in noise], s=34, color=PALETTE["muted"], alpha=0.72, marker="x", label="噪声点")
+            if target_points:
+                ax.scatter([p["x"] for p in target_points], [p["y"] for p in target_points], s=86, color=PALETTE["negative"], edgecolors=PALETTE["text"], linewidths=0.8, label="目标公司")
+            ax.axhline(0, color=PALETTE["grid"], linewidth=0.9, zorder=1)
+            ax.axvline(0, color=PALETTE["grid"], linewidth=0.9, zorder=1)
+            x_label = FACTOR_LABELS.get(str(plot_features[0]), str(plot_features[0]))
+            y_label = FACTOR_LABELS.get(str(plot_features[1]), str(plot_features[1]))
+            style_axes(ax, title=chart_title(stock, "industry_dbscan_anomaly"), xlabel=f"{x_label} robust z", ylabel=f"{y_label} robust z")
+            style_legend(ax, loc="best")
+            path = output_dir / "industry_dbscan_anomaly.png"
+            save_chart(fig, path)
+            close_figure(fig)
+            charts["industry_dbscan_anomaly"] = str(path)
+    return charts
+
+
+def _industry_compare_rows(metrics: dict[str, Any], keys: list[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in keys:
+        item = metrics.get(key)
+        if not isinstance(item, dict):
+            continue
+        target = _scaled_metric_value(key, item.get("target"))
+        median = _scaled_metric_value(key, item.get("median"))
+        mean = _scaled_metric_value(key, item.get("mean"))
+        if target is None or median is None or mean is None:
+            continue
+        rows.append(
+            {
+                "label": str(item.get("label") or FACTOR_LABELS.get(key, key)),
+                "target": target,
+                "median": median,
+                "mean": mean,
+            }
+        )
+    return rows
+
+
+def _scaled_metric_value(key: str, value: Any) -> float | None:
+    parsed = safe_float(value)
+    if parsed is None:
+        return None
+    scaled = snapshot_bar_value(key, parsed)
+    return None if scaled is None else float(scaled)
+
+
+# ── 图表元数据生成（供 placement 智能体使用） ──
+
+
+def _build_chart_metadata(data: dict[str, Any], charts: dict[str, str]) -> dict[str, Any]:
+    """为生成的每张图构建结构化元数据：标题、关键词、数据摘要。
+
+    Returns:
+        chart_name → {"caption": str, "hints": tuple[str,...], "data_summary": str}
+    """
+    from .chart_catalog import CHART_CAPTIONS, CHART_SUBHEADING_HINTS
+    from .technical import safe_float
+
+    metadata: dict[str, Any] = {}
+    if not charts:
+        return metadata
+
+    # 预读公共数据源
+    fh = pd.DataFrame(data.get("factor_history", {}).get("rows", []))
+    if not fh.empty:
+        fh["date"] = pd.to_datetime(fh["date"], errors="coerce")
+        for col in fh.columns:
+            if col not in ("date", "order_book_id"):
+                fh[col] = pd.to_numeric(fh[col], errors="coerce")
+
+    price = pd.DataFrame(data.get("price", {}).get("rows", []))
+    if not price.empty:
+        price = __enrich_price(price)
+
+    # 年报财务数据（workflow 格式）
+    annual = data.get("annual_analysis") if isinstance(data.get("annual_analysis"), dict) else {}
+    pit_fin: list[dict[str, Any]] = annual.get("financial_data") if isinstance(annual.get("financial_data"), list) else []
+
+    ic = data.get("industry_comparison") if isinstance(data.get("industry_comparison"), dict) else {}
+    ic_metrics = ic.get("metrics") if isinstance(ic.get("metrics"), dict) else {}
+
+    for chart_name in charts:
+        caption = CHART_CAPTIONS.get(chart_name, chart_name)
+        hints = CHART_SUBHEADING_HINTS.get(chart_name, ())
+        summary = _chart_metadata_summary(chart_name, fh, price, pit_fin, ic_metrics)
+        metadata[chart_name] = {
+            "name": chart_name,
+            "caption": caption,
+            "hints": hints,
+            "data_summary": summary,
+        }
+    return metadata
+
+
+def _chart_metadata_summary(
+    chart_name: str,
+    fh: pd.DataFrame,
+    price: pd.DataFrame,
+    pit_fin: list[dict[str, Any]],
+    ic_metrics: dict[str, Any],
+) -> str:
+    """为单张图生成文本数据摘要，供placement agent写桥接句时引用。"""
+    from .technical import safe_float
+
+    # ── 因子历史图 ──
+    factor_cols = {
+        "profitability_factors": ("gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm"),
+        "growth_factors": (
+            "net_profit_growth_ratio_ttm", "operating_revenue_growth_ratio_ttm",
+            "gross_profit_growth_ratio_ttm", "operating_profit_growth_ratio_ttm",
+        ),
+        "liquidity_factors": ("current_ratio", "quick_ratio"),
+        "debt_ratio_trend": ("debt_to_asset_ratio",),
+        "valuation_factors": ("pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"),
+        "market_cap_trend": ("market_cap",),
+    }
+    if chart_name in factor_cols and not fh.empty:
+        cols = factor_cols[chart_name]
+        parts: list[str] = []
+        for col in cols:
+            if col in fh.columns and fh[col].notna().any():
+                vals = fh[col].dropna()
+                first = float(vals.iloc[0])
+                last = float(vals.iloc[-1])
+                delta = (last - first) / abs(first) if first != 0 else 0.0
+                trend = "上升" if delta > 0.05 else ("下降" if delta < -0.05 else "平稳")
+                parts.append(f"{col}: 期末{last:.2f}, 趋势{trend}")
+        if parts:
+            return "; ".join(parts)
+
+    # ── 行业对比图 ──
+    ic_charts = {
+        "industry_profitability_compare": ("gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm"),
+        "industry_growth_leverage_compare": (
+            "operating_revenue_growth_ratio_ttm", "net_profit_parent_company_growth_ratio_ttm",
+            "debt_to_asset_ratio", "current_ratio",
+        ),
+        "industry_valuation_compare": ("pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"),
+        "industry_dbscan_anomaly": None,
+    }
+    if chart_name in ic_charts and ic_metrics:
+        if chart_name == "industry_dbscan_anomaly":
+            return "DBSCAN 聚类散点图: 目标公司相对同行在横截面因子上的异常位置识别"
+        keys = ic_charts[chart_name]
+        parts = []
+        for key in keys:
+            item = ic_metrics.get(key)
+            if isinstance(item, dict):
+                t = safe_float(item.get("target"))
+                m = safe_float(item.get("median"))
+                label = item.get("label", key)
+                if t is not None and m is not None:
+                    parts.append(f"{label}: 目标{t:.2f}, 行业中位数{m:.2f}")
+        if parts:
+            return "; ".join(parts)
+
+    # ── 年报财务图 ──
+    annual_charts = {
+        "revenue_profit_trend": ["revenue", "net_profit_parent_company"],
+        "profit_vs_cashflow": ["net_profit_parent_company", "cash_flow_from_operating_activities"],
+        "free_cashflow_trend": ["free_cash_flow"],
+        "margin_roe_trend": ["gross_margin", "roe"],
+    }
+    if chart_name in annual_charts and pit_fin:
+        fields = annual_charts[chart_name]
+        parts = []
+        for fld in fields:
+            vals: list[tuple[int, float]] = []
+            for row in pit_fin:
+                fi = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+                info = fi.get(fld)
+                if isinstance(info, dict):
+                    v = safe_float(info.get("value"))
+                    if v is not None:
+                        vals.append((row.get("year"), v))
+            if vals:
+                years_str = "→".join(str(y) for y, _ in vals)
+                # 金额用亿元，比率用百分比
+                if fld in ("gross_margin", "roe"):
+                    vals_str = "→".join(f"{v*100:.1f}%" for _, v in vals)
+                else:
+                    vals_str = "→".join(_format_amount(v) for _, v in vals)
+                parts.append(f"{fld}({vals_str}, {years_str})")
+        if parts:
+            return "; ".join(parts)
+
+    # ── 量价图 ──
+    if not price.empty:
+        price_charts = {
+            "price_volume": ("close", "volume"),
+            "moving_averages": ("close", "ma20", "ma60"),
+            "nav_curve": ("close",),
+            "cumulative_return": ("cum_return",),
+            "drawdown": ("drawdown",),
+            "technical_indicators": ("rsi14", "macd", "macd_signal"),
+        }
+        if chart_name in price_charts:
+            cols = price_charts[chart_name]
+            parts = []
+            for col in cols:
+                if col in price.columns and price[col].notna().any():
+                    vals = price[col].dropna()
+                    last = float(vals.iloc[-1])
+                    first = float(vals.iloc[0]) if vals.iloc[0] != 0 else None
+                    label = col
+                    if first:
+                        delta = (last - first) / abs(first)
+                        trend = "上升" if delta > 0.03 else ("下降" if delta < -0.03 else "平稳")
+                        parts.append(f"{label}: 末值{last:.2f}, 趋势{trend}")
+                    else:
+                        parts.append(f"{label}: 末值{last:.2f}")
+            if parts:
+                return "; ".join(parts)
+
+    return ""
+
+
+def __enrich_price(price: pd.DataFrame) -> pd.DataFrame:
+    """轻量 enrich：加 ma20/ma60/drawdown 等（避免全量 technical 计算）。"""
+    from .technical import enrich_price_frame
+    try:
+        return enrich_price_frame(price)
+    except Exception:
+        return price
+
+
+# ── 年报财务图表辅助函数 ──
+
+
+def _extract_annual_metric(
+    financial_data: list[dict[str, Any]], field_name: str
+) -> tuple[list[int], list[float]]:
+    """从 workflow 格式 financial_data 提取逐年 (years, values)。
+
+    workflow 格式: ``[{"year": 2024, "fields": {"revenue": {"value": 1200, ...}}}]``
+    """
+    years: list[int] = []
+    values: list[float] = []
+    for row in financial_data:
+        year = row.get("year")
+        fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+        info = fields.get(field_name)
+        if isinstance(info, dict) and info.get("value") is not None:
+            try:
+                years.append(int(year))
+                values.append(float(info["value"]))
+            except (TypeError, ValueError):
+                continue
+    return years, values
+
+
+def _format_amount(value: float) -> str:
+    """将数值格式化为亿元或万元。"""
+    abs_v = abs(value)
+    if abs_v >= 1e8:
+        return f"{value / 1e8:.2f} 亿"
+    elif abs_v >= 1e4:
+        return f"{value / 1e4:.2f} 万"
+    else:
+        return f"{value:.2f}"
+
+
+def _plot_annual_financial_charts(
+    financial_data: list[dict[str, Any]], output_dir: Path, stock: str
+) -> dict[str, str]:
+    """基于 workflow 格式年报财务数据生成 4 张图表。"""
+    charts: dict[str, str] = {}
+
+    # 1. 营收 / 净利润多年趋势对比（双轴）
+    rev_years, rev_values = _extract_annual_metric(financial_data, "revenue")
+    np_years, np_values = _extract_annual_metric(financial_data, "net_profit_parent_company")
+    if rev_years and np_years:
+        fig, ax1 = new_figure()
+        bar_on_dates(ax1, rev_years, rev_values, color=PALETTE["secondary"], alpha=0.55, width=0.55)
+        ax1.set_ylabel("营收（元）", color=PALETTE["secondary"], fontsize=9)
+        ax1.tick_params(axis="y", labelcolor=PALETTE["secondary"])
+        ax2 = ax1.twinx()
+        plot_line(ax2, np_years, np_values, color=PALETTE["accent"], linewidth=2.2, marker="o", markersize=6)
+        ax2.set_ylabel("归母净利润（元）", color=PALETTE["accent"], fontsize=9)
+        ax2.tick_params(axis="y", labelcolor=PALETTE["accent"])
+        style_axes(ax1, title=chart_title(stock, "revenue_profit_trend"), xlabel="年份")
+        ax1.set_xticks(rev_years)
+        ax1.set_xticklabels([str(y) for y in rev_years])
+        path = output_dir / "revenue_profit_trend.png"
+        save_chart(fig, path)
+        close_figure(fig)
+        charts["revenue_profit_trend"] = str(path)
+
+    # 2. 净利润 vs 经营现金流对比
+    _, np_vals = _extract_annual_metric(financial_data, "net_profit_parent_company")
+    ocf_years, ocf_vals = _extract_annual_metric(financial_data, "cash_flow_from_operating_activities")
+    if np_vals and ocf_years:
+        fig, ax = new_figure()
+        years_shared = sorted(set(np_years) & set(ocf_years))
+        np_plot = [np_vals[np_years.index(y)] for y in years_shared if y in np_years]
+        ocf_plot = [ocf_vals[ocf_years.index(y)] for y in years_shared if y in ocf_years]
+        if len(years_shared) == len(np_plot) == len(ocf_plot):
+            bar_on_dates(ax, years_shared, np_plot, color=PALETTE["secondary"], alpha=0.55, width=0.45, label="归母净利润")
+            bar_on_dates(ax, [y + 0.18 for y in years_shared], ocf_plot, color=PALETTE["accent"], alpha=0.55, width=0.45, label="经营现金流")
+            style_axes(ax, title=chart_title(stock, "profit_vs_cashflow"), xlabel="年份", ylabel="金额（元）")
+            ax.set_xticks(years_shared)
+            ax.set_xticklabels([str(y) for y in years_shared])
+            style_legend(ax, loc="upper left", ncol=2)
+            path = output_dir / "profit_vs_cashflow.png"
+            save_chart(fig, path)
+            close_figure(fig)
+            charts["profit_vs_cashflow"] = str(path)
+
+    # 3. 自由现金流趋势
+    fcf_years, fcf_vals = _extract_annual_metric(financial_data, "free_cash_flow")
+    if fcf_years:
+        fig, ax = new_figure()
+        colors_fcf = [PALETTE["positive"] if v >= 0 else PALETTE["negative"] for v in fcf_vals]
+        bar_on_dates(ax, fcf_years, fcf_vals, color=colors_fcf, alpha=0.78, width=0.58)
+        add_zero_line(ax)
+        style_axes(ax, title=chart_title(stock, "free_cashflow_trend"), xlabel="年份", ylabel="自由现金流（元）")
+        ax.set_xticks(fcf_years)
+        ax.set_xticklabels([str(y) for y in fcf_years])
+        path = output_dir / "free_cashflow_trend.png"
+        save_chart(fig, path)
+        close_figure(fig)
+        charts["free_cashflow_trend"] = str(path)
+
+    # 4. 毛利率 / ROE 多年趋势（双轴）
+    gm_years, gm_vals = _extract_annual_metric(financial_data, "gross_margin")
+    roe_years, roe_vals = _extract_annual_metric(financial_data, "roe")
+    if gm_years or roe_years:
+        fig, ax1 = new_figure()
+        if gm_years:
+            gm_pct = [v * 100 for v in gm_vals]  # 小数 → 百分比
+            plot_line(ax1, gm_years, gm_pct, color=PALETTE["secondary"], linewidth=2.0, marker="s", markersize=5, label="毛利率 (%)")
+        ax1.set_ylabel("毛利率 (%)", color=PALETTE["secondary"], fontsize=9)
+        ax1.tick_params(axis="y", labelcolor=PALETTE["secondary"])
+        if roe_years:
+            ax2 = ax1.twinx()
+            roe_pct = [v * 100 for v in roe_vals]
+            plot_line(ax2, roe_years, roe_pct, color=PALETTE["accent"], linewidth=2.0, marker="o", markersize=5, label="ROE (%)")
+            ax2.set_ylabel("ROE (%)", color=PALETTE["accent"], fontsize=9)
+            ax2.tick_params(axis="y", labelcolor=PALETTE["accent"])
+        all_years = sorted(set(gm_years + roe_years))
+        style_axes(ax1, title=chart_title(stock, "margin_roe_trend"), xlabel="年份")
+        ax1.set_xticks(all_years)
+        ax1.set_xticklabels([str(y) for y in all_years])
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        if roe_years:
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left", fontsize=8, ncol=2)
+        else:
+            style_legend(ax1, loc="upper left")
+        path = output_dir / "margin_roe_trend.png"
+        save_chart(fig, path)
+        close_figure(fig)
+        charts["margin_roe_trend"] = str(path)
+
     return charts

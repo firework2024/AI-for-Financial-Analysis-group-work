@@ -53,8 +53,16 @@ CHART_CAPTIONS: dict[str, str] = {
     "latest_growth_snapshot": "最新成长因子快照",
     "margin_enhanced": "融资余额与买卖额",
     "valuation_percentile": "PE/PB 历史分位",
+    "industry_valuation_compare": "行业估值对比",
+    "industry_profitability_compare": "行业盈利能力对比",
+    "industry_growth_leverage_compare": "行业成长与杠杆对比",
+    "industry_dbscan_anomaly": "DBSCAN 同行异常识别",
     "share_structure_pie": "股本结构",
     "dividend_spread": "股息率与无风险利率利差",
+    "revenue_profit_trend": "营收与归母净利润趋势",
+    "profit_vs_cashflow": "利润与经营现金流对比",
+    "free_cashflow_trend": "自由现金流趋势",
+    "margin_roe_trend": "毛利率与 ROE",
 }
 
 # 量纲差异大、不适合同轴条形图，改在正文中以表格展示
@@ -108,17 +116,14 @@ TABLE_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
 MAX_TABLES_PER_SECTION = 2
 SECTION_TABLE_LIMITS: dict[str, int] = {
     "资金与交易结构": 4,
-    "基本面与估值": 3,
+    "经营质量分析": 3,
 }
 
 DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
     MARKET_TECH_SECTION: ("technical_snapshot_table",),
-    "基本面与估值": (
-        "latest_valuation_snapshot",
+    "经营质量分析": (
         "latest_quality_snapshot",
         "latest_liquidity_snapshot",
-        "dividend_recent_table",
-        "funding_cost_table",
     ),
     "资金与交易结构": (
         "margin_snapshot_table",
@@ -185,6 +190,10 @@ CHART_GROUPS: list[tuple[str, tuple[str, ...]]] = [
             "latest_quality_snapshot",
             "latest_liquidity_snapshot",
             "latest_growth_snapshot",
+            "industry_valuation_compare",
+            "industry_profitability_compare",
+            "industry_growth_leverage_compare",
+            "industry_dbscan_anomaly",
         ),
     ),
     ("宏观利率", ("shibor_rates", "gov_yield_trend", "yield_curve_snapshot")),
@@ -224,8 +233,16 @@ CHART_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "latest_quality_snapshot": ("质量因子", "偿债", "盈利能力"),
     "latest_growth_snapshot": ("成长因子", "增长", "增速"),
     "valuation_percentile": ("估值", "PE", "PB", "分位"),
+    "industry_valuation_compare": ("行业", "同行", "中位数", "均值", "PE", "PB", "PS", "估值", "横向对比"),
+    "industry_profitability_compare": ("行业", "同行", "中位数", "均值", "毛利率", "净利率", "ROE", "盈利", "横向对比"),
+    "industry_growth_leverage_compare": ("行业", "同行", "成长", "杠杆", "资产负债率", "流动比率", "中位数", "横向对比"),
+    "industry_dbscan_anomaly": ("DBSCAN", "聚类", "异常", "噪声点", "同行", "横向对比"),
     "share_structure_pie": ("股本", "流通", "结构"),
     "dividend_spread": ("股息", "分红", "利差"),
+    "revenue_profit_trend": ("营收", "收入", "利润", "归母净利润"),
+    "profit_vs_cashflow": ("现金流", "经营现金流", "净现比"),
+    "free_cashflow_trend": ("自由现金流", "资本开支"),
+    "margin_roe_trend": ("毛利率", "ROE", "盈利能力"),
 }
 
 CHART_BRIEF_NOTES: dict[str, str] = {
@@ -248,9 +265,17 @@ CHART_BRIEF_NOTES: dict[str, str] = {
     "debt_ratio_trend": "资产负债率时间序列（米筐返回百分数点）。",
     "latest_liquidity_snapshot": "偿债与流动性因子快照。",
     "latest_growth_snapshot": "成长类因子快照，可与正文增长表述对照。",
+    "industry_valuation_compare": "目标公司 PE/PB/PS 与同行均值、中位数对比，用于判断估值相对位置。",
+    "industry_profitability_compare": "目标公司盈利能力与同行均值、中位数对比，用于观察盈利质量相对强弱。",
+    "industry_growth_leverage_compare": "目标公司成长和杠杆指标与同行均值、中位数对比，用于识别扩张质量和偿债压力。",
+    "industry_dbscan_anomaly": "基于同行横截面因子的 DBSCAN 异常识别，显示目标公司、同行样本和噪声点。",
     "shibor_rates": "利率环境变化会影响权益资产折现率与相对吸引力。",
     "gov_yield_trend": "长端国债收益率下行往往压低 DCF 折现率并抬升高股息资产相对吸引力。",
     "yield_curve_snapshot": "利率环境变化会影响权益资产折现率与相对吸引力。",
+    "revenue_profit_trend": "近年营收（柱）与归母净利润（折线）双轴对比，观察收入规模与盈利能力的匹配度。",
+    "profit_vs_cashflow": "归母净利润与经营现金流净额多年对比，用于判断利润的现金含量（净现比）。",
+    "free_cashflow_trend": "自由现金流多年趋势（正值/负值着色），反映企业可支配现金的变化方向。",
+    "margin_roe_trend": "毛利率与 ROE 多年双轴走势，观察盈利能力和股东回报的变动轨迹。",
 }
 
 _MARKET_TECH_CHART_CANDIDATES: tuple[str, ...] = (
@@ -269,22 +294,25 @@ _MARKET_TECH_CHART_CANDIDATES: tuple[str, ...] = (
 
 DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
     MARKET_TECH_SECTION: _MARKET_TECH_CHART_CANDIDATES,
-    "基本面与估值": (
-        "valuation_percentile",
-        "valuation_factors",
+    "经营质量分析": (
+        "industry_profitability_compare",
+        "industry_growth_leverage_compare",
+        "industry_dbscan_anomaly",
         "market_cap_trend",
         "profitability_factors",
         "growth_factors",
         "liquidity_factors",
         "debt_ratio_trend",
         "dividend_history",
-        "dividend_spread",
         "share_structure",
         "share_structure_pie",
-        "latest_valuation_snapshot",
         "latest_quality_snapshot",
         "latest_liquidity_snapshot",
         "latest_growth_snapshot",
+        "revenue_profit_trend",
+        "profit_vs_cashflow",
+        "free_cashflow_trend",
+        "margin_roe_trend",
     ),
     "资金与交易结构": (
         "margin_enhanced",
@@ -309,6 +337,7 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
 MAX_INLINE_CHARTS_PER_SECTION = 2
 SECTION_INLINE_CHART_LIMITS: dict[str, int] = {
     MARKET_TECH_SECTION: 4,
+    "经营质量分析": 5,
     "量价与趋势": 4,
     "宏观利率背景": 2,
 }

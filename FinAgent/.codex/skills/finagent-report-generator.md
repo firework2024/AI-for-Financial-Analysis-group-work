@@ -43,7 +43,7 @@ This skill automatically generates A-share annual report research reports using 
      - or `RQ_USER` / `RQ_PASSWORD` / `RQ_HOST`
 
 3. Internet access for:
-   - Cninfo PDF download
+   - Sina Finance annual report text fetch
    - RQData API
    - OpenAI API
 
@@ -213,7 +213,7 @@ Need deeper analysis on inventory or cash flow?
 
 | Error | Solution |
 | --------- | --------- |
-| `未在巨潮资讯找到正式年报` | Use a later `--as-of` date after annual report disclosure |
+| `无法从新浪财经获取.*年报` | Use a later `--as-of` date after annual report disclosure, or check Sina Finance availability |
 | `Quota exceeded` | Reduce `FINAGENT_MAX_WORKERS` to `1` or switch RQData account |
 | `OPENAI_API_KEY is required` | Configure API key in `.env` or run in local-rules-only mode |
 | Chart generation fails | Install Chinese fonts and verify the lookback period contains sufficient trading days |

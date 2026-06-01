@@ -1,13 +1,26 @@
+"""巨潮资讯网数据获取模块（遗留/备用）。
+
+已由 sina_finance.py 替代为主要数据源。此模块保留仅作为回退使用。
+"""
+
 from __future__ import annotations
 
 import re
 import time
-from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import requests
+
+from .stock_utils import (
+    EXCLUDE_PATTERN,
+    AnnualReport,
+    classify_stock,
+    default_as_of,
+    normalize_stock_code,
+    parse_report_year,
+)
 
 QUERY_URL = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
 DOWNLOAD_BASE = "http://static.cninfo.com.cn/"
@@ -17,53 +30,12 @@ HEADERS = {
     "Referer": "http://www.cninfo.com.cn/new/commonUrl/pageOfSearch?url=disclosure/list/search",
     "X-Requested-With": "XMLHttpRequest",
 }
-EXCLUDE_PATTERN = re.compile(r"摘要|英文版|更正|修订|补充|取消")
 STOCK_LIST_URLS = (
     "http://www.cninfo.com.cn/new/data/szse_stock.json",
     "http://www.cninfo.com.cn/new/data/sse_stock.json",
 )
 _ORG_ID_CACHE: dict[str, str] | None = None
 _STOCK_NAME_CACHE: dict[str, str] | None = None
-
-
-@dataclass
-class AnnualReport:
-    stock_code: str
-    sec_name: str
-    title: str
-    announcement_time: int
-    adjunct_url: str
-    pdf_url: str
-    report_year: int | None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-def classify_stock(stock_code: str) -> tuple[str, str, str]:
-    code = normalize_stock_code(stock_code)
-    if code.startswith(("600", "601", "603", "605")):
-        return "sse", "sh", "XSHG"
-    if code.startswith("688"):
-        return "sse", "shkcp", "XSHG"
-    if code.startswith(("000", "001", "002", "003")):
-        return "szse", "sz", "XSHE"
-    if code.startswith(("300", "301")):
-        return "szse", "szcy", "XSHE"
-    raise ValueError(f"暂不支持或无法识别的 A 股代码: {stock_code}")
-
-
-def normalize_stock_code(stock_code: str) -> str:
-    code = stock_code.strip().upper().split(".")[0]
-    if not re.fullmatch(r"\d{6}", code):
-        raise ValueError(f"股票代码应为 6 位数字: {stock_code}")
-    return code
-
-
-def to_order_book_id(stock_code: str) -> str:
-    code = normalize_stock_code(stock_code)
-    _, _, suffix = classify_stock(code)
-    return f"{code}.{suffix}"
 
 
 def _fallback_org_id(stock_code: str, column: str) -> str:
@@ -148,11 +120,6 @@ def _stock_param(stock_code: str, column: str, session: requests.Session | None 
     return f"{code},{org_id_for(code, column, session)}"
 
 
-def parse_report_year(title: str) -> int | None:
-    match = re.search(r"(20\d{2}|19\d{2})\s*年\s*年度报告", title)
-    return int(match.group(1)) if match else None
-
-
 def fetch_annual_reports(
     stock_code: str,
     start_date: str,
@@ -198,8 +165,11 @@ def fetch_annual_reports(
 
 
 def latest_annual_report(stock_code: str, as_of: date) -> AnnualReport:
+    from .progress import info
+
     end = as_of.strftime("%Y-%m-%d")
     start = f"{as_of.year - 5}-01-01"
+    info(f"查询区间: {start} ~ {end}")
     reports = fetch_annual_reports(stock_code, start, end)
     if not reports:
         raise RuntimeError(
@@ -207,32 +177,39 @@ def latest_annual_report(stock_code: str, as_of: date) -> AnnualReport:
             "可能原因：该时段尚未披露年报、查询截止日期过早，或巨潮接口暂时不可用。"
             "请尝试将「截止日期」设为最新披露日之后，或稍后重试。"
         )
+    info(f"共找到 {len(reports)} 份年报，选用最新一份")
     return reports[0]
 
 
 def download_report(report: AnnualReport, output_dir: Path, use_cache: bool = True) -> Path:
+    from .progress import info, ok
+
     output_dir.mkdir(parents=True, exist_ok=True)
     safe_name = re.sub(r'[\\/:*?"<>|]+', "_", f"{report.stock_code}_{report.sec_name}_{report.title}.pdf")
     target = output_dir / safe_name
     if use_cache and target.exists() and target.stat().st_size > 0:
+        info(f"使用缓存: {target.name} ({target.stat().st_size / 1024 / 1024:.1f} MB)")
         return target
     last_error: Exception | None = None
+    info(f"开始下载: {report.pdf_url}")
     for attempt in range(3):
         try:
             with requests.get(report.pdf_url, headers=HEADERS, timeout=120, stream=True) as resp:
                 resp.raise_for_status()
+                total = int(resp.headers.get("content-length", 0))
+                downloaded = 0
                 with target.open("wb") as handle:
                     for chunk in resp.iter_content(8192):
                         if chunk:
                             handle.write(chunk)
+                            downloaded += len(chunk)
+                if total:
+                    ok(f"下载完成: {downloaded / 1024 / 1024:.1f} MB / {total / 1024 / 1024:.1f} MB")
+                else:
+                    ok(f"下载完成: {downloaded / 1024 / 1024:.1f} MB")
             return target
         except Exception as exc:  # pragma: no cover - network timing dependent
             last_error = exc
+            info(f"第 {attempt + 1} 次重试...")
             time.sleep(2 + attempt * 3)
     raise RuntimeError(f"下载年报失败: {report.pdf_url}") from last_error
-
-
-def default_as_of(value: str | None) -> date:
-    if value:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    return date.today()

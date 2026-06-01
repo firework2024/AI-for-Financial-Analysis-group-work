@@ -6,7 +6,7 @@ import re
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
-from ..cninfo import default_as_of, normalize_stock_code, to_order_book_id
+from ..stock_utils import default_as_of, normalize_stock_code, to_order_book_id
 from ..env import load_dotenv
 
 if TYPE_CHECKING:

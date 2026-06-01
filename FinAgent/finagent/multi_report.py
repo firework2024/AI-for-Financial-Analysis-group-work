@@ -949,6 +949,318 @@ def apply_chart_placements(
     return result, omitted
 
 
+# ── 智能体图表插入（替代 apply_chart_placements 的 agent 版） ──
+
+
+def apply_chart_placements_agent(
+    sections: dict[str, str],
+    charts: dict[str, str],
+    placement: dict[str, Any],
+    figure_notes: dict[str, str] | None = None,
+    *,
+    data: dict[str, Any] | None = None,
+    agent_sections: frozenset[str] | None = None,
+) -> tuple[dict[str, str], list[str]]:
+    """智能体驱动的图表嵌入。
+
+    与原 ``apply_chart_placements`` 签名完全一致，可直接替换。
+    对 ``agent_sections`` 中的正文章节使用 LLM 为每张图定位 + 写桥接句；
+    其余走机械插入（含表格和元数据缺失的图表）。
+
+    安全机制：
+    - 占位符（{{CHART:xxx}}）保护图表 Markdown 格式不被 LLM 篡改
+    - 每张图一次轻量 LLM 调用（约200-400 token 输出），避免截断
+    - 若 API 不可用或元数据缺失，静默退化为机械插入
+    """
+    from .llm import llm_text
+    from .llm_settings import has_llm_api_key
+
+    figure_notes = figure_notes or {}
+    data = data or {}
+    agent_sections = agent_sections or frozenset({"经营质量分析"})
+    chart_metadata = data.get("_chart_metadata") if isinstance(data.get("_chart_metadata"), dict) else {}
+    api_ok = has_llm_api_key()
+
+    # Step 1: 清理正文（剥离已有图表块）
+    result: dict[str, str] = {
+        name: clean_chart_prose(_strip_embedded_chart_blocks(normalize_section_text(content, name)))
+        for name, content in sections.items()
+    }
+    used: set[str] = set()
+    # 收集每节每图的 placement 决策 (section, chart_name, anchor_hint, placement_note)
+    placements_queue: list[tuple[str, str, str | None, str | None]] = []
+
+    for item in placement.get("placements") or []:
+        if not isinstance(item, dict):
+            continue
+        section = str(item.get("section") or "")
+        if section not in result or section == CHART_INTERPRETATION_SECTION:
+            continue
+        chart_names = [
+            n for n in item.get("charts") or []
+            if n in charts or (str(n) in TABLE_ALL_KEYS and table_data_available(str(n), data))
+        ]
+        anchor_hint = str(item.get("anchor") or "").strip() or None
+        placement_note = str(item.get("note") or "").strip() or None
+        for chart_name in chart_names:
+            if str(chart_name) in used:
+                continue
+            used.add(str(chart_name))
+            placements_queue.append((section, str(chart_name), anchor_hint, placement_note))
+
+    # Step 2: 对每张图尝试 agent 定位，回退机械插入
+    for section, chart_name, anchor_hint, placement_note in placements_queue:
+        # 表格走现有逻辑
+        if chart_name in TABLE_ALL_KEYS:
+            block = format_table_block(chart_name, data)
+            if block:
+                result[section] = _insert_chart_block(
+                    result[section], block,
+                    anchor=anchor_hint, chart_name=chart_name,
+                )
+            continue
+
+        # 图片：尝试智能体路径
+        use_agent = bool(
+            api_ok
+            and section in agent_sections
+            and chart_name in chart_metadata
+            and chart_metadata[chart_name].get("data_summary")
+        )
+        if use_agent:
+            bridge = _placement_editor_agent(
+                section_text=result[section],
+                chart_name=chart_name,
+                chart_meta=chart_metadata[chart_name],
+                existing_anchor=anchor_hint,
+            )
+            if bridge:
+                result[section] = _insert_agent_placement(
+                    result[section],
+                    chart_name,
+                    bridge,
+                    anchor=anchor_hint or _visual_subheading_hints(chart_name),
+                )
+                continue
+
+        # Fallback: 机械插入
+        note = figure_notes.get(chart_name) or placement_note or fallback_chart_note(chart_name, data)
+        block = _format_figure_block(chart_name, charts[chart_name], note)
+        if block:
+            result[section] = _insert_chart_block(
+                result[section], block,
+                anchor=anchor_hint, chart_name=chart_name,
+            )
+
+    # Step 3: 解析占位符 {{CHART:xxx}} → Markdown 图块
+    for section in result:
+        result[section] = _resolve_placeholders(result[section], charts, figure_notes, data)
+
+    # Step 4: 输出校验 — 若 agent 章节校验失败退化为机械插入
+    for section in agent_sections:
+        if section in result:
+            expected = [n for _, n, _, _ in placements_queue if n in charts and n not in TABLE_ALL_KEYS]
+            ok, issues = _validate_agent_output(sections.get(section, ""), result[section], expected)
+            if not ok:
+                # 退化为纯机械插入
+                result[section] = clean_chart_prose(_strip_embedded_chart_blocks(
+                    normalize_section_text(sections.get(section, ""), section)
+                ))
+                for _, cname, ahint, pnote in placements_queue:
+                    if cname not in charts or cname in TABLE_ALL_KEYS:
+                        continue
+                    full_note = figure_notes.get(cname) or pnote or fallback_chart_note(cname, data)
+                    block = _format_figure_block(cname, charts[cname], full_note)
+                    if block:
+                        result[section] = _insert_chart_block(
+                            result[section], block,
+                            anchor=ahint, chart_name=cname,
+                        )
+
+    unused = [n for n in charts if n not in used and n not in set(placement.get("omitted") or [])]
+    omitted = sorted({str(n) for n in (placement.get("omitted") or []) if str(n) in charts} | set(unused))
+    return result, omitted
+
+
+def _placement_editor_agent(
+    section_text: str,
+    chart_name: str,
+    chart_meta: dict[str, Any],
+    existing_anchor: str | None = None,
+) -> str | None:
+    """调 LLM 决定一张图的插入位置和桥接句。
+
+    Returns:
+        桥接句文本；None 表示失败（调用方回退机械插入）。
+    """
+    import json  # noqa: PLC0415 — lazy import in agent-only path
+    from .llm import llm_text
+
+    caption = chart_meta.get("caption", chart_name)
+    hints = chart_meta.get("hints", ())
+    data_summary = chart_meta.get("data_summary", "").strip()
+    if not data_summary:
+        return None
+
+    # 提取子标题结构
+    headings = _extract_subsection_headings(section_text)
+    if not headings:
+        return f"下图{_bridge_fragment(caption, data_summary)}"
+
+    system_prompt = (
+        "你是研报图表排版编辑。每次处理一张图，输出 JSON 决定插入位置和桥接句。"
+    )
+    user_prompt = json.dumps(
+        {
+            "chart": {
+                "name": chart_name,
+                "caption": caption,
+                "keywords": list(hints),
+                "data_summary": data_summary,
+            },
+            "section_sub_headings": headings,
+            "task": (
+                f"从 section_sub_headings 中选一个最相关的 heading，"
+                f"把图表「{caption}」放在该小节末尾。"
+                f"写 1 句桥接句（bridge_sentence），以'如下图所示'或'从下图可见'开头，"
+                f"引用 data_summary 中的具体数据。"
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+    try:
+        raw = llm_text(system_prompt, user_prompt)
+        raw = raw.strip()
+        # 从文本回复中提取 JSON
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end > start:
+            payload = json.loads(raw[start : end + 1])
+        else:
+            payload = json.loads(raw)
+        bridge = str(payload.get("bridge_sentence") or "").strip()
+        return bridge if bridge else None
+    except Exception:
+        return None
+
+
+def _extract_subsection_headings(section_text: str) -> list[str]:
+    """提取 Markdown 章节中的 #### 和 **加粗** 子标题。"""
+    headings: list[str] = []
+    for line in section_text.splitlines():
+        stripped = line.strip()
+        if re.match(r"^#{3,4}\s+\S", stripped):
+            headings.append(re.sub(r"^#{3,4}\s+", "", stripped).strip())
+        elif re.match(r"^\*\*.+?\*\*\s*:?\s*$", stripped):
+            headings.append(stripped.strip(" *:"))
+    return headings
+
+
+def _bridge_fragment(caption: str, data_summary: str) -> str:
+    """从数据摘要生成默认桥接句片段（LLM 失败时的兜底）。"""
+    parts = [p.strip() for p in data_summary.split(";") if p.strip()]
+    if parts:
+        return f"展示：{parts[0]}"
+    return caption
+
+
+def _insert_agent_placement(
+    content: str,
+    chart_name: str,
+    bridge_sentence: str,
+    anchor: str | tuple[str, ...] | None = None,
+) -> str:
+    """在 anchor 对应段落之后插入桥接句 + ``{{CHART:name}}`` 占位符。
+
+    插入优先级：anchor 精确匹配 → subheading hint 匹配 → 章节末尾。
+    """
+    placeholder = f"{{{{CHART:{chart_name}}}}}"
+    block = f"{bridge_sentence}\n\n{placeholder}"
+
+    if placeholder in content:
+        return content
+
+    # 1. 字符串 anchor 精确匹配
+    if isinstance(anchor, str) and anchor.strip():
+        inserted = _insert_after_text(content, anchor.strip(), block)
+        if inserted != content:
+            return inserted
+
+    # 2. tuple hints 匹配
+    if isinstance(anchor, tuple) and anchor:
+        for hint in anchor:
+            inserted = _insert_after_text(content, hint, block)
+            if inserted != content:
+                return inserted
+
+    # 3. CHART_SUBHEADING_HINTS 匹配小节标题
+    hints = _visual_subheading_hints(chart_name)
+    if hints:
+        inserted = _insert_after_subheading_hints(content, hints, block)
+        if inserted:
+            return inserted
+        inserted = _insert_after_section_heading(content, hints, block)
+        if inserted:
+            return inserted
+
+    # 4. 兜底：章节末尾
+    return f"{content}\n\n{block}"
+
+
+def _resolve_placeholders(
+    section_text: str,
+    charts: dict[str, str],
+    figure_notes: dict[str, str] | None = None,
+    data: dict[str, Any] | None = None,
+) -> str:
+    """将 ``{{CHART:xxx}}`` 占位符替换为实际图表 Markdown 块。"""
+    figure_notes = figure_notes or {}
+    data = data or {}
+
+    def _replace(match: re.Match) -> str:
+        cname = match.group(1)
+        if cname not in charts:
+            return match.group(0)
+        note = figure_notes.get(cname) or fallback_chart_note(cname, data)
+        return _format_figure_block(cname, charts[cname], note)
+
+    result = re.sub(r"\{\{CHART:(\w+)\}\}", _replace, section_text)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
+
+
+def _validate_agent_output(
+    original: str,
+    modified: str,
+    expected_charts: list[str],
+) -> tuple[bool, list[str]]:
+    """三层校验：占位符已解析、标题完整、正文保留率>55%。"""
+    issues: list[str] = []
+
+    # Layer 1: 所有占位符已解析
+    remaining = re.findall(r"\{\{CHART:(\w+)\}\}", modified)
+    if remaining:
+        issues.append(f"未解析占位符: {', '.join(remaining)}")
+
+    # Layer 2: 所有 #### 子标题保留
+    orig_h = set(re.findall(r"^(#{3,4}\s+.+)$", original, re.MULTILINE))
+    new_h = set(re.findall(r"^(#{3,4}\s+.+)$", modified, re.MULTILINE))
+    missing = orig_h - new_h
+    if missing:
+        issues.append(f"缺少 {len(missing)} 个子标题")
+
+    # Layer 3: 正文段落保留率
+    orig_p = {p.strip() for p in re.split(r"\n\s*\n", original) if len(p.strip()) > 20}
+    new_p = {p.strip() for p in re.split(r"\n\s*\n", modified) if len(p.strip()) > 20}
+    if orig_p:
+        ratio = len(orig_p & new_p) / len(orig_p)
+        if ratio < 0.55:
+            issues.append(f"正文保留率仅 {ratio:.0%}（阈值 55%）")
+
+    return len(issues) == 0, issues
+
+
 def finalize_inline_only_placement(
     placement: dict[str, Any],
     *,
@@ -1230,6 +1542,7 @@ def build_data_summary(data: dict[str, Any]) -> dict[str, Any]:
         "technical": data.get("technical"),
         "factor": data.get("factor"),
         "industry": data.get("industry"),
+        "industry_comparison": data.get("industry_comparison"),
         "pit_financials": data.get("pit_financials"),
         "data_quality": build_data_quality_summary(data),
         "inventory": {},
