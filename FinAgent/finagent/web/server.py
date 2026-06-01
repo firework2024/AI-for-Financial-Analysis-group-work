@@ -460,10 +460,30 @@ def create_app() -> FastAPI:
     def _clear_auth_cookie(response: Response) -> None:
         response.delete_cookie(key="finagent_token", path="/")
 
+    def _repair_session_title(session) -> bool:
+        title = str(getattr(session, "title", "") or "").strip()
+        if not title or title in {"新对话", "多股对比"}:
+            return False
+        if "数据预加载" not in title and "已全量拉取" not in title and "入库完成" not in title:
+            return False
+        codes = list(getattr(session, "stock_codes", None) or [])
+        if not codes and getattr(session, "stock_code", None):
+            codes = [session.stock_code]
+        if len(codes) == 1:
+            from ..chat.data_tools import sec_name_for_code
+
+            name = sec_name_for_code(codes[0]) or ""
+            session.title = f"{codes[0]} {name}".strip() if name else codes[0]
+        else:
+            session.title = title.split("数据预加载")[0].split("入库完成")[0].strip()[:32] or "新对话"
+        return True
+
     def _get_session(user: AuthUser, session_id: str):
         session = session_store.get(user.id, session_id)
         if not session:
             raise HTTPException(status_code=404, detail="对话不存在")
+        if _repair_session_title(session):
+            session_store.save(session)
         return session
 
     def _bootstrap_running(session) -> bool:
@@ -559,17 +579,20 @@ def create_app() -> FastAPI:
 
             merge_session_stock_codes(session, codes)
             label = stocks_display_label(codes)
+            final_status = "completed" if ok_count == len(codes) else ("partial" if ok_count else "failed")
             session.data_bootstrap = {
-                "status": "completed" if ok_count else "failed",
+                "status": final_status,
                 "stock_codes": codes,
                 "stock_code": codes[0],
                 "stocks": stocks_state,
-                "ok": ok_count > 0,
+                "ok": ok_count == len(codes),
                 "message": f"{label} 入库完成（{ok_count}/{len(codes)}）",
             }
             if session.title in {"", "新对话", "多股对比"} and len(codes) == 1:
-                sec = (stocks_state.get(codes[0]) or {}).get("message") or codes[0]
-                session.title = f"{codes[0]} {sec}"[:24]
+                from ..chat.data_tools import sec_name_for_code
+
+                name = sec_name_for_code(codes[0]) or ""
+                session.title = f"{codes[0]} {name}".strip() if name else codes[0]
             elif session.title in {"", "新对话"}:
                 session.title = f"多股 {label}"
             session_store.save(session)

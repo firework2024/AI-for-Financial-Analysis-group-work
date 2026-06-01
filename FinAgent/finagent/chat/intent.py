@@ -127,8 +127,9 @@ class QueryIntent:
         if self.valuation_focus and self.focused_metrics:
             names = "、".join(self.focused_metrics)
             return (
-                f"倾向：估值相关（{names}）可看 evidence_summary.valuation_facts / factor；"
-                f"多只股票时逐只对比；用户若追问原因可简要解释。"
+                f"【硬性】只回答「{names}」；逐只列出会话内股票，禁止写未提及的标的或其它指标；"
+                f"用 evidence_summary.valuation_facts / observations 中 fetch_factor 结果；"
+                f"无有效数值写「暂无」，勿编造。"
             )
         if self.narrow_answer and self.focused_metrics:
             names = "、".join(self.focused_metrics)

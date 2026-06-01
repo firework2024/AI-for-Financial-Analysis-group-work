@@ -103,7 +103,7 @@ def test_annual_report_needs_update_by_year_and_age(monkeypatch):
     )
 
 
-def test_bootstrap_stock_data_calls_all_gaps(monkeypatch, temp_db):
+def test_bootstrap_stock_data_defaults_to_light_gaps(monkeypatch, temp_db):
     calls: list[str] = []
 
     def _annual(code, **kwargs):
@@ -124,8 +124,34 @@ def test_bootstrap_stock_data_calls_all_gaps(monkeypatch, temp_db):
 
     result = bootstrap_stock_data("300274", report_year=2025)
     assert result["ok"] is True
+    assert set(calls) == {"market_snapshot", "pit_financials"}
+    assert result["requested_gaps"] == ["market_snapshot", "pit_financials"]
+
+
+def test_bootstrap_stock_data_can_include_annual(monkeypatch, temp_db):
+    calls: list[str] = []
+
+    def _annual(code, **kwargs):
+        calls.append("annual_report")
+        return {"ok": True, "report_year": 2025, "sec_name": "测试股"}
+
+    def _pit(code, **kwargs):
+        calls.append("pit_financials")
+        return {"ok": True, "row_count": 3}
+
+    def _market(code, **kwargs):
+        calls.append("market_snapshot")
+        return {"ok": True, "snapshot_id": 1}
+
+    monkeypatch.setenv("FINAGENT_BOOTSTRAP_INCLUDE_ANNUAL_REPORT", "true")
+    monkeypatch.setattr("finagent.chat.data_ingest.ingest_annual_report", _annual)
+    monkeypatch.setattr("finagent.chat.data_ingest.ingest_pit_financials", _pit)
+    monkeypatch.setattr("finagent.chat.data_ingest.ingest_market_snapshot", _market)
+
+    result = bootstrap_stock_data("300274", report_year=2025)
+    assert result["ok"] is True
     assert set(calls) == {"market_snapshot", "pit_financials", "annual_report"}
-    assert len(calls) == 3
+    assert result["requested_gaps"] == ["market_snapshot", "pit_financials", "annual_report"]
 
 
 def test_incremental_persist_merges_price_rows(temp_db):

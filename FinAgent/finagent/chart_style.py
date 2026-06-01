@@ -63,6 +63,7 @@ FIELD_LABELS: dict[str, str] = {
     "dividend_yield_ttm": "股息率(TTM)",
     "gross_profit_margin_ttm": "毛利率(TTM)",
     "net_profit_margin_ttm": "净利率(TTM)",
+    "net_profit_parent_company_margin_ttm": "归母净利率(TTM)",
     "debt_to_asset_ratio": "资产负债率",
     "current_ratio": "流动比率",
     "quick_ratio": "速动比率",
@@ -80,6 +81,7 @@ FACTOR_DECIMAL_FRACTION_FIELDS = frozenset(
     {
         "gross_profit_margin_ttm",
         "net_profit_margin_ttm",
+        "net_profit_parent_company_margin_ttm",
         "dividend_yield_ttm",
         "roe_ttm",
         "net_profit_growth_ratio_ttm",

@@ -57,6 +57,19 @@ def extract_trade_date_from_query(query: str, *, default_year: int | None = None
     return None
 
 
+def _spot_usable(spot: dict[str, Any] | None) -> bool:
+    if not spot or not isinstance(spot, dict):
+        return False
+    if spot.get("error"):
+        return False
+    return (
+        spot.get("close") is not None
+        or spot.get("pe_ttm") is not None
+        or spot.get("pb") is not None
+        or bool(str(spot.get("name") or "").strip())
+    )
+
+
 def fetch_eastmoney_quote(stock_code: str, *, trade_date: date | None = None) -> dict[str, Any]:
     """拉取东方财富行情；若指定 trade_date 则优先取该日 K 线收盘，否则取最新快照。"""
     code = normalize_stock_code(stock_code)
@@ -65,13 +78,35 @@ def fetch_eastmoney_quote(stock_code: str, *, trade_date: date | None = None) ->
 
     if trade_date is not None:
         bar = _fetch_daily_bar(secid, trade_date)
-        if bar:
+        if bar and bar.get("close") is not None:
             return {**bar, "stock_code": code, "secid": secid, "source": "eastmoney_kline", "page_url": page_url}
 
     spot = _fetch_spot(secid)
-    if spot:
+    if _spot_usable(spot):
         return {**spot, "stock_code": code, "secid": secid, "source": "eastmoney_spot", "page_url": page_url}
-    return {"stock_code": code, "secid": secid, "error": "eastmoney_empty", "page_url": page_url}
+
+    try:
+        from .eastmoney_profile import _fetch_spot_extended
+
+        ext = _fetch_spot_extended(secid)
+        if _spot_usable(ext):
+            return {
+                **ext,
+                "stock_code": code,
+                "secid": secid,
+                "source": "eastmoney_spot_ext",
+                "page_url": page_url,
+            }
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+        if isinstance(spot, dict) and spot.get("error"):
+            err = str(spot.get("error"))
+        return {"stock_code": code, "secid": secid, "error": err, "page_url": page_url}
+
+    err = "eastmoney_empty"
+    if isinstance(spot, dict) and spot.get("error"):
+        err = str(spot.get("error"))
+    return {"stock_code": code, "secid": secid, "error": err, "page_url": page_url}
 
 
 def _asks_close_price(query: str) -> bool:
@@ -203,8 +238,8 @@ def _fetch_spot(secid: str) -> dict[str, Any] | None:
         resp = requests.get(_SPOT_URL, params=params, headers=_EM_HEADERS, timeout=12)
         resp.raise_for_status()
         payload = resp.json()
-    except Exception as exc:
-        return {"error": f"{type(exc).__name__}: {exc}"}
+    except Exception:
+        return None
 
     data = (payload or {}).get("data") or {}
     if not data:

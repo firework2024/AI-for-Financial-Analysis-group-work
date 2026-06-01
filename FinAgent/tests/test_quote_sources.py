@@ -104,3 +104,17 @@ def test_fetch_eastmoney_quote_spot(monkeypatch):
     monkeypatch.setattr("finagent.chat.quote_sources.requests.get", lambda *a, **k: FakeResp())
     out = fetch_eastmoney_quote("300274")
     assert out["close"] == 177.99
+
+
+def test_fetch_eastmoney_quote_rejects_error_spot(monkeypatch):
+    monkeypatch.setattr(
+        "finagent.chat.quote_sources._fetch_spot",
+        lambda _secid: {"error": "Timeout: timed out"},
+    )
+    monkeypatch.setattr(
+        "finagent.chat.eastmoney_profile._fetch_spot_extended",
+        lambda _secid: {"name": "海光信息", "close": 285.07, "pe_ttm": 241.09, "date": "2026-06-01"},
+    )
+    out = fetch_eastmoney_quote("688041")
+    assert out.get("pe_ttm") == 241.09
+    assert out.get("source") == "eastmoney_spot_ext"

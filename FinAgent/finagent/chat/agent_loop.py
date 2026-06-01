@@ -105,13 +105,18 @@ def _execute_tool(name: str, args: dict[str, Any], session: ChatSession, user_qu
         if not re.fullmatch(r"\d{6}", code):
             return {"error": "需要 6 位 stock_code"}
         live = fetch_valuation_snapshot(code)
-        factor = (live or {}).get("factor") or {}
+        factor = dict((live or {}).get("factor") or {})
+        quote = (live or {}).get("quote") or {}
+        if factor.get("pe_ratio_ttm") is None and quote.get("pe_ttm") is not None:
+            factor["pe_ratio_ttm"] = quote["pe_ttm"]
+            factor.setdefault("pe_ratio_ttm_source", "eastmoney_quote")
         return {
             "stock_code": code,
             "sec_name": live.get("sec_name"),
             "as_of": live.get("end_date") or live.get("as_of"),
             "source": live.get("source"),
             "factor": factor,
+            "eastmoney_error": live.get("eastmoney_error"),
         }
 
     if tool == "fetch_market":
@@ -198,7 +203,8 @@ def _plan_next_step(
         "- 每轮最多 3 个 actions；已有足够证据时 actions=[] 且 done=true。"
         "- thought 说明本步打算做什么，勿写最终给用户的长答案。"
         "- 用户提到公司名但 session 无代码时，先 resolve_stocks（勿让用户去填侧栏）。"
-        "- 库无数据时用 ensure_data；多只股票时先 get_session，再逐只拉数。"
+        "- 库无数据时用 ensure_data；多只股票时先 get_session，再对每只调用 fetch_factor（估值）或 fetch_market（纯行情）。"
+        "- 用户问 PE/估值且 session 有多只 code 时，actions 应覆盖全部 stock_codes，不要只查一只。"
         "- 估值/PE 优先 fetch_factor；纯股价/收盘用 fetch_market，勿 query_database 拉年报；年报财务用 query_database。"
         f"{_TOOL_CATALOG}"
     )
@@ -238,6 +244,37 @@ def _prefetch_observation(session: ChatSession, query: str) -> dict[str, Any]:
     }
 
 
+def _prefetch_valuation_factors(
+    session: ChatSession,
+    query: str,
+    observations: list[dict[str, Any]],
+) -> None:
+    """估值类问题：对会话内各标的预先 fetch_factor，避免只查一只或漏东方财富兜底。"""
+    intent = classify_query_intent(query, session)
+    if not intent.valuation_focus:
+        return
+    codes = list(session.stock_codes or []) or ([session.stock_code] if session.stock_code else [])
+    if not codes:
+        return
+    seen = {
+        str((item.get("result") or {}).get("stock_code") or "")
+        for item in observations
+        if item.get("tool") == "fetch_factor"
+    }
+    for code in codes:
+        if code in seen:
+            continue
+        result = _execute_tool("fetch_factor", {"stock_code": code}, session, query)
+        observations.append(
+            {
+                "prefetch_factor": True,
+                "tool": "fetch_factor",
+                "args": {"stock_code": code},
+                "result": result,
+            }
+        )
+
+
 def _synthesize_answer(
     *,
     user_query: str,
@@ -248,12 +285,16 @@ def _synthesize_answer(
     tools_payload: dict[str, Any] | None,
 ) -> str:
     system = (
-        "你是 FinAgent 研究助手。用户已看到调度过程；请根据 observations 与证据给出最终回答。"
+        "你是 FinAgent 研究助手。请根据 observations 与证据给出最终回答。"
         "【硬性】只回答 question 直接问到的内容；禁止附带未提及的指标、章节或背景数字。"
+        "用户问 PE/市盈率时只写 PE，不要写毛利率、PB、营收等其它 factor 字段。"
+        "多只股票时逐只列出会话 stock_codes 中的标的；禁止写入未出现在问题或 session 中的股票代码。"
         "tools.answer_guidance 必须遵守；与问题无关的 observation 片段一律忽略。"
+        "数字必须来自 observations/tools.evidence_summary；某只无 factor.pe_ratio_ttm 写「暂无有效 PE」，勿编造。"
+        "pe_ratio_ttm_source 为 derived_* 时表示由本地原始字段估算（总市值/净利润、股价×股本/净利润等），须在回答中注明为估算且基于最近年报口径。"
+        "若 result.eastmoney_error 存在，说明服务器连东方财富失败，应提示「行情源暂不可用」而非声称网站无数据。"
         "observations 里已有 stock_codes 时直接作答，勿让用户去侧栏填代码。"
-        "数字来自 observations，勿编造；quote.close 为最近交易日收盘。"
-        "intent.quote_primary 或用户只问「股价」时，只答行情，勿写净利润/营收/MD&A。"
+        "quote.close 为最近交易日收盘；intent.quote_primary 或只问股价时勿写财务指标。"
         "不要输出 JSON，不要套话，不要给买卖建议。"
     )
     payload = {
@@ -292,6 +333,7 @@ def chat_turn_loop(
 
     tool_trace: list[dict[str, Any]] = []
     observations: list[dict[str, Any]] = [_prefetch_observation(session, query)]
+    _prefetch_valuation_factors(session, query, observations)
     max_steps = chat_agent_max_steps(max_steps)
 
     if has_llm_api_key():

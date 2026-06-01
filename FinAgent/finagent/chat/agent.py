@@ -412,6 +412,9 @@ def _hits_from_data_api(
                 }
             )
 
+    if not quote_primary and not matched_keys and not labels:
+        return hits
+
     if quote_primary:
         tech = stored.get("technical")
         if isinstance(tech, dict) and tech.get("latest_close") is not None:

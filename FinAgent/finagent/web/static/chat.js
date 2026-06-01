@@ -9,6 +9,7 @@ const chatState = {
   bootstrapToastKeys: new Set(),
   bootstrapModalDismissed: new Set(),
   bootstrapModalEpoch: "",
+  bootstrapPolls: new Map(),
 };
 
 const chatEls = {};
@@ -89,7 +90,7 @@ function renderChatSessions() {
       return `
         <div class="chat-session-row${active}">
           <button class="chat-session-item${active}" type="button" data-chat-id="${session.id}">
-            <strong>${escapeHtml(session.title || "新对话")}</strong>
+            <strong>${escapeHtml(sessionTitleDisplay(session))}</strong>
             <span>${escapeHtml(meta || "无附件")}</span>
           </button>
           <button class="chat-session-delete" type="button" data-delete-id="${session.id}" aria-label="删除对话" title="删除对话">×</button>
@@ -186,18 +187,11 @@ function renderChatMessages(session) {
           : '<img src="/assets/logo.png" alt="" class="chat-avatar-img">';
       const body = formatChatMessageBody(msg);
       const bubbleClass = role === "assistant" ? "chat-bubble prose chat-prose" : "chat-bubble";
-      const tools =
-        Array.isArray(msg.tool_calls) && msg.tool_calls.length
-          ? `<div class="chat-tools">${msg.tool_calls.map((t) => {
-              const label = t.tool === "think" ? `思考${t.step ? `·${t.step}` : ""}` : (t.tool || "tool");
-              return `<span title="${escapeHtml(JSON.stringify(t.args || {}))}">${escapeHtml(label)}</span>`;
-            }).join("")}</div>`
-          : "";
       return `
         <div class="chat-msg chat-msg-${role}">
           <div class="chat-avatar" aria-hidden="true">${avatar}</div>
           <div class="chat-bubble-wrap">
-            <div class="${bubbleClass}">${body}${tools}</div>
+            <div class="${bubbleClass}">${body}</div>
           </div>
         </div>`;
     })
@@ -205,24 +199,95 @@ function renderChatMessages(session) {
   scrollChatToBottom();
 }
 
-function bootstrapToastKey(sessionId, status) {
-  return `${sessionId || ""}:${status || ""}`;
+function sessionStockCodes(session) {
+  const codes = Array.isArray(session?.stock_codes) ? session.stock_codes.filter(Boolean) : [];
+  if (codes.length) return codes;
+  return session?.stock_code ? [session.stock_code] : [];
 }
 
-function toastBootstrapStatus(session) {
-  const boot = session?.data_bootstrap;
-  const sid = session?.id || chatState.activeSessionId;
-  if (!boot || boot.status === "running" || !sid) return;
-  const key = bootstrapToastKey(sid, boot.status);
-  if (chatState.bootstrapToastKeys.has(key)) return;
-  chatState.bootstrapToastKeys.add(key);
-  if (boot.status === "completed") {
-    App.toast(boot.message || "数据已入库", "success");
-    return;
+function bootstrapStockSummary(boot, codes) {
+  const stocks = boot?.stocks && typeof boot.stocks === "object" ? boot.stocks : {};
+  const statuses = codes.map((code) => String(stocks[code]?.status || "").trim()).filter(Boolean);
+  const hasDetail = statuses.length > 0;
+  const ready = statuses.filter((status) => ["completed", "skipped"].includes(status)).length;
+  const running = statuses.filter((status) => ["pending", "running"].includes(status)).length;
+  const failed = statuses.filter((status) => status === "failed").length;
+  return {
+    hasDetail,
+    ready,
+    running,
+    failed,
+    total: codes.length || statuses.length,
+    allReady: hasDetail && codes.length > 0 && ready === codes.length,
+    hasRunning: running > 0,
+    hasPartial: hasDetail && ready > 0 && ready < (codes.length || statuses.length),
+  };
+}
+
+function buildDataStatusContext(session) {
+  if (!session) return null;
+  const boot = session.data_bootstrap;
+  const codes = sessionStockCodes(session);
+  const codeLabel = codes.length ? codes.join("、") : "";
+  const summary = bootstrapStockSummary(boot, codes);
+
+  if (boot?.status === "running" || summary.hasRunning) {
+    const cur = boot.current || boot.stock_code || codes[0] || "";
+    return {
+      pills: [
+        `<span class="context-pill context-pill--progress"><span class="data-status-dot" aria-hidden="true"></span>入库中 · ${escapeHtml(cur || "…")}</span>`,
+      ],
+      sub: boot.message || "行情 / 财务 / 年报准备中，完成后可直接提问",
+    };
   }
-  if (boot.status === "failed") {
-    App.toast(boot.error || boot.message || "数据预加载失败", "error");
+  if (boot?.status === "completed" && codes.length && summary.allReady) {
+    return {
+      pills: [
+        `<span class="context-pill context-pill--ready"><span class="data-status-dot" aria-hidden="true"></span>基础数据就绪 · ${escapeHtml(codeLabel)}</span>`,
+      ],
+      sub: "行情与财务序列已同步；年报 PDF 按需入库",
+    };
   }
+  if ((boot?.status === "partial" || summary.hasPartial) && codes.length) {
+    return {
+      pills: [
+        `<span class="context-pill context-pill--progress"><span class="data-status-dot" aria-hidden="true"></span>部分就绪 · ${escapeHtml(codeLabel)}</span>`,
+      ],
+      sub: boot.message || `已完成 ${summary.ready}/${summary.total}，其余标的待重试或仍在处理`,
+    };
+  }
+  if (boot?.status === "completed" && codes.length) {
+    return {
+      pills: [
+        `<span class="context-pill context-pill--bound-stock"><span class="data-status-dot" aria-hidden="true"></span>入库状态待确认 · ${escapeHtml(codeLabel)}</span>`,
+      ],
+      sub: "未找到完整入库明细，避免误判为已就绪；可刷新或重新触发入库",
+    };
+  }
+  if (boot?.status === "failed") {
+    return {
+      pills: [
+        `<span class="context-pill context-pill--failed"><span class="data-status-dot" aria-hidden="true"></span>入库失败</span>`,
+        ...(codeLabel
+          ? [`<span class="context-pill context-pill--bound-stock">已绑定 · ${escapeHtml(codeLabel)}</span>`]
+          : []),
+      ],
+      sub: boot.error || boot.message || "请检查米筐/网络配置后重试",
+    };
+  }
+  if (codes.length) {
+    return {
+      pills: [
+        `<span class="context-pill context-pill--bound-stock"><span class="data-status-dot" aria-hidden="true"></span>已绑定 · ${escapeHtml(codeLabel)}</span>`,
+      ],
+      sub: "可直接提问；缺数据时会自动入库",
+    };
+  }
+  return null;
+}
+
+function toastBootstrapStatus(_session) {
+  /* 入库状态改由 composer 区 data-status pill 展示，不再弹 Toast */
 }
 
 function analyzeIntroReportId(content) {
@@ -273,29 +338,8 @@ function hideBootstrapModal() {
 }
 
 function syncBootstrapModal(session) {
-  const boot = session?.data_bootstrap;
-  const sid = String(session?.id || chatState.activeSessionId || "").trim();
-  const epoch = sid
-    ? `${sid}:${boot?.status || ""}:${boot?.started_at || boot?.updated_at || ""}`
-    : "";
-  if (boot?.status === "running") {
-    if (epoch && epoch !== chatState.bootstrapModalEpoch) {
-      chatState.bootstrapModalEpoch = epoch;
-      chatState.bootstrapModalDismissed.delete(sid);
-    }
-    if (!chatState.bootstrapModalDismissed.has(sid)) {
-      showBootstrapModal(session);
-    }
-    return;
-  }
-  chatState.bootstrapModalEpoch = "";
+  /* 统一数据状态条替代浮动入库弹窗 */
   hideBootstrapModal();
-  if (boot?.status === "completed" && chatEls.bootstrapModalSpinner) {
-    chatEls.bootstrapModalSpinner.className = "bootstrap-spinner done";
-  }
-  if (boot?.status === "failed" && chatEls.bootstrapModalSpinner) {
-    chatEls.bootstrapModalSpinner.className = "bootstrap-spinner failed";
-  }
 }
 
 function reportLabelForSession(session) {
@@ -310,44 +354,24 @@ function reportLabelForSession(session) {
 function buildComposerContext(session) {
   if (!session) return { pills: [], sub: "上传 PDF 或绑定报告后开始提问" };
 
-  const boot = session?.data_bootstrap;
-  if (boot?.status === "running") {
-    const cur = boot.current || boot.stock_code;
-    return {
-      pills: [
-        `<span class="context-pill context-pill--progress">${escapeHtml(cur ? `入库中 · ${cur}` : "入库中…")}</span>`,
-      ],
-      sub: "数据准备完成后即可提问",
-    };
-  }
-
+  const pills = [];
   const bound = reportLabelForSession(session);
   if (bound) {
-    return {
-      pills: [
-        `<span class="context-pill context-pill--bound" title="${escapeHtml(bound.reportId)}">已绑定 · <strong>${escapeHtml(bound.title)}</strong></span>`,
-      ],
-      sub: "基于已绑定报告追问；侧栏可更换报告",
-    };
+    pills.push(
+      `<span class="context-pill context-pill--bound" title="${escapeHtml(bound.reportId)}">报告 · <strong>${escapeHtml(bound.title)}</strong></span>`,
+    );
+  } else if (session.pdf_name) {
+    pills.push(`<span class="context-pill context-pill--bound">PDF · ${escapeHtml(session.pdf_name)}</span>`);
   }
-  if (session.pdf_name) {
-    return {
-      pills: [`<span class="context-pill context-pill--bound">PDF · ${escapeHtml(session.pdf_name)}</span>`],
-      sub: "基于已上传 PDF 追问",
-    };
+
+  const dataStatus = buildDataStatusContext(session);
+  if (dataStatus) {
+    pills.push(...dataStatus.pills);
+    return { pills, sub: dataStatus.sub };
   }
-  const codes = Array.isArray(session.stock_codes) ? session.stock_codes.filter(Boolean) : [];
-  if (codes.length > 1) {
-    return {
-      pills: [`<span class="context-pill">标的 ${escapeHtml(codes.join("、"))}</span>`],
-      sub: "可直接提问；也可绑定报告获得更完整上下文",
-    };
-  }
-  if (session.stock_code) {
-    return {
-      pills: [`<span class="context-pill">标的 ${escapeHtml(session.stock_code)}</span>`],
-      sub: "可直接提问；也可绑定报告获得更完整上下文",
-    };
+
+  if (pills.length) {
+    return { pills, sub: "基于已绑定报告追问；侧栏可更换报告" };
   }
   return { pills: [], sub: "拖 PDF、绑定报告，或直接输入公司名提问" };
 }
@@ -369,41 +393,54 @@ function syncComposerChrome(session) {
 }
 
 async function pollSessionBootstrap(sessionId) {
-  const maxPolls = 150;
-  for (let i = 0; i < maxPolls; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    if (chatState.activeSessionId !== sessionId) return;
-    try {
-      const session = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
-      const boot = session.data_bootstrap;
-      if (chatState.activeSessionId === sessionId && boot?.status === "running") {
-        chatState.activeSession = session;
-        updateChatHeader(session);
-        syncBootstrapModal(session);
-      }
-      if (!boot || boot.status !== "running") {
-        if (chatState.activeSessionId === sessionId) {
-          chatState.activeSession = session;
-          updateChatHeader(session);
-          syncBootstrapModal(session);
-          await loadChatSessions();
+  if (chatState.bootstrapPolls.has(sessionId)) return;
+  const pollToken = Symbol(sessionId);
+  chatState.bootstrapPolls.set(sessionId, pollToken);
+  const batchPolls = 150;
+  try {
+    while (chatState.activeSessionId === sessionId && chatState.bootstrapPolls.get(sessionId) === pollToken) {
+      for (let i = 0; i < batchPolls; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (chatState.activeSessionId !== sessionId || chatState.bootstrapPolls.get(sessionId) !== pollToken) return;
+        try {
+          const session = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
+          const boot = session.data_bootstrap;
+          if (chatState.activeSessionId === sessionId && boot?.status === "running") {
+            chatState.activeSession = session;
+            updateChatHeader(session);
+          }
+          if (!boot || boot.status !== "running") {
+            if (chatState.activeSessionId === sessionId) {
+              chatState.activeSession = session;
+              updateChatHeader(session);
+              await loadChatSessions();
+            }
+            toastBootstrapStatus(session);
+            return;
+          }
+        } catch (_e) {
+          return;
         }
-        toastBootstrapStatus(session);
-        return;
       }
-    } catch (_e) {
-      return;
+      App.toast("入库时间较长（可能在下载年报 PDF），请稍候或刷新对话列表查看状态", "info");
+    }
+  } finally {
+    if (chatState.bootstrapPolls.get(sessionId) === pollToken) {
+      chatState.bootstrapPolls.delete(sessionId);
     }
   }
-  if (chatState.activeSessionId === sessionId) {
-    App.toast("入库时间较长（可能在下载年报 PDF），请稍候或刷新对话列表查看状态", "info");
-    pollSessionBootstrap(sessionId);
-  }
+}
+
+function sessionTitleDisplay(session) {
+  let title = String(session?.title || "新对话").trim();
+  if (!title || title === "新对话") return "新对话";
+  const cut = title.split(/\s*数据预加载完成/)[0].split(/\s*入库完成/)[0].trim();
+  return cut.slice(0, 32) || title;
 }
 
 function updateChatHeader(session) {
   if (chatEls.chatTitle) {
-    chatEls.chatTitle.textContent = session?.title || "新对话";
+    chatEls.chatTitle.textContent = sessionTitleDisplay(session);
   }
   const ctx = buildComposerContext(session);
   if (chatEls.chatContextPill) {
@@ -427,7 +464,7 @@ function updateChatHeader(session) {
 }
 
 async function openChatSession(sessionId, options = {}) {
-  const { stayOnReport = false } = options;
+  const { stayOnReport = false, clearStockInput = false } = options;
   const session = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
   chatState.activeSessionId = sessionId;
   chatState.activeSession = session;
@@ -442,7 +479,11 @@ async function openChatSession(sessionId, options = {}) {
   renderChatSessions();
   renderChatMessages(session);
   updateChatHeader(session);
-  syncChatStockInput(session);
+  if (clearStockInput && chatEls.chatStockInput) {
+    chatEls.chatStockInput.value = "";
+  } else {
+    syncChatStockInput(session);
+  }
   if (session.data_bootstrap?.status === "running") {
     pollSessionBootstrap(sessionId);
   } else {
@@ -502,6 +543,7 @@ async function createChatSession(options = {}) {
   if (resetStockInput && chatEls.chatStockInput) {
     chatEls.chatStockInput.value = "";
   }
+  const stocksPayload = chatStocksPayload();
   const stock = String(chatEls.chatStockInput?.value || "").trim();
   if (!stock && !stayOnReport && !resetStockInput) {
     App.toast("侧栏股票可选；在对话里直接问公司名也会自动识别并入库", "info");
@@ -510,11 +552,12 @@ async function createChatSession(options = {}) {
     method: "POST",
     body: JSON.stringify({
       title: "新对话",
-      ...chatStocksPayload(),
+      ...stocksPayload,
     }),
   });
+  chatState.bootstrapModalDismissed.delete(payload.id);
   await loadChatSessions();
-  await openChatSession(payload.id, { stayOnReport });
+  await openChatSession(payload.id, { stayOnReport, clearStockInput: resetStockInput });
 }
 
 async function ensureReportChatSession() {

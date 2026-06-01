@@ -15,7 +15,7 @@ from .data_tools import (
     resolve_stocks_for_chat,
 )
 from .intent import QueryIntent, classify_query_intent, is_fundamental_narrative_hit
-from .metrics import extract_financial_facts, extract_valuation_facts, is_valuation_focus, slim_factor_block
+from .metrics import extract_financial_facts, extract_valuation_facts, fields_for_metrics, is_valuation_focus, slim_factor_block
 from .quote_sources import supplement_live_with_web_quote
 from .stock_codes import merge_session_stock_codes
 from .store import ChatSession
@@ -58,6 +58,21 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
 
     ingest_actions: list[dict[str, Any]] = []
     valuation_only = is_valuation_focus(intent.focused_metrics)
+    focused_factor_fields = set(fields_for_metrics(intent.focused_metrics or [])) & {
+        "gross_profit_margin_ttm",
+        "net_profit_margin_ttm",
+        "net_profit_parent_company_margin_ttm",
+        "roe_ttm",
+        "debt_to_asset_ratio",
+        "current_ratio",
+        "quick_ratio",
+        "ps_ratio_ttm",
+        "net_profit_growth_ratio_ttm",
+        "net_profit_parent_company_growth_ratio_ttm",
+        "operating_profit_growth_ratio_ttm",
+        "gross_profit_growth_ratio_ttm",
+        "operating_revenue_growth_ratio_ttm",
+    }
 
     for code in stocks:
         should_ingest = (not valuation_only) and (
@@ -98,7 +113,7 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
         if code == primary:
             payload["data_api"] = data_api
 
-        wants_live = intent.valuation_focus or intent.want_live_quote or needs_live_data(query)
+        wants_live = intent.valuation_focus or intent.want_live_quote or needs_live_data(query) or bool(focused_factor_fields)
         if wants_live:
             live: dict[str, Any] | None = None
             if ingest_actions:
@@ -149,11 +164,18 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
         )
 
     payload["evidence_summary"] = _build_evidence_summary(payload, intent)
+    stocks = payload.get("stock_codes") or []
     if len(stocks) > 1:
-        payload["answer_guidance"] = (
-            f"{payload['answer_guidance']} 会话含 {len(stocks)} 只：{'、'.join(stocks)}；"
-            f"若问题涉及「他们/这几家」，尽量覆盖各标的，也可按用户要求只讲其中几只。"
+        extra = (
+            f"会话含 {len(stocks)} 只：{'、'.join(stocks)}；"
+            f"若问题涉及「他们/这几家」，须逐只覆盖，也可按用户要求只讲其中几只。"
         )
+        if intent.valuation_focus:
+            extra = (
+                f"【硬性】须对 {'、'.join(stocks)} 逐只回答所问估值指标；"
+                "禁止出现列表外的股票；无数据写暂无。"
+            )
+        payload["answer_guidance"] = f"{payload['answer_guidance']} {extra}"
     return payload, tool_calls
 
 

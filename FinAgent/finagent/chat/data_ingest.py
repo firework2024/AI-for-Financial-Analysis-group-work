@@ -20,8 +20,10 @@ from ..datastore.query import (
 from .data_tools import fetch_market_snapshot, needs_live_data
 from .intent import classify_query_intent
 
-# 新对话一键入库：行情 + PIT 可并行，年报（PDF）放最后
-BOOTSTRAP_GAPS = ("market_snapshot", "pit_financials", "annual_report")
+# 新对话一键入库默认走轻量路径；年报 PDF 较慢，按需查询时再拉取
+BOOTSTRAP_GAPS_LIGHT = ("market_snapshot", "pit_financials")
+BOOTSTRAP_GAPS_FULL = ("market_snapshot", "pit_financials", "annual_report")
+BOOTSTRAP_GAPS = BOOTSTRAP_GAPS_FULL
 BOOTSTRAP_PARALLEL_GAPS = frozenset({"market_snapshot", "pit_financials"})
 FAST_INGEST_ORDER = ("market_snapshot", "pit_financials", "annual_report")
 
@@ -49,6 +51,10 @@ def bootstrap_lookback_days() -> int:
         return 90
 
 
+def bootstrap_include_annual_report() -> bool:
+    return env_flag("FINAGENT_BOOTSTRAP_INCLUDE_ANNUAL_REPORT", default=False)
+
+
 def ingest_parallel_enabled() -> bool:
     return env_flag("FINAGENT_INGEST_PARALLEL", default=True)
 
@@ -66,9 +72,10 @@ def bootstrap_stock_data(
     root = workdir or Path(".")
     year = report_year if report_year is not None else default_as_of(None).year - 1
     lb = lookback_days if lookback_days is not None else bootstrap_lookback_days()
+    gaps = BOOTSTRAP_GAPS_FULL if bootstrap_include_annual_report() else BOOTSTRAP_GAPS_LIGHT
     actions = _run_ingest_plan(
         code,
-        BOOTSTRAP_GAPS,
+        gaps,
         workdir=root,
         report_year=year,
         lookback_days=lb,
@@ -80,7 +87,7 @@ def bootstrap_stock_data(
     return {
         "stock_code": code,
         "report_year": year,
-        "requested_gaps": list(BOOTSTRAP_GAPS),
+        "requested_gaps": list(gaps),
         "actions": actions,
         "ok": ok_count > 0,
         "sec_name": sec_name,
@@ -456,9 +463,11 @@ def fetch_stock_data_full(
 
 
 def _bootstrap_message(actions: list[dict[str, Any]], *, sec_name: str | None, code: str) -> str:
-    base = _ingest_message(actions)
     label = sec_name or code
-    return f"{label} 数据预加载完成：{base}" if base else f"{label} 数据预加载完成"
+    ok = sum(1 for item in actions if item.get("ok"))
+    if ok:
+        return f"{label} 数据已就绪"
+    return f"{label} 入库部分失败"
 
 
 def _ingest_message(actions: list[dict[str, Any]]) -> str:

@@ -396,13 +396,90 @@ def data_executor_agent(
         "factor_history": _frame_summary(_flatten_frame(factor_history), tail=max(260, lookback_days)),
         "technical": _technical_summary(frames["price"]),
     }
+    _enrich_multi_factor_payload(payload, stock_code)
     from .datastore import persist_market_snapshot
 
     snapshot_id = persist_market_snapshot(payload, lookback_days=lookback_days, source="data_executor")
     if snapshot_id is not None:
         payload["data_snapshot_id"] = snapshot_id
     _attach_stored_fundamentals(payload, stock_code)
+    _enrich_multi_factor_payload(payload, stock_code)
     return payload
+
+
+def _enrich_multi_factor_payload(payload: dict[str, Any], stock_code: str) -> None:
+    """多智能体主路径复用对话侧教科书口径的本地估值补全。"""
+    try:
+        from .chat.data_tools import _apply_derived_financial_factors, _apply_derived_valuation
+    except Exception as exc:
+        print(f"[fundamentals] factor enrichment skipped: {type(exc).__name__}: {exc}")
+        return
+
+    factor = dict(payload.get("factor") or {})
+    price_row = _latest_series_row(payload.get("price"))
+    shares_row = _latest_series_row(payload.get("shares"))
+    if factor.get("market_cap") is None:
+        market_cap = _market_cap_from_rows(price_row, shares_row)
+        if market_cap is not None:
+            factor["market_cap"] = round(market_cap, 2)
+            factor["market_cap_source"] = "derived_price_shares"
+
+    factor = _apply_derived_financial_factors(
+        factor,
+        price_row,
+        stock_code,
+        technical=payload.get("technical") if isinstance(payload.get("technical"), dict) else None,
+    )
+    factor = _apply_derived_valuation(
+        factor,
+        price_row,
+        stock_code,
+        technical=payload.get("technical") if isinstance(payload.get("technical"), dict) else None,
+    )
+    if factor:
+        payload["factor"] = factor
+
+    history = payload.get("factor_history")
+    rows = history.get("rows") if isinstance(history, dict) else None
+    if isinstance(rows, list) and rows:
+        latest = dict(rows[-1])
+        latest.update({k: v for k, v in factor.items() if k not in latest or latest.get(k) is None})
+        rows[-1] = latest
+        columns = list(history.get("columns") or [])
+        for key in latest:
+            if key not in columns:
+                columns.append(key)
+        history["columns"] = columns
+
+
+def _latest_series_row(summary: Any) -> dict[str, Any]:
+    rows = summary.get("rows") if isinstance(summary, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return {}
+    row = rows[-1]
+    return dict(row) if isinstance(row, dict) else {}
+
+
+def _market_cap_from_rows(price_row: dict[str, Any], shares_row: dict[str, Any]) -> float | None:
+    close = _safe_number(price_row.get("close"))
+    shares = None
+    for key in ("total", "total_shares", "total_a", "shares"):
+        shares = _safe_number(shares_row.get(key))
+        if shares and shares > 0:
+            break
+    if not close or close <= 0 or not shares or shares <= 0:
+        return None
+    return close * shares
+
+
+def _safe_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    return number
 
 
 def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> None:

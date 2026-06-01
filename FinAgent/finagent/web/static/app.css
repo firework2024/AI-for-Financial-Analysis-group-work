@@ -2366,6 +2366,39 @@ body.auth-locked .shell { filter: blur(6px); pointer-events: none; user-select: 
   border-color: rgba(245, 158, 11, 0.25);
   color: #b45309;
 }
+.context-pill--ready {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.28);
+  color: #047857;
+}
+.context-pill--failed {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.22);
+  color: #b91c1c;
+}
+.context-pill--bound-stock {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.2);
+  color: #4338ca;
+}
+.data-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+.context-pill--progress .data-status-dot {
+  width: 8px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  background: transparent;
+  animation: bootstrap-spin 0.85s linear infinite;
+}
 .composer-context .context-pill.muted { font-size: 0.78rem; }
 
 .rail-item-row {

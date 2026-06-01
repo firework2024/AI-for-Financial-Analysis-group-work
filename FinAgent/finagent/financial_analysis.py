@@ -525,6 +525,7 @@ def _metrics_for_row(row: dict[str, Any]) -> dict[str, Any]:
         "cash_flow_from_operating_activities": operating_cash,
         "cost_of_goods_sold": cost,
         "total_assets": assets,
+        "equity_parent_company": equity,
         "gross_margin": _ratio(None if revenue is None or cost is None else revenue - cost, revenue),
         "selling_expense_ratio": _ratio(val("selling_expense"), revenue),
         "ga_expense_ratio": _ratio(val("ga_expense"), revenue),
@@ -578,6 +579,11 @@ def _add_trend_metrics(metrics: list[dict[str, Any]]) -> None:
         metric["inventory_turnover"] = _ratio(metric.get("cost_of_goods_sold"), _avg(metric.get("inventory"), previous.get("inventory")))
         metric["receivable_turnover"] = _ratio(metric.get("revenue"), _avg(metric.get("receivable"), previous.get("receivable")))
         metric["fixed_asset_turnover"] = _ratio(metric.get("revenue"), _avg(metric.get("fixed_assets"), previous.get("fixed_assets")))
+        metric["roe"] = _ratio(
+            metric.get("net_profit_parent_company"),
+            _avg(metric.get("equity_parent_company"), previous.get("equity_parent_company")),
+        )
+        metric["roa"] = _ratio(metric.get("net_profit"), _avg(metric.get("total_assets"), previous.get("total_assets")))
 
 
 def _apply_metric_factor_fallbacks(metrics: list[dict[str, Any]], metric_factor_values: dict[int, dict[str, float]]) -> None:

@@ -22,7 +22,16 @@ _METRIC_SPECS: list[tuple[tuple[str, ...], tuple[str, ...], str]] = [
     ),
     (("净资产", "股东权益", "归属于母公司股东权益"), ("equity_parent_company",), "净资产"),
     (("毛利率",), ("gross_margin", "gross_profit_margin_ttm"), "毛利率"),
+    (("归母净利率",), ("net_profit_parent_company_margin_ttm",), "归母净利率"),
+    (("净利率", "净利润率"), ("net_profit_margin_ttm",), "净利率"),
     (("净资产收益率", "roe"), ("roe", "roe_ttm"), "ROE"),
+    (("资产负债率", "负债率"), ("debt_to_asset_ratio",), "资产负债率"),
+    (("流动比率",), ("current_ratio",), "流动比率"),
+    (("速动比率",), ("quick_ratio",), "速动比率"),
+    (("营收增速", "收入增速", "营业收入增速"), ("operating_revenue_growth_ratio_ttm",), "营收增速"),
+    (("净利润增速", "净利增速"), ("net_profit_growth_ratio_ttm", "net_profit_parent_company_growth_ratio_ttm"), "净利润增速"),
+    (("营业利润增速",), ("operating_profit_growth_ratio_ttm",), "营业利润增速"),
+    (("毛利润增速", "毛利增速"), ("gross_profit_growth_ratio_ttm",), "毛利润增速"),
     (
         ("市盈率", "pe(ttm)", "pe ratio", "动态市盈率"),
         ("pe_ratio_ttm",),
@@ -40,6 +49,17 @@ _FACTOR_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "市净率": ("pb_ratio_ttm",),
     "市销率": ("ps_ratio_ttm",),
     "总市值": ("market_cap",),
+    "毛利率": ("gross_profit_margin_ttm", "gross_margin"),
+    "归母净利率": ("net_profit_parent_company_margin_ttm",),
+    "净利率": ("net_profit_margin_ttm",),
+    "ROE": ("roe_ttm", "roe"),
+    "资产负债率": ("debt_to_asset_ratio",),
+    "流动比率": ("current_ratio",),
+    "速动比率": ("quick_ratio",),
+    "营收增速": ("operating_revenue_growth_ratio_ttm",),
+    "净利润增速": ("net_profit_growth_ratio_ttm", "net_profit_parent_company_growth_ratio_ttm"),
+    "营业利润增速": ("operating_profit_growth_ratio_ttm",),
+    "毛利润增速": ("gross_profit_growth_ratio_ttm",),
 }
 
 _NARROW_HINTS = ("只要", "仅需", "仅", "就够", "别讲", "不要", "直接说", "直接给", "只说", "就答")
@@ -111,6 +131,11 @@ def extract_valuation_facts(
         if not isinstance(live, dict):
             continue
         factor = slim_factor_block(live.get("factor"), labels)
+        if not factor and "市盈率" in labels:
+            quote = live.get("quote") if isinstance(live.get("quote"), dict) else {}
+            pe = quote.get("pe_ttm")
+            if pe is not None:
+                factor = {"pe_ratio_ttm": pe, "pe_ratio_ttm_source": "eastmoney_quote"}
         if not factor:
             continue
         rows.append(
