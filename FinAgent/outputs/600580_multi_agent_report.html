@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>600580 卧龙电驱 多智能体研究报告</title>
+  <style>
+:root {
+  color-scheme: light;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #2563eb;
+  --bg-soft: #f9fafb;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text);
+  background: #fff;
+}
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  font-size: 1rem;
+}
+h1 {
+  margin: 0 0 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 3px solid var(--accent);
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+h2 {
+  margin: 2.25rem 0 1rem;
+  color: #1e40af;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+h3 {
+  margin: 1.35rem 0 0.65rem;
+  color: #111827;
+  font-size: 1.12rem;
+  font-weight: 600;
+}
+h4 {
+  margin: 1.1rem 0 0.55rem;
+  color: #111827;
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+h5, h6 {
+  margin: 1rem 0 0.5rem;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.section-body {
+  font-size: 1rem;
+}
+.section-body h3, .section-body h4, .section-body h5, .section-body h6 {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+h3.chart-group {
+  margin-top: 1.5rem;
+  font-size: 1.08rem;
+  color: #374151;
+}
+.draft-banner {
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  border-left: 4px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+.draft-banner p { margin: 0; }
+.report-toc {
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.report-toc-details { margin: 0; }
+.report-toc-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #374151;
+  user-select: none;
+}
+.report-toc-details > summary::-webkit-details-marker { display: none; }
+.report-toc-details > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.35rem;
+  transition: transform 0.15s ease;
+  color: #64748b;
+}
+.report-toc-details[open] > summary::before { transform: rotate(90deg); }
+.report-toc-count {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 0.35rem;
+}
+.report-toc ul {
+  margin: 0;
+  padding: 0.35rem 0.85rem 0.65rem 1.35rem;
+  columns: 2;
+  column-gap: 1.5rem;
+  border-top: 1px solid var(--border);
+  background: #fff;
+}
+.report-toc li {
+  margin: 0.15rem 0;
+  break-inside: avoid;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.report-toc a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.report-toc a:hover {
+  text-decoration: underline;
+}
+@media (max-width: 720px) {
+  .report-toc { margin-bottom: 0.85rem; }
+  .report-toc-details > summary { padding: 0.5rem 0.75rem; font-size: 0.82rem; }
+  .report-toc ul { columns: 1; padding: 0.3rem 0.65rem 0.55rem 1.1rem; }
+  .report-toc li { font-size: 0.8rem; margin: 0.1rem 0; }
+}
+ul, ol { margin: 0.75rem 0; padding-left: 1.4rem; font-size: 1rem; }
+li { margin: 0.35rem 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.75rem;
+  vertical-align: top;
+}
+th { background: var(--bg-soft); text-align: left; }
+.metrics td:last-child { text-align: right; white-space: nowrap; }
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin: 1rem 0 1.5rem;
+}
+.chart-figure {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  text-align: center;
+}
+.chart-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 6px;
+  background: #fff;
+}
+.chart-figure figcaption {
+  margin-bottom: 0.65rem;
+  font-weight: 600;
+  color: #111827;
+}
+.section-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5rem auto 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.report-figure {
+  margin: 0.75rem 0 0.25rem;
+  text-align: center;
+}
+.report-figure img {
+  margin: 0 auto;
+}
+.figure-note {
+  margin: 0 0 1.75rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-soft);
+  font-size: 0.94rem;
+  color: #374151;
+  line-height: 1.6;
+}
+.figure-note strong { color: #1e40af; }
+.meta-list { color: var(--muted); }
+.disclaimer {
+  margin-top: 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.disclaimer h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .page { padding: 1.25rem 1rem 2rem; }
+  h1 { font-size: 1.45rem; }
+}
+</style>
+</head>
+<body>
+  <main class="page"><h1>600580 卧龙电驱 多智能体研究报告</h1>
+<aside class="draft-banner"><p>&gt; <strong>草稿状态</strong>：验证评分 85，结论 <code>pass_after_revision</code>。 本报告尚未通过验证 Agent 复核，请勿对外发布。</p></aside>
+<nav class="report-toc"><details class="report-toc-details"><summary>目录 <span class="report-toc-count">9 节</span></summary><ul><li><a href="#执行摘要">执行摘要</a></li><li><a href="#核心指标速览">核心指标速览</a></li><li><a href="#量价与技术面">量价与技术面</a></li><li><a href="#基本面与估值">基本面与估值</a></li><li><a href="#资金与交易结构">资金与交易结构</a></li><li><a href="#宏观利率背景">宏观利率背景</a></li><li><a href="#综合风险与数据局限">综合风险与数据局限</a></li><li><a href="#数据与工具说明">数据与工具说明</a></li><li><a href="#免责声明">免责声明</a></li></ul></details></nav>
+<h2 id="执行摘要">执行摘要</h2>
+<section class="section-body prose-lead"><p>_本节暂无可用内容。_</p></section>
+<h2 id="核心指标速览">核心指标速览</h2>
+<table class="metrics"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>中信一级行业</td><td>27</td></tr><tr><td>最新收盘价</td><td>39.46</td></tr><tr><td>MA20</td><td>40.5455</td></tr><tr><td>MA60</td><td>39.2218</td></tr><tr><td>20 日收益率</td><td>5.82%</td></tr><tr><td>60 日收益率</td><td>-2.29%</td></tr><tr><td>RSI14</td><td>46.1337</td></tr><tr><td>20 日均量</td><td>6908.01 万</td></tr><tr><td>PE(TTM)</td><td>54.3554</td></tr><tr><td>PB(TTM)</td><td>5.6957</td></tr><tr><td>PS(TTM)</td><td>4.0026</td></tr><tr><td>股息率(TTM)</td><td>0.46%</td></tr><tr><td>总市值</td><td>616.41 亿</td></tr><tr><td>融资余额</td><td>29.95 亿</td></tr><tr><td>融资买入额</td><td>4.84 亿</td></tr></tbody></table>
+<h2 id="量价与技术面">量价与技术面</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>卧龙电驱（600580.XSHG）股价2026年5月29日收于39.46元，MA20折让2.68%但站稳MA60上方0.61%，RSI(14)报46.13处中性偏弱；近20日量增245.74%领先价涨5.82%，但近5日量价齐跌7.13%，短期方向待选择。</p>
+<h3>图 · RSI 与 MACD</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/technical_indicators.png" alt="RSI 与 MACD" loading="lazy" /></figure>
+<p class="figure-note">RSI 位于中性区间；MACD 位于信号线上方，动能偏强。</p>
+<h3>表 · 技术指标快照</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>最新收盘价</td><td>39.46</td></tr><tr><td>MA20</td><td>40.5455</td></tr><tr><td>MA60</td><td>39.2218</td></tr><tr><td>20 日收益率</td><td>5.82%</td></tr><tr><td>60 日收益率</td><td>-2.29%</td></tr><tr><td>RSI14</td><td>46.1337</td></tr><tr><td>20 日均量</td><td>6908.01 万</td></tr></tbody></table>
+<p><strong>趋势概览</strong></p>
+<h3>图 · 收盘价与 MA20/MA60</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/moving_averages.png" alt="收盘价与 MA20/MA60" loading="lazy" /></figure>
+<p class="figure-note">价格位于短均线下、长均线上，呈现震荡整理。</p>
+<table><thead><tr><th>指标</th><th>数值（2026-05-29）</th><th>说明</th></tr></thead><tbody><tr><td>最新收盘</td><td>39.46元</td><td>data.technical.<code>latest_close</code></td></tr><tr><td>MA20</td><td>40.55元</td><td>收盘价低于MA20 2.68%</td></tr><tr><td>MA60</td><td>39.22元</td><td>收盘价高于MA60 0.61%</td></tr><tr><td>20日收益率</td><td>+5.82%</td><td>2026-04-29→2026-05-29</td></tr><tr><td>60日收益率</td><td>-2.29%</td><td>2026-03-31→2026-05-29</td></tr><tr><td>RSI(14)</td><td>46.13</td><td>中性偏弱，未超卖</td></tr><tr><td>20日均量</td><td>6,908万股</td><td>data.technical.<code>avg_volume_20d</code></td></tr></tbody></table>
+<p><strong>近期关键交易日对比</strong></p>
+<table><thead><tr><th>日期</th><th>收盘价（元）</th><th>涨跌幅</th><th>成交量（万股）</th><th>成交额（万元）</th><th>换手率（%）</th></tr></thead><tbody><tr><td>2026-05-18</td><td>40.96</td><td>+1.19%</td><td>6,748</td><td>275,537</td><td>4.33</td></tr><tr><td>2026-05-19</td><td>41.09</td><td>+0.32%</td><td>5,367</td><td>220,877</td><td>3.45</td></tr><tr><td>2026-05-20</td><td>39.62</td><td>-3.58%</td><td>4,754</td><td>189,283</td><td>3.05</td></tr><tr><td>2026-05-21</td><td>40.66</td><td>+2.62%</td><td>9,786</td><td>401,132</td><td>6.28</td></tr><tr><td>2026-05-22</td><td>41.09</td><td>+1.06%</td><td>5,897</td><td>240,856</td><td>3.79</td></tr><tr><td>2026-05-25</td><td>42.49</td><td>+3.41%</td><td>8,835</td><td>371,984</td><td>5.67</td></tr><tr><td>2026-05-26</td><td>44.07</td><td>+3.72%</td><td>14,907</td><td>665,437</td><td>9.57</td></tr><tr><td>2026-05-27</td><td>44.42</td><td>+0.79%</td><td>11,193</td><td>495,303</td><td>7.19</td></tr><tr><td>2026-05-28</td><td>41.68</td><td>-6.17%</td><td>10,167</td><td>426,040</td><td>6.53</td></tr><tr><td>2026-05-29</td><td>39.46</td><td>-5.33%</td><td>8,051</td><td>322,026</td><td>5.17</td></tr></tbody></table>
+<p>注：数据源自 data.<code>price_recent</code>（<code>order_book_id</code>: 600580.XSHG）；换手率来自 data.<code>turnover_recent</code>。</p>
+<p><strong>近期异动</strong></p>
+<ul><li><strong>2026-05-26</strong>：单日涨幅+3.72%，成交量14,907万股达20日均量2.16倍，换手率9.57%为20日均换手率（约2.73%）的3.5倍，成交额66.54亿元较前一日增34%，属典型放量突破阳线。</li><li><strong>2026-05-28</strong>：回落-6.17%，成交量10,167万股仍处高位，但成交额较5月26日减少36%至42.60亿元，显示上涨动能衰竭后抛压沉重。</li><li><strong>2026-05-29</strong>：续跌-5.33%，盘中低点38.31元为近20个交易日最低（2026-04-07以来），成交量降至8,051万股，量能收缩但价格加速下行。</li></ul>
+<h3>图 · 回撤曲线</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/drawdown.png" alt="回撤曲线" loading="lazy" /></figure>
+<p class="figure-note">回撤经历加深后有所修复。</p>
+<p><strong>量价关系</strong></p>
+<h3>图 · 收盘价与成交量</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/price_volume.png" alt="收盘价与成交量" loading="lazy" /></figure>
+<p class="figure-note">量价同步走弱。</p>
+<ul><li>近20个交易日（2026-04-29至2026-05-29）：成交量从2,329万股增至8,051万股，增幅245.74%；同期价格从37.29元涨至39.46元，升幅5.82%。量增领先于价涨，反映资金参与度显著提升（data.<code>analytical_evidence</code>.<code>price_windows</code>.<code>last_20d</code>）。</li><li>近5个交易日（2026-05-25至2026-05-29）：价格从42.49元回落至39.46元，跌幅7.13%；成交量从8,835万股降至8,051万股，降幅8.88%。量缩与价格下跌方向一致，短期调整中抛压有所减轻。</li></ul>
+<p><strong>估值与基本面对照</strong></p>
+<table><thead><tr><th>指标</th><th>2025-09-11</th><th>2026-05-29</th><th>变化</th></tr></thead><tbody><tr><td>PE（TTM）</td><td>69.92</td><td>54.36</td><td>-22.26%</td></tr><tr><td>PB（TTM）</td><td>6.44</td><td>5.70</td><td>-11.49%</td></tr><tr><td>净利润增速（TTM）</td><td>191.10%</td><td>28.48%</td><td>大幅放缓</td></tr><tr><td>毛利率（TTM）</td><td>24.11%</td><td>25.10%</td><td>+0.99pct</td></tr><tr><td>资产负债率（%）</td><td>56.40</td><td>53.91</td><td>-2.49pct</td></tr></tbody></table>
+<p>数据源自 data.<code>factor_trend</code>，卧龙电驱（600580.XSHG）隶属电力设备及新能源行业。估值压缩（PE从69.92降至54.36）与基本面边际走弱（净利润增速从191%降至28.48%）同步发生，但毛利率微升0.99pct显示主业盈利能力仍稳。</p>
+<p><strong>融资融券观察</strong></p>
+<table><thead><tr><th>时点</th><th>融资余额</th><th>融资买额</th><th>说明</th></tr></thead><tbody><tr><td>2025-09-11</td><td>27.62亿元</td><td>—</td><td>起始观察日</td></tr><tr><td>2025-09-18</td><td>—</td><td><strong>峰值15.99亿元</strong></td><td>历史融资买额峰值</td></tr><tr><td>2026-05-28</td><td>29.95亿元</td><td>4.84亿元</td><td>期末融资余额</td></tr></tbody></table>
+<p>数据源自 data.<code>margin_trajectory</code>。融资余额自27.62亿元缓步增至29.95亿元（+8.42%），表明融资资金持续净流入；期末融资买额4.84亿元较峰值15.99亿元大幅回落，融资交易活跃度有所降温。</p>
+<ul><li>数据局限：主力资金流向（北向/机构席位）字段为空（data.<code>capital_flow</code>.<code>row_count</code> = 0）；融资融券数据截至2026-05-28，缺少5月29日数据；缺少龙虎榜与大宗交易记录。</li></ul></section>
+<h2 id="基本面与估值">基本面与估值</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>2026年5月29日卧龙电驱（600580.XSHG）市值616.41亿元，PE(TTM)54.36倍较2025年9月11日的69.92倍压缩22.26%，估值收缩主因净利润增速从191%回落至28.48%（低基数效应消退）；同期净利率从5.96%升至7.42%（+1.46pct），资产负债率从56.40%降至53.91%，盈利能力和财务结构边际改善。</p>
+<p><strong>盈利与成长</strong></p>
+<h3>表 · 最新盈利质量因子</h3>
+<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>毛利率(TTM)</td><td>25.10%</td></tr><tr><td>净利率(TTM)</td><td>7.42%</td></tr></tbody></table>
+<p>近8个月卧龙电驱归母净利润增长率从195.15%回落至35.27%，净利润增长率从191.10%降至28.48%，主因2024年同期低基数效应消退。毛利率从24.11%升至25.10%（+0.99pct），净利率从5.96%升至7.42%（+1.46pct），反映产品结构优化或成本管控见效。毛利润增长率从+30.91%转为-2.08%，显示营收增速放缓。营业利润增长率从146.19%降至24.59%，增速放缓但仍处双位数区间。</p>
+<table><thead><tr><th>指标</th><th>2025-09-11</th><th>2026-05-29</th><th>变动</th></tr></thead><tbody><tr><td>毛利率(TTM)</td><td>24.11%</td><td>25.10%</td><td>+0.99pct</td></tr><tr><td>净利率(TTM)</td><td>5.96%</td><td>7.42%</td><td>+1.46pct</td></tr><tr><td>归母净利润增长率(TTM)</td><td>195.15%</td><td>35.27%</td><td>-159.88pct</td></tr><tr><td>净利润增长率(TTM)</td><td>191.10%</td><td>28.48%</td><td>-162.62pct</td></tr><tr><td>毛利润增长率(TTM)</td><td>30.91%</td><td>-2.08%</td><td>-32.99pct</td></tr></tbody></table>
+<p>注：增长率为同比数据，2025年9月对应2024年中报累计口径，2026年5月对应2025年中报口径，基数差异导致增速大幅收敛。</p>
+<p><strong>现金流与勾稽</strong></p>
+<p>应收账款周转率从3.01降至2.91，流动资产周转率从1.14降至1.05，周转效率边际走弱，或因账期延长或收入确认节奏变化。流动比率1.24、速动比率0.94，速动比率低于1暗示存货占比较高情况下短期偿债存在压力。资产负债率从56.40%降至53.91%，财务杠杆有所下降。股息率从0.36%升至0.46%，2026年4月每股派息0.18元较2025年6月的0.15元增加20%，反映现金流改善信号。</p>
+<h3>表 · 最新偿债与流动性</h3>
+<table><thead><tr><th>指标</th><th>最新值</th></tr></thead><tbody><tr><td>流动比率</td><td>1.24 倍</td></tr><tr><td>速动比率</td><td>0.94 倍</td></tr><tr><td>资产负债率</td><td>53.91%</td></tr></tbody></table>
+<p>注：JSON数据不包含现金流量表（经营现金流/投资现金流/筹资现金流），净利润含金量无法验证，与利润表的勾稽关系无法完整呈现。</p>
+<p><strong>估值水平</strong></p>
+<h3>图 · 估值因子走势</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/valuation_factors.png" alt="估值因子走势" loading="lazy" /></figure>
+<p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
+<h3>图 · PE/PB 历史分位</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/valuation_percentile.png" alt="PE/PB 历史分位" loading="lazy" /></figure>
+<p>PE从69.92压缩至54.36（-22.26%），PB从6.44降至5.70（-11.49%），PS维持在4.00附近。市值从655.31亿元降至616.41亿元（-5.94%），PE收缩幅度（-22.26%）显著大于市值跌幅（-5.94%），表明估值压缩是市值下降的主因，而非基本面恶化。</p>
+<table><thead><tr><th>估值指标</th><th>2025-09-11</th><th>2026-05-29</th><th>变动幅度</th></tr></thead><tbody><tr><td>市值(亿元)</td><td>655.31</td><td>616.41</td><td>-5.94%</td></tr><tr><td>PE(TTM)</td><td>69.92</td><td>54.36</td><td>-22.26%</td></tr><tr><td>PB(TTM)</td><td>6.44</td><td>5.70</td><td>-11.49%</td></tr><tr><td>PS(TTM)</td><td>4.02</td><td>4.00</td><td>-0.44%</td></tr><tr><td>股息率(TTM)</td><td>0.36%</td><td>0.46%</td><td>+0.10pct</td></tr></tbody></table>
+<p><strong>技术面与资金面信号</strong></p>
+<p>RSI(14)为46.13，位于中性偏弱区间。最新收盘价39.46元，较20日均线40.55元折让2.68%，较60日均线39.22元溢价0.61%，短期在均线附近获得支撑。融资余额从2025年9月11日的27.62亿元升至2026年5月28日的29.95亿元（+8.44%），2025年9月18日峰值时杠杆买入达15.99亿元，显示前期高点有大量融资盘被套，近期融资余额上升反映资金关注度回升但或形成抛压。</p>
+<p><strong>数据局限</strong></p>
+<ul><li>仅覆盖2025年9月至2026年5月，无完整年报/季报数据，利润质量无法深度验证</li><li>无现金流量表数据，净利润含金量及经营现金流与净利润的背离关系无法判断</li><li>无分业务收入结构数据，新能源业务（电力设备及新能源行业归属）占比及边际变化未知</li><li>无同行可比公司数据，行业相对估值对比无法进行</li><li>capital_flow接口返回行数为0，主力资金净流入/流出数据缺失</li></ul></section>
+<h2 id="资金与交易结构">资金与交易结构</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>卧龙电驱（600580.XSHG）区间融资余额从27.62亿元增至29.95亿元，融资买入峰值出现于2025年9月18日（15.99亿元），当日股价56.40元即为区间最高点，杠杆资金随后被套；2026年5月26日换手率骤升至9.57%伴随量能放大至1.49亿股，但次日即快速回落，股价由44.07元跌至39.46元，量价走势显示资金集中点火后快速撤离。</p>
+<h3>图 · 融资融券余额</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/margin_balances.png" alt="融资融券余额" loading="lazy" /></figure>
+<p class="figure-note">融资余额曲线整体上行。</p>
+<h3>表 · 两融区间变动</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>区间起始</td><td>2025-09-11</td></tr><tr><td>区间结束</td><td>2026-05-28</td></tr><tr><td>融资余额（期初）</td><td>27.62 亿</td></tr><tr><td>融资余额（期末）</td><td>29.95 亿</td></tr><tr><td>融资余额变动</td><td>2.33 亿</td></tr><tr><td>变动幅度</td><td>8.42%</td></tr><tr><td>融券余额（期初）</td><td>0.37 亿</td></tr><tr><td>融券余额（期末）</td><td>0.28 亿</td></tr><tr><td>融资买入峰值</td><td>15.99 亿（2025-09-18）</td></tr></tbody></table>
+<p><strong>成交与活跃度</strong></p>
+<h3>表 · 成交活跃度</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>20 日均量</td><td>6908.01 万</td></tr><tr><td>近12日日均成交额</td><td>34.61 亿</td></tr><tr><td>近12日最高成交额</td><td>66.54 亿（2026-05-26）</td></tr><tr><td>近12日最低成交额</td><td>18.78 亿（2026-05-14）</td></tr><tr><td>近12日换手率区间</td><td>3.03% ~ 9.57%</td></tr><tr><td>主力资金流向</td><td>数据缺失</td></tr></tbody></table>
+<p>区间观察窗口为2025-09-11至2026-05-29（共169个交易日）。20日区间日均成交量69,080,123股（约6,907万股），对应 <code>analytical_evidence.</code>price_snapshot<code>.avg_volume_20d</code>。</p>
+<p>近5日（2026-05-25至2026-05-29）量价齐缩：收盘价由42.49元跌至39.46元（-7.13%），成交量由88,351,702股降至80,506,725股（-8.88%），成交额由37.20亿元降至32.20亿元（-13.43%），数据来源于 逐日追溯。</p>
+<table><thead><tr><th>日期</th><th>收盘价（元）</th><th>成交量（股）</th><th>成交额（元）</th><th>当日换手率（%）</th></tr></thead><tbody><tr><td>2026-05-25</td><td>42.49</td><td>88,351,702</td><td>3,719,841,932</td><td>5.67</td></tr><tr><td>2026-05-26</td><td>44.07</td><td>149,073,340</td><td>6,654,366,401</td><td>9.57</td></tr><tr><td>2026-05-27</td><td>44.42</td><td>111,925,572</td><td>4,953,032,638</td><td>7.19</td></tr><tr><td>2026-05-28</td><td>41.68</td><td>101,673,802</td><td>4,260,403,847</td><td>6.53</td></tr><tr><td>2026-05-29</td><td>39.46</td><td>80,506,725</td><td>3,220,255,872</td><td>5.17</td></tr></tbody></table>
+<p>2026年5月26日出现显著异常：成交量环比前日放大68.7%至1.49亿股，成交额达66.54亿元，当日换手率9.57%为区间峰值，价格触及46.49元（次高点）。次日（5-27）量能仍维持1.12亿股高位后，5月28日起连续回落，5-29当日跌幅5.33%收于39.46元。该走势符合&quot;资金集中点火后快速撤离&quot;特征，来源于 <code>turnover_recent.（9.5705%）与 </code>price_change_rate_recent` 逐日对比。</p>
+<p><strong>融资融券</strong></p>
+<h3>图 · 融资余额与买卖额</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/margin_enhanced.png" alt="融资余额与买卖额" loading="lazy" /></figure>
+<h3>表 · 融资融券快照</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-28</td></tr><tr><td>融资余额</td><td>29.95 亿</td></tr><tr><td>融券余额</td><td>0.28 亿</td></tr><tr><td>融资买入额</td><td>4.84 亿</td></tr><tr><td>融资偿还额</td><td>4.68 亿</td></tr><tr><td>融券余量</td><td>67.51 万</td></tr><tr><td>两融余额合计</td><td>30.23 亿</td></tr></tbody></table>
+<p>融资余额区间（2025-09-11至2026-05-28）从27.62亿元升至29.95亿元，净增2.33亿元，来源于 <code>margin_trajectory.margin_balance_start</code> 与 <code>margin_trajectory.margin_balance_end</code>。</p>
+<p>2025年9月18日融资买入峰值15.99亿元（<code>margin_trajectory.peak_buy_on_margin_value</code>），当日 <code>period_extremes.high.close</code> 为56.40元即为区间最高点，杠杆资金随后被套。</p>
+<p>近两周融资余额持续攀升，来源于 <code>securities_margin_recent</code> 逐日追溯：</p>
+<table><thead><tr><th>日期</th><th>融资余额（元）</th><th>融资买入额（元）</th><th>融券余额（元）</th></tr></thead><tbody><tr><td>2026-05-13</td><td>2,493,345,867</td><td>170,603,222</td><td>19,240,642</td></tr><tr><td>2026-05-20</td><td>2,576,477,441</td><td>203,350,643</td><td>20,259,330</td></tr><tr><td>2026-05-26</td><td>2,880,378,606</td><td>791,947,480</td><td>31,790,379</td></tr><tr><td>2026-05-28</td><td>2,994,506,304</td><td>483,536,809</td><td>28,136,542</td></tr></tbody></table>
+<p>2026-05-13至2026-05-28期间，融资余额由24.93亿元升至29.95亿元（+19.9%）；2026-05-26融资买入额达7.92亿元为近期单日最高，当日股价44.07元，次日（5-27）融资买入仍维持5.89亿元高位后，股价随后下跌。融券余额从2026-05-13的1,924万元降至2026-05-28的2,814万元（5-26当天融券余额曾升至3,179万元），方向不统一，无法确认明确做空压力。</p>
+<p>融资余额攀升但股价未创新高，显示杠杆资金支撑与价格走势出现背离，原因可能为套牢盘补仓或资金博弈短期反弹。</p>
+<p><strong>股东与股本</strong></p>
+<h3>表 · 股本结构快照</h3>
+<table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody><tr><td>统计日期</td><td>2026-05-29</td></tr><tr><td>总股本</td><td>15.62 亿</td></tr><tr><td>流通 A 股</td><td>15.58 亿</td></tr><tr><td>自由流通股本</td><td>7.95 亿</td></tr><tr><td>自由流通占比</td><td>50.9%</td></tr><tr><td>非自由流通占比</td><td>49.1%</td></tr></tbody></table>
+<table><thead><tr><th>类别</th><th>股数（股）</th><th>占比</th></tr></thead><tbody><tr><td>总股本</td><td>1,562,117,511</td><td>100%</td></tr><tr><td>A股流通</td><td>1,557,632,511</td><td>99.71%</td></tr><tr><td>非流通A股</td><td>4,485,000</td><td>0.29%</td></tr><tr><td>自由流通股本</td><td>795,154,658</td><td>50.90%</td></tr></tbody></table>
+<p>区间内股本结构保持稳定，无送转记录，来源于 推算。</p>
+<p><strong>分红与资金成本</strong></p>
+<p>近三次分红（含税）呈逐年递增趋势，来源于 <code>factor_snapshot.dividend_yield_ttm</code> 及 <code>factor_trend</code> 逐期对比：</p>
+<table><thead><tr><th>分红季度</th><th>除权除息日</th><th>每10股派息（元）</th></tr></thead><tbody><tr><td><code>2024q4</code></td><td>2025-06-27</td><td>1.5</td></tr><tr><td><code>2025q4</code></td><td>2026-04-30</td><td>1.8</td></tr></tbody></table>
+<p>以最新收盘价39.46元计算，TTM股息率约0.456%（<code>factor_snapshot.dividend_yield_ttm</code>），对融资利息成本（约5%-6%）覆盖能力有限（0.456% ÷ 5% ≈ 9.1%），说明股息收益无法覆盖杠杆资金利息支出，融资持有卧龙电驱存在负carry风险。</p>
+<p><strong>数据局限</strong></p>
+<ul><li>融资数据未提供</li></ul></section>
+<h2 id="宏观利率背景">宏观利率背景</h2>
+<section class="section-body"><p><strong>核心结论</strong></p>
+<p>短端利率隔夜品种Shibor ON在2026年5月29日为1.324%，较20日前（2026-04-29）上行8.1bp至1.324%；1Y Shibor下降0.9bp至1.466%；国债1Y/10Y/30Y收益率分别为1.158%/1.709%/2.205%，期限利差（1Y-10Y）约55bp。</p>
+<h3>图 · Shibor 利率</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/shibor_rates.png" alt="Shibor 利率" loading="lazy" /></figure>
+<p class="figure-note">短端利率整体下行，波动相对平稳。</p>
+<p><strong>短端利率：隔夜品种小幅回升</strong></p>
+<table><thead><tr><th>Shibor期限</th><th>2026-04-29</th><th>2026-05-29</th><th>变化（bp）</th><th>来源字段</th></tr></thead><tbody><tr><td>ON（隔夜）</td><td>1.243%</td><td>1.324%</td><td>+8.1</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.ON / <code>interbank_latest</code>.ON</td></tr><tr><td>1W</td><td>1.373%</td><td>1.387%</td><td>+1.4</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.1W / <code>interbank_latest</code>.1W</td></tr><tr><td>2W</td><td>1.376%</td><td>1.387%</td><td>+1.1</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.2W / <code>interbank_latest</code>.2W</td></tr><tr><td>1M</td><td>1.395%</td><td>1.390%</td><td>-0.5</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.1M / <code>interbank_latest</code>.1M</td></tr><tr><td>3M</td><td>1.420%</td><td>1.408%</td><td>-1.2</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.3M / <code>interbank_latest</code>.3M</td></tr><tr><td>6M</td><td>1.447%</td><td>1.429%</td><td>-1.8</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.6M / <code>interbank_latest</code>.6M</td></tr><tr><td>9M</td><td>1.460%</td><td>1.450%</td><td>-1.0</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.9M / <code>interbank_latest</code>.9M</td></tr><tr><td>1Y</td><td>1.475%</td><td>1.466%</td><td>-0.9</td><td><code>macro_snapshots</code>.<code>interbank_20d_ago</code>.1Y / <code>interbank_latest</code>.1Y</td></tr></tbody></table>
+<p><strong>图表解读：</strong> 隔夜品种（ON）上行8.1bp反映短期流动性边际收紧；1M-1Y品种全线小幅回落，显示中期资金面仍相对宽松。两者走势背离，表明市场对短期流动性波动的预期与中期利率趋势存在分歧。</p>
+<p><strong>收益率曲线结构</strong></p>
+<h3>图 · 国债收益率走势</h3>
+<figure class="report-figure"><img src="charts/600580_multi_agent_report/gov_yield_trend.png" alt="国债收益率走势" loading="lazy" /></figure>
+<p class="figure-note">多条曲线整体向下，指标同步走弱。</p>
+<table><thead><tr><th>期限</th><th>2026-05-29收益率</th><th>来源字段</th></tr></thead><tbody><tr><td>隔夜（0S）</td><td>0.98%</td><td><code>yield_curve_latest</code>.0S</td></tr><tr><td>1M</td><td>1.043%</td><td><code>yield_curve_latest</code>.1M</td></tr><tr><td>3M</td><td>1.061%</td><td><code>yield_curve_latest</code>.3M</td></tr><tr><td>6M</td><td>1.098%</td><td><code>yield_curve_latest</code>.6M</td></tr><tr><td>1Y</td><td>1.158%</td><td><code>yield_curve_latest</code>.1Y</td></tr><tr><td>2Y</td><td>1.226%</td><td><code>yield_curve_latest</code>.2Y</td></tr><tr><td>3Y</td><td>1.271%</td><td><code>yield_curve_latest</code>.3Y</td></tr><tr><td>5Y</td><td>1.419%</td><td><code>yield_curve_latest</code>.5Y</td></tr><tr><td>7Y</td><td>1.558%</td><td><code>yield_curve_latest</code>.7Y</td></tr><tr><td>10Y</td><td>1.709%</td><td><code>yield_curve_latest</code>.10Y</td></tr><tr><td>15Y</td><td>2.017%</td><td><code>yield_curve_latest</code>.15Y</td></tr><tr><td>20Y</td><td>2.203%</td><td><code>yield_curve_latest</code>.20Y</td></tr><tr><td>30Y</td><td>2.205%</td><td><code>yield_curve_latest</code>.30Y</td></tr></tbody></table>
+<p><strong>图表解读：</strong> 1Y-10Y期限利差约55bp（10Y 1.709% - 1Y 1.158%），曲线形态陡峭。30Y国债收益率（2.205%）与20Y（2.203%）几乎持平，长期限品种出现平坦化特征，反映市场对长期增长预期的分歧。</p>
+<p><strong>卧龙电驱（600580.XSHG）估值与利率环境的逻辑联系</strong></p>
+<table><thead><tr><th>估值指标</th><th>数值</th><th>来源字段</th><th>与债券收益率关联</th></tr></thead><tbody><tr><td>股息率TTM</td><td>0.456%</td><td>factor.<code>dividend_yield_ttm</code></td><td>10Y国债1.709%对卧龙电驱股息率（0.456%）形成约125bp溢价，股票现金回报吸引力相对有限</td></tr><tr><td>PE（TTM）</td><td>54.36x</td><td>factor.<code>pe_ratio_ttm</code></td><td>无直接逻辑联系</td></tr><tr><td>PB（TTM）</td><td>5.70x</td><td>factor.<code>pb_ratio_ttm</code></td><td>无直接逻辑联系</td></tr></tbody></table>
+<ul><li>卧龙电驱隶属电力设备及新能源行业（<code>first_industry_code</code>: &quot;27&quot;），行业资产偏重，利率变化通过融资成本影响资本开支计划。</li></ul>
+<p><strong>融资余额变化与利率环境对照</strong></p>
+<table><thead><tr><th>时点</th><th>融资余额（亿元）</th><th>来源字段</th></tr></thead><tbody><tr><td>2025-09-11</td><td>27.62</td><td><code>margin_trajectory</code>.<code>margin_balance_start</code></td></tr><tr><td>2026-05-28</td><td>29.95</td><td><code>margin_trajectory</code>.<code>margin_balance_end</code></td></tr></tbody></table>
+<ul><li>融资余额从27.62亿元增至29.95亿元，显示杠杆资金持续净流入；但与利率环境变化的逻辑联系无法从现有数据直接建立，属于数据局限。</li></ul>
+<p><strong>数据局限</strong></p>
+<ul><li>，主力资金流向无法追踪</li></ul></section>
+<h2 id="综合风险与数据局限">综合风险与数据局限</h2>
+<section class="section-body"><p>_本节暂无可用内容。_</p></section>
+<h2 id="数据与工具说明">数据与工具说明</h2>
+<ul class="meta-list">
+<li>数据区间：2025-09-11 至 2026-05-29</li>
+<li>计划使用的米筐函数：get_price, get_price_change_rate, get_turnover_rate, get_capital_flow, get_factor, get_securities_margin, get_dividend, get_shares, get_instrument_industry, is_suspended, is_st_stock, get_interbank_offered_rate, get_yield_curve, get_pit_financials_ex</li>
+<li>数据质量：9 项可用；缺失 基准指数, 资金流向, 大宗交易, 年报三表</li>
+<li>生成时间：2026-05-31 22:40</li>
+</ul>
+<section class="disclaimer" id="免责声明"><h2>免责声明</h2><p>本报告仅供课程研究与信息展示，不构成投资建议。</p></section></main>
+</body>
+</html>

@@ -1,0 +1,221 @@
+"""Tests for finagent.sina_finance — Sina Finance annual report text fetch."""
+
+import re
+from datetime import date
+from unittest.mock import Mock, patch
+
+import pytest
+
+from finagent.sina_finance import (
+    SinaFetchResult,
+    _clean_text,
+    _date_to_timestamp,
+    _extract_date,
+    _extract_text,
+    _fetch_list_page,
+    _parse_list_page,
+    _sec_name_from_title,
+    latest_annual_report,
+    save_report_text,
+)
+from finagent.stock_utils import AnnualReport
+
+# ── Sample HTML fixtures ────────────────────────────────
+
+SAMPLE_LIST_HTML = """
+<html>
+<body>
+<a target='_blank' href='/corp/view/vCB_AllBulletinDetail.php?stockid=300102&id=12030431'>
+  乾照光电：2025年年度报告
+</a>
+<br/>
+<a target='_blank' href='/corp/view/vCB_AllBulletinDetail.php?stockid=300102&id=12030430'>
+  乾照光电：2025年年度报告摘要
+</a>
+</body>
+</html>
+"""
+
+SAMPLE_DETAIL_HTML = (
+    '<html><head><meta charset="gbk"></head><body><table>'
+    '<tr><td>Date: 2026-03-21</td></tr>'
+    '<tr><td><a href="http://static.sina.com.cn/some.pdf">PDF</a></td></tr>'
+    '<tr><td>'
+    'Company Inc.\n'
+    '2025 Annual Report Text\n'
+    'Financial data...\n'
+    'Disclaimer: For reference only\n'
+    '</td></tr>'
+    '</table></body></html>'
+)
+
+# ── Unit tests ──────────────────────────────────────────
+
+
+class TestSecNameFromTitle:
+    def test_chinese_colon(self):
+        assert _sec_name_from_title("乾照光电：2025年年度报告", "300102") == "乾照光电"
+
+    def test_space_separator(self):
+        assert _sec_name_from_title("贵州茅台 2025年年度报告", "600519") == "贵州茅台"
+
+    def test_no_separator_fallback(self):
+        assert _sec_name_from_title("2025年年度报告", "600519") == "600519"
+
+
+class TestDateToTimestamp:
+    def test_normal(self):
+        from datetime import datetime, timezone
+        expected = int(datetime(2026, 3, 21, tzinfo=timezone.utc).timestamp() * 1000)
+        assert _date_to_timestamp("2026-03-21") == expected
+
+    def test_leap_year(self):
+        from datetime import datetime, timezone
+        expected = int(datetime(2024, 2, 29, tzinfo=timezone.utc).timestamp() * 1000)
+        assert _date_to_timestamp("2024-02-29") == expected
+
+
+class TestParseListPage:
+    def test_finds_latest_report(self):
+        result = _parse_list_page(SAMPLE_LIST_HTML, "300102")
+        assert result is not None
+        ann_id, title = result
+        assert ann_id == "12030431"
+        assert "2025年年度报告" in title
+        assert "摘要" not in title  # filtered out
+
+    def test_with_year_filter(self):
+        result = _parse_list_page(SAMPLE_LIST_HTML, "300102", year=2025)
+        assert result is not None
+
+    def test_year_mismatch(self):
+        result = _parse_list_page(SAMPLE_LIST_HTML, "300102", year=2024)
+        assert result is None
+
+    def test_empty_html(self):
+        result = _parse_list_page("<html></html>", "300102")
+        assert result is None
+
+
+class TestExtractDate:
+    def test_normal(self):
+        assert _extract_date("公告日期：2026-03-21") == "2026-03-21"
+
+    def test_colon_variant(self):
+        assert _extract_date("公告日期: 2025-06-15") == "2025-06-15"
+
+    def test_no_match(self):
+        assert _extract_date("<html></html>") == ""
+
+
+class TestExtractText:
+    def test_finds_longest_td(self):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(SAMPLE_DETAIL_HTML, "html.parser")
+        text = _extract_text(soup)
+        assert len(text) > 30
+        assert "Annual Report" in text
+        assert "Disclaimer" in text
+
+    def test_empty_soup(self):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup("<html></html>", "html.parser")
+        text = _extract_text(soup)
+        assert text == ""
+
+
+class TestCleanText:
+    RAW_TEXT = (
+        "导航栏\n首页\n股份有限公司\n2025年年度报告\n"
+        "正文内容\n财务数据\n"
+        "免责声明：本报告仅供参考\n页脚信息"
+    )
+
+    def test_cleans_navigation(self):
+        cleaned = _clean_text(self.RAW_TEXT)
+        assert "导航栏" not in cleaned
+        assert "股份有限公司" in cleaned
+        assert "免责声明" not in cleaned
+        assert "年度报告" in cleaned
+
+    def test_empty_text(self):
+        assert _clean_text("") == ""
+
+    def test_no_boundary_markers(self):
+        raw = "纯文本内容\n没有边界标记\n"
+        cleaned = _clean_text(raw)
+        assert cleaned == raw.strip()
+
+
+class TestLatestAnnualReport:
+    @patch("finagent.sina_finance.requests.get")
+    def test_successful_fetch(self, mock_get):
+        # 模拟两个 HTTP 请求：列表页和详情页
+        mock_get.side_effect = [
+            Mock(
+                status_code=200,
+                text=SAMPLE_LIST_HTML,
+                encoding="gbk",
+                headers={"content-type": "text/html"},
+            ),
+            Mock(
+                status_code=200,
+                text=SAMPLE_DETAIL_HTML,
+                encoding="gbk",
+                headers={"content-type": "text/html"},
+            ),
+        ]
+
+        result = latest_annual_report("300102", as_of=date(2026, 6, 1))
+
+        assert isinstance(result, SinaFetchResult)
+        assert isinstance(result.report, AnnualReport)
+        assert result.report.stock_code == "300102"
+        assert result.report.report_year == 2025
+        assert "Annual Report" in result.full_text
+        assert result.detail_url != ""
+
+    @patch("finagent.sina_finance.requests.get")
+    def test_no_reports_found(self, mock_get):
+        mock_get.return_value = Mock(
+            status_code=200,
+            text="<html></html>",
+            encoding="gbk",
+            headers={"content-type": "text/html"},
+        )
+
+        with pytest.raises(RuntimeError, match="无法从新浪财经获取"):
+            latest_annual_report("300102", as_of=date(2026, 6, 1))
+
+    @patch("finagent.sina_finance.requests.get")
+    def test_http_error(self, mock_get):
+        mock_get.side_effect = Exception("Connection refused")
+
+        with pytest.raises(RuntimeError):
+            latest_annual_report("300102", as_of=date(2026, 6, 1))
+
+    @patch("finagent.sina_finance.requests.get")
+    def test_default_as_of(self, mock_get):
+        mock_get.side_effect = [
+            Mock(status_code=200, text=SAMPLE_LIST_HTML, encoding="gbk", headers={}),
+            Mock(status_code=200, text=SAMPLE_DETAIL_HTML, encoding="gbk", headers={}),
+        ]
+        # 不传 as_of，默认今天
+        result = latest_annual_report("300102")
+        assert result.report.stock_code == "300102"
+
+
+class TestSaveReportText:
+    def test_saves_and_returns_path(self, tmp_path):
+        text = "test content"
+        result = save_report_text(text, tmp_path, "test_stock_2025")
+        assert result.exists()
+        assert result.suffix == ".txt"
+        assert result.read_text(encoding="utf-8") == text
+
+    def test_safe_filename(self, tmp_path):
+        text = "content"
+        result = save_report_text(text, tmp_path, "bad:name|here*2025")
+        assert result.exists()
+        assert ":" not in result.name
+        assert "|" not in result.name

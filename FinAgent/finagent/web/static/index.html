@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#171717">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>FinAgent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/app.css?v=20260531e">
+</head>
+<body class="auth-locked">
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+
+  <div class="shell">
+    <aside class="rail" id="rail">
+      <div class="rail-head">
+        <div class="brand" id="brandHome" role="button" tabindex="0" title="返回首页">
+          <div class="brand-icon" aria-hidden="true">F</div>
+          <div>
+            <div class="brand-title">FinAgent</div>
+            <div class="brand-sub" id="serverStatusText">连接中…</div>
+          </div>
+        </div>
+        <span class="status-dot" id="serverStatus"></span>
+        <button class="rail-collapse-btn" type="button" id="railCollapseBtn" aria-label="收起侧栏" title="收起侧栏">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+      </div>
+
+      <div class="rail-chat-entry">
+        <button class="rail-primary rail-primary-chat" type="button" id="chatNewBtn">
+          <span>＋</span> 新对话
+        </button>
+        <div class="rail-stock-pill">
+          <label for="chatStockInput">代码</label>
+          <input id="chatStockInput" type="text" maxlength="6" placeholder="600519" inputmode="numeric" aria-label="股票代码">
+        </div>
+      </div>
+
+      <div class="rail-user">
+        <span class="rail-user-label" id="railUserLabel"></span>
+        <button class="rail-logout" type="button" id="railLogoutBtn">退出</button>
+      </div>
+      <button class="rail-ghost rail-settings-btn js-open-settings" type="button" id="openSettingsBtn">API 设置</button>
+
+      <div class="rail-segment" role="tablist">
+        <button class="rail-segment-btn active" type="button" data-sidebar="chat" role="tab">对话</button>
+        <button class="rail-segment-btn" type="button" data-sidebar="reports" role="tab">报告</button>
+      </div>
+
+      <div class="rail-search">
+        <input type="search" id="sidebarSearch" placeholder="搜索…" autocomplete="off">
+      </div>
+
+      <div class="rail-list scroll-list" id="chatSessionsPanel">
+        <div class="rail-empty" id="chatSessions">加载中…</div>
+      </div>
+
+      <div class="rail-list hidden" id="reportsPanel">
+        <div class="rail-list-head">
+          <span>历史报告</span>
+          <span class="badge" id="reportCount">0</span>
+        </div>
+        <div id="reportList" class="scroll-list rail-scroll-body"></div>
+        <button class="rail-ghost" type="button" id="refreshBtn">刷新报告</button>
+      </div>
+
+      <details class="rail-analyze">
+        <summary>运行分析</summary>
+        <form id="analyzeForm" class="analyze-form">
+          <input name="stock" type="text" maxlength="6" placeholder="股票代码 600519" required inputmode="numeric">
+          <input name="as_of" type="date">
+          <select name="mode">
+            <option value="multi">多智能体研报</option>
+            <option value="annual">年报分析</option>
+          </select>
+          <details>
+            <summary>高级</summary>
+            <label class="check"><input name="no_download_cache" type="checkbox"><span>重下 PDF</span></label>
+            <input name="years" type="number" min="1" max="10" value="3" placeholder="财务年数">
+            <input name="lookback_days" type="number" min="30" max="520" value="260" placeholder="回看天数">
+          </details>
+          <button class="rail-primary subtle" type="submit" id="submitBtn">开始分析</button>
+        </form>
+        <div class="task-box hidden" id="taskBox">
+          <div class="task-row"><span class="spinner" id="taskSpinner"></span><span id="taskMessage">处理中…</span></div>
+          <div class="task-meta" id="taskMeta"></div>
+        </div>
+      </details>
+    </aside>
+
+    <div class="rail-overlay" id="railOverlay" aria-hidden="true"></div>
+
+    <main class="stage">
+      <button class="rail-expand-tab hidden" type="button" id="railExpandBtn" aria-label="展开侧栏" title="展开侧栏">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button class="rail-settings-tab hidden" type="button" id="railSettingsBtn" aria-label="API 设置" title="API 设置">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <header class="mobile-bar" id="mobileBar">
+        <button class="mobile-icon-btn" type="button" id="mobileMenuBtn" aria-label="打开菜单">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="mobile-bar-copy">
+          <span class="mobile-bar-title" id="mobileBarTitle">FinAgent</span>
+          <span class="mobile-bar-sub" id="mobileBarSub"></span>
+        </div>
+        <button class="mobile-icon-btn js-open-settings" type="button" id="mobileSettingsBtn" aria-label="API 设置">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
+        <button class="mobile-icon-btn" type="button" id="mobileNewChatBtn" aria-label="新对话">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </header>
+      <!-- Welcome / home -->
+      <section class="pane pane-welcome" id="welcomeView">
+        <div class="welcome-inner">
+          <p class="welcome-eyebrow">A 股智能研究平台</p>
+          <h1 class="welcome-title">从年报到多维度研报<br><span>一站式财务分析</span></h1>
+          <p class="welcome-lead">输入股票代码运行分析，或在对话里拖 PDF、绑定报告继续追问。所有结论可追溯至米筐数据与巨潮年报。</p>
+          <div class="welcome-actions">
+            <button class="welcome-cta" type="button" id="welcomeChatBtn">开始对话</button>
+            <button class="welcome-cta ghost" type="button" id="welcomeReportsBtn">浏览报告</button>
+          </div>
+          <div class="welcome-grid">
+            <article class="welcome-card">
+              <div class="welcome-card-icon annual">年</div>
+              <h3>年报深度分析</h3>
+              <p>巨潮 PDF + 米筐三表，规则引擎与 LLM 信号审核。</p>
+            </article>
+            <article class="welcome-card">
+              <div class="welcome-card-icon multi">研</div>
+              <h3>多智能体研报</h3>
+              <p>量价、估值、资金、宏观多章节，图表编排与形态图注。</p>
+            </article>
+            <article class="welcome-card">
+              <div class="welcome-card-icon chat">聊</div>
+              <h3>RAG 研究对话</h3>
+              <p>PDF 解析、报告追问，对话中可自动拉最新行情数据。</p>
+            </article>
+          </div>
+          <p class="welcome-disclaimer" id="welcomeDisclaimer"></p>
+        </div>
+      </section>
+
+      <!-- Chat workspace -->
+      <section class="pane pane-chat hidden" id="chatView">
+        <header class="stage-head stage-head-glass chat-head">
+          <div class="chat-head-main">
+            <h1 id="chatTitle">新对话</h1>
+          </div>
+          <div class="chat-head-actions">
+            <button class="ghost-btn ghost-btn-sm danger" type="button" id="chatDeleteBtn" disabled title="删除当前对话">删除对话</button>
+          </div>
+        </header>
+
+        <div class="chat-scroll" id="chatDropZone">
+          <div class="chat-thread" id="chatMessages"></div>
+        </div>
+
+        <footer class="composer-wrap">
+          <div class="composer-shell">
+            <div class="composer-meta">
+              <div class="context-pills composer-context" id="chatContextPill">
+                <span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>
+              </div>
+              <div class="chat-composer-tools">
+                <button class="ghost-btn ghost-btn-sm" type="button" id="chatAttachReportBtn" disabled>绑定报告</button>
+                <button class="ghost-btn ghost-btn-sm primary" type="button" id="chatAnalyzeBtn">生成研报</button>
+              </div>
+            </div>
+            <div class="composer" id="composer">
+              <label class="composer-attach" title="上传 PDF">
+                <input type="file" id="chatPdfInput" accept="application/pdf,.pdf" hidden>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+              </label>
+              <textarea id="chatInput" rows="1" placeholder="输入问题，Shift+Enter 换行…"></textarea>
+              <button class="composer-send" type="button" id="chatSendBtn" aria-label="发送">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6l-.9 7.3 12.1 1.1-12.1 1.1z"/></svg>
+              </button>
+            </div>
+            <p class="composer-hint">FinAgent 可能出错，重要结论请核对原始数据</p>
+          </div>
+        </footer>
+      </section>
+
+      <!-- Report workspace -->
+      <section class="pane pane-report hidden" id="reportView">
+        <header class="stage-head stage-head-glass report-head">
+          <div class="stage-head-left">
+            <button class="ghost-btn icon-btn" type="button" id="backToChatBtn" title="返回首页">←</button>
+            <div class="report-head-copy">
+              <div class="report-tags" id="reportTags"></div>
+              <h1 class="report-page-title" id="reportTitle">报告</h1>
+              <p class="report-page-sub" id="reportSubtitle"></p>
+            </div>
+          </div>
+          <div class="stage-actions">
+            <button class="ghost-btn" type="button" id="reportOutlineToggleHead" title="展开目录">目录</button>
+            <button class="ghost-btn" type="button" id="openHtmlBtn">HTML</button>
+            <button class="ghost-btn primary" type="button" id="askReportBtn">继续追问</button>
+          </div>
+        </header>
+        <div class="report-body outline-collapsed" id="reportBody">
+          <div class="report-main">
+            <div class="report-scroll" id="reportScroll">
+              <div class="report-content">
+                <div id="annualSections"></div>
+                <div id="multiSections"></div>
+                <section class="report-block report-block-muted" id="section-disclaimer">
+                  <header class="report-section-head">
+                    <h2 class="report-section-title report-section-title-muted">免责声明</h2>
+                  </header>
+                  <p class="report-disclaimer-text" id="reportDisclaimer"></p>
+                </section>
+              </div>
+            </div>
+          </div>
+          <div class="report-outline-backdrop" id="reportOutlineBackdrop" aria-hidden="true"></div>
+          <aside class="report-outline" id="reportOutline" aria-label="报告目录">
+            <div class="report-outline-head">
+              <span class="report-outline-title">目录</span>
+              <button class="report-outline-close" type="button" id="reportOutlineClose" aria-label="收起目录">×</button>
+            </div>
+            <nav class="report-outline-list" id="reportToc"></nav>
+          </aside>
+          <button class="report-outline-fab" type="button" id="reportOutlineToggle" aria-label="展开目录">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
+            <span>目录</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Empty report placeholder -->
+      <section class="pane pane-empty hidden" id="reportEmptyView">
+        <div class="empty-hero">
+          <h2>选择一份报告</h2>
+          <p>在左侧「报告」列表中点击条目查看详情</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-head">
+        <h3 id="settingsTitle">大模型 API 设置</h3>
+        <button class="modal-close" type="button" id="settingsClose" aria-label="关闭">×</button>
+      </div>
+      <p class="modal-lead">配置后将优先于服务器默认 `.env` 使用。密钥加密保存在服务器，仅你本人可用。</p>
+      <form id="settingsForm" class="settings-form">
+        <div class="settings-status" id="settingsStatus"></div>
+        <label class="settings-field">
+          <span>API Key</span>
+          <input id="settingsApiKey" type="password" autocomplete="off" placeholder="留空则不修改；保存新 Key 会覆盖">
+        </label>
+        <label class="settings-field">
+          <span>Base URL</span>
+          <input id="settingsBaseUrl" type="url" placeholder="https://api.openai.com/v1">
+        </label>
+        <label class="settings-field">
+          <span>模型名称</span>
+          <input id="settingsModel" type="text" placeholder="gpt-4.1-mini">
+        </label>
+        <div class="settings-actions">
+          <button class="ghost-btn" type="button" id="settingsTestBtn">测试连接</button>
+          <button class="ghost-btn" type="button" id="settingsClearKeyBtn">清除 Key</button>
+          <button class="auth-submit settings-save" type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="authGate" class="auth-gate">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-icon" aria-hidden="true">F</div>
+        <div>
+          <h2>FinAgent</h2>
+        </div>
+      </div>
+
+      <div id="authLoginPanel">
+        <form id="authLoginForm" class="auth-form">
+          <label>用户名<input id="authLoginUsername" type="text" autocomplete="username" required minlength="2" maxlength="32"></label>
+          <label>密码<input id="authLoginPassword" type="password" autocomplete="current-password" required minlength="6"></label>
+          <button class="auth-submit" type="submit">登录</button>
+        </form>
+        <p class="auth-switch">还没有账号？<button type="button" id="authShowRegister">注册</button></p>
+      </div>
+
+      <div id="authRegisterPanel" class="hidden">
+        <form id="authRegisterForm" class="auth-form">
+          <label>用户名<input id="authRegisterUsername" type="text" autocomplete="username" required minlength="2" maxlength="32" placeholder="2–32 位，字母/数字/中文"></label>
+          <label>密码<input id="authRegisterPassword" type="password" autocomplete="new-password" required minlength="6" placeholder="至少 6 位"></label>
+          <button class="auth-submit" type="submit">注册并登录</button>
+        </form>
+        <p class="auth-switch">已有账号？<button type="button" id="authShowLogin">返回登录</button></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="reportPickerModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reportPickerTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="reportPickerTitle">绑定历史报告</h3>
+        <button class="modal-close" type="button" id="reportPickerClose" aria-label="关闭">×</button>
+      </div>
+      <p class="modal-lead">选择一份报告作为当前对话的 RAG 上下文，与左侧「报告」列表同步。</p>
+      <div class="modal-body scroll-list" id="reportPickerList"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <script src="/assets/auth.js?v=20260531e"></script>
+  <script src="/assets/settings.js?v=20260531e"></script>
+  <script src="/assets/app.js?v=20260531e"></script>
+  <script src="/assets/chat.js?v=20260531e"></script>
+</body>
+</html>
