@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from .cninfo import default_as_of, normalize_stock_code, to_order_book_id
+from .stock_utils import default_as_of, normalize_stock_code, to_order_book_id
 from .concurrency import env_flag, finagent_max_workers, parallel_map
 from .env import get_env, load_dotenv
 from .llm import llm_json, llm_text
@@ -34,7 +34,13 @@ from .report_writing import (
 from .rqdata_client import _init_rqdata
 from .chart_plots import chart_agent
 from .latex_exporter import export_latex
-from .peer_analysis import FACTOR_LABELS, PEER_FACTOR_CANDIDATES, fetch_industry_comparison
+from .peer_analysis import (
+    FACTOR_LABELS,
+    PEER_FACTOR_CANDIDATES,
+    _dedupe,
+    fetch_industry_comparison,
+)
+from .plan_execution import sanitize_plan_sections
 import re
 
 OPERATING_QUALITY_SECTION = "经营质量分析"
@@ -342,6 +348,7 @@ def planner_agent(*, stock_code: str, order_book_id: str, as_of: date, lookback_
             f"\n可用米筐函数: {json.dumps(TOOL_REGISTRY, ensure_ascii=False)}"
             f"\n图表质量要求: {json.dumps(CHART_QUALITY_REQUIREMENTS, ensure_ascii=False)}"
             "\n必须返回 objective/tools/sections/risk_controls。sections 每项包含 name/agent/data。"
+            "\nsections 可按研究重点自由规划章节名称与顺序，不必固定五节模板；data 仅填可用米筐函数名。"
             "\n禁止规划宏观、行业、新闻、Wind、券商预测等未在可用函数中的数据。",
         )
         return _sanitize_plan(plan, fallback)
@@ -351,9 +358,13 @@ def planner_agent(*, stock_code: str, order_book_id: str, as_of: date, lookback_
 
 def _sanitize_plan(plan: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     result = dict(plan) if isinstance(plan, dict) else {}
-    result["tools"] = [name for name in result.get("tools", []) if name in TOOL_REGISTRY] or list(TOOL_REGISTRY)
-    # Keep the LLM objective, but pin section execution to data we actually collect.
-    result["sections"] = DEFAULT_SECTIONS
+    allowed_tools = set(TOOL_REGISTRY)
+    result["tools"] = [name for name in result.get("tools", []) if name in allowed_tools] or list(TOOL_REGISTRY)
+    result["sections"] = sanitize_plan_sections(
+        result,
+        default_sections=DEFAULT_SECTIONS,
+        allowed_tools=allowed_tools,
+    )
     controls = result.get("risk_controls") if isinstance(result.get("risk_controls"), list) else []
     result["risk_controls"] = [
         *[str(item) for item in controls if str(item).strip()],

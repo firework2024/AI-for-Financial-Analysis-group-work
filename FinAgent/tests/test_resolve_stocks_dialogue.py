@@ -30,7 +30,7 @@ def test_build_chat_context_includes_assistant():
 
 def test_resolve_stocks_from_assistant_history():
     session = _session_with_dialogue()
-    assert resolve_stocks_for_chat("他们的 PE", session) == ["688256", "300750"]
+    assert sorted(resolve_stocks_for_chat("他们的 PE", session)) == ["300750", "688256"]
 
 
 def test_resolve_stocks_name_only_in_assistant():

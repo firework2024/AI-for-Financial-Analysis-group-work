@@ -196,7 +196,9 @@ def test_apply_chart_placements_inserts_quality_snapshot_table():
     result, _ = apply_chart_placements(sections, charts, placement, data=data)
     body = result["基本面与估值"]
     assert "#### 表 · 最新盈利质量因子" in body
-    assert "| 毛利率(TTM) | 26.21% |" in body
+    assert "| 维度 | 毛利率(TTM) | 净利率(TTM) | ROE(TTM) |" in body
+    assert "| 最新 | 26.21% | 18.09% | 15.00% |" in body
+    assert "| 毛利率(TTM) | 26.21% |" not in body  # 不用 feat 两列「指标|数值」单列表
     assert "latest_quality_snapshot.png" not in body
     assert "**图注**" not in body
 
