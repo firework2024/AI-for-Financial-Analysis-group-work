@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 EXCLUDE_PATTERN = re.compile(r"摘要|英文版|更正|修订|补充|取消")
@@ -63,3 +63,16 @@ def default_as_of(value: str | None) -> date:
     if value:
         return datetime.strptime(value, "%Y-%m-%d").date()
     return date.today()
+
+
+def calendar_trading_as_of(value: date) -> date:
+    """非交易日（周末）回退到最近工作日；节假日需米筐时再精确校正。"""
+    d = value
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def resolve_as_of(value: str | None) -> date:
+    """解析用户选择的截止日期，并对非交易日取最近工作日。"""
+    return calendar_trading_as_of(default_as_of(value))

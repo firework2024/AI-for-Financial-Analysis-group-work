@@ -6,12 +6,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, TypeVar
 
 from .env import get_env
+from .runtime_prefs import pref_str
 
 T = TypeVar("T")
 
 
 def finagent_max_workers(*, default: int = 4, cap: int = 12) -> int:
-    raw = str(get_env("FINAGENT_MAX_WORKERS", str(default)) or str(default)).strip()
+    raw = pref_str("FINAGENT_MAX_WORKERS", str(default))
     try:
         value = int(raw)
     except ValueError:
@@ -20,7 +21,7 @@ def finagent_max_workers(*, default: int = 4, cap: int = 12) -> int:
 
 
 def env_flag(name: str, *, default: bool = True) -> bool:
-    raw = str(get_env(name, "true" if default else "false") or "").strip().lower()
+    raw = pref_str(name, "true" if default else "false").lower()
     if raw in {"0", "false", "no", "off"}:
         return False
     if raw in {"1", "true", "yes", "on"}:

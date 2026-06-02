@@ -114,7 +114,16 @@ def init_db(path: Path | None = None) -> Path:
                 ON annual_report_records(stock_code, fetched_at DESC);
             """
         )
+        _migrate_schema(conn)
     return db_path
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(annual_report_records)").fetchall()}
+    if "financial_analysis_json" not in cols:
+        conn.execute("ALTER TABLE annual_report_records ADD COLUMN financial_analysis_json TEXT")
+    if "financial_analysis_fingerprint" not in cols:
+        conn.execute("ALTER TABLE annual_report_records ADD COLUMN financial_analysis_fingerprint TEXT")
 
 
 def save_data_snapshot(
@@ -296,7 +305,8 @@ def get_annual_report(stock_code: str, *, report_year: int | None = None) -> dic
             row = conn.execute(
                 """
                 SELECT stock_code, report_year, order_book_id, sec_name, title, pdf_path,
-                       meta_json, financial_data_json, mda_text, mda_meta_json, fetched_at
+                       meta_json, financial_data_json, mda_text, mda_meta_json, fetched_at,
+                       financial_analysis_json, financial_analysis_fingerprint
                 FROM annual_report_records
                 WHERE stock_code = ? AND report_year = ?
                 """,
@@ -306,7 +316,8 @@ def get_annual_report(stock_code: str, *, report_year: int | None = None) -> dic
             row = conn.execute(
                 """
                 SELECT stock_code, report_year, order_book_id, sec_name, title, pdf_path,
-                       meta_json, financial_data_json, mda_text, mda_meta_json, fetched_at
+                       meta_json, financial_data_json, mda_text, mda_meta_json, fetched_at,
+                       financial_analysis_json, financial_analysis_fingerprint
                 FROM annual_report_records
                 WHERE stock_code = ?
                 ORDER BY report_year DESC, fetched_at DESC
@@ -329,7 +340,34 @@ def get_annual_report(stock_code: str, *, report_year: int | None = None) -> dic
         "mda_text": item["mda_text"] or "",
         "mda_meta": json.loads(item["mda_meta_json"] or "{}"),
         "fetched_at": item["fetched_at"],
+        "financial_analysis": json.loads(item["financial_analysis_json"] or "null")
+        if item.get("financial_analysis_json")
+        else None,
+        "financial_analysis_fingerprint": item.get("financial_analysis_fingerprint"),
     }
+
+
+def update_annual_financial_analysis(
+    stock_code: str,
+    report_year: int,
+    *,
+    analysis: dict[str, Any],
+    fingerprint: str,
+) -> None:
+    with _locked_connect() as conn:
+        conn.execute(
+            """
+            UPDATE annual_report_records
+            SET financial_analysis_json = ?, financial_analysis_fingerprint = ?
+            WHERE stock_code = ? AND report_year = ?
+            """,
+            (
+                json.dumps(analysis, ensure_ascii=False, default=_json_default),
+                fingerprint,
+                stock_code,
+                report_year,
+            ),
+        )
 
 
 def list_snapshots(stock_code: str, *, limit: int = 5) -> list[dict[str, Any]]:

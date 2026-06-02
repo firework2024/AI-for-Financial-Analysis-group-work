@@ -1,5 +1,6 @@
 from finagent.report_format import normalize_section_text
 from finagent.report_writing import (
+    FUNDAMENTAL_NARRATIVE_SECTION,
     build_analytical_evidence,
     section_writing_guide,
     summarize_annual_financial_data,
@@ -65,9 +66,8 @@ def test_summarize_pit_and_annual_rows():
 
 def test_section_writing_guide_requires_tables_for_operating_quality():
     guide = section_writing_guide("经营质量分析")
-    assert "多年对比表" in guide or "pit" in guide.lower()
+    assert "结构自由" in guide
     assert "PE/PB/PS" in guide
-    assert "禁止" in guide
 
 
 def test_normalize_section_text_strips_thinking_blocks():
@@ -75,7 +75,7 @@ def test_normalize_section_text_strips_thinking_blocks():
         "<think>内部推理不应出现</think>\n\n"
         "**核心结论**\n\n2025年营收179.49亿元。"
     )
-    out = normalize_section_text(text, "投资总监分析")
+    out = normalize_section_text(text, FUNDAMENTAL_NARRATIVE_SECTION)
     assert "redacted_thinking" not in out
     assert "179.49" in out
 

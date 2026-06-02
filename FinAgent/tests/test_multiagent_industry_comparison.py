@@ -1,4 +1,10 @@
-from finagent.multiagent import DEFAULT_SECTIONS, _compact_data_for_prompt, _industry_comparison_prompt_brief, _local_validation
+from finagent.multiagent import (
+    DEFAULT_SECTIONS,
+    _compact_data_for_prompt,
+    _ensure_technical_from_price_rows,
+    _industry_comparison_prompt_brief,
+    _local_validation,
+)
 
 
 def _comparison():
@@ -80,7 +86,7 @@ def test_prompt_compaction_exposes_compact_industry_summary_only():
                     {"date": "2026-01-01", "pe_ratio_ttm": 28.0, "gross_profit_margin_ttm": 0.25, "dividend_yield_ttm": 0.01}
                 ]
             },
-            "annual_analysis": {"investment_director": "不应传入", "financial_analysis": {"reviewed_signals": ["信号"]}},
+            "annual_analysis": {"fundamental_narrative": "不应传入", "financial_analysis": {"reviewed_signals": ["信号"]}},
         },
         {
             "industry_valuation_compare": "charts/industry_valuation_compare.png",
@@ -97,7 +103,7 @@ def test_prompt_compaction_exposes_compact_industry_summary_only():
     assert "pe_ratio_ttm" not in payload["factor"]
     assert "dividend_yield_ttm" not in payload["factor"]
     assert "pe_ratio_ttm" not in payload["factor_history_recent"][0]
-    assert "investment_director_analysis" not in payload
+    assert "fundamental_narrative_analysis" not in payload
     assert "industry_valuation_compare" not in payload["charts"]
     assert "valuation_factors" not in payload["charts"]
     assert "industry_profitability_compare" in payload["charts"]
@@ -148,3 +154,21 @@ def test_local_validation_rejects_valuation_language_in_operating_quality():
     )
 
     assert any("PE/PB/PS" in item for item in validation["section_feedback"]["经营质量分析"])
+
+
+def test_cached_payload_recomputes_technical_when_price_history_is_sufficient():
+    rows = [{"date": f"2026-01-{i:02d}", "close": float(i), "volume": float(1000 + i)} for i in range(1, 70)]
+    payload = {
+        "price": {"rows": rows, "row_count": len(rows)},
+        "technical": {"latest_close": 69.0},
+    }
+
+    _ensure_technical_from_price_rows(payload)
+
+    technical = payload.get("technical") or {}
+    assert technical.get("latest_close") == 69.0
+    assert technical.get("ma20") is not None
+    assert technical.get("ma60") is not None
+    assert technical.get("return_20d") is not None
+    assert technical.get("return_60d") is not None
+    assert technical.get("rsi14") is not None

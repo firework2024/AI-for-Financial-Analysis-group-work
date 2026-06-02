@@ -10,6 +10,9 @@ const chatState = {
   bootstrapModalDismissed: new Set(),
   bootstrapModalEpoch: "",
   bootstrapPolls: new Map(),
+  coverageCache: new Map(),
+  coverageFetchInFlight: new Set(),
+  syncingData: false,
 };
 
 const chatEls = {};
@@ -28,6 +31,7 @@ function initChatElements() {
     chatDropZone: document.getElementById("chatDropZone"),
     chatPdfInput: document.getElementById("chatPdfInput"),
     chatAttachReportBtn: document.getElementById("chatAttachReportBtn"),
+    chatSyncDataBtn: document.getElementById("chatSyncDataBtn"),
     chatStockInput: document.getElementById("chatStockInput"),
     chatMaxSteps: document.getElementById("chatMaxSteps"),
     chatAgentMode: document.getElementById("chatAgentMode"),
@@ -241,11 +245,13 @@ function buildDataStatusContext(session) {
     };
   }
   if (boot?.status === "completed" && codes.length && summary.allReady) {
+    const cov = primaryCoverageFromBoot(boot, codes[0]);
+    const annualHint = cov?.annual_report?.fresh ? "含年报" : "年报按需";
     return {
       pills: [
         `<span class="context-pill context-pill--ready"><span class="data-status-dot" aria-hidden="true"></span>基础数据就绪 · ${escapeHtml(codeLabel)}</span>`,
       ],
-      sub: "行情与财务序列已同步；年报 PDF 按需入库",
+      sub: `行情与财务序列已同步；${annualHint}`,
     };
   }
   if ((boot?.status === "partial" || summary.hasPartial) && codes.length) {
@@ -276,6 +282,24 @@ function buildDataStatusContext(session) {
     };
   }
   if (codes.length) {
+    const cached = chatState.coverageCache.get(codes[0]);
+    if (cached?.gaps?.length) {
+      const gapLabels = {
+        quote_refresh: "行情增量",
+        market_history: "量价历史",
+        market_snapshot: "量价历史",
+        pit_financials: "财务",
+        annual_report: "年报",
+      };
+      const missing = cached.gaps.map((g) => gapLabels[g] || g).join("、");
+      return {
+        pills: [
+          `<span class="context-pill context-pill--bound-stock"><span class="data-status-dot" aria-hidden="true"></span>已绑定 · ${escapeHtml(codeLabel)}</span>`,
+          `<span class="context-pill context-pill--progress">缺 ${escapeHtml(missing)}</span>`,
+        ],
+        sub: "可直接提问；缺项会在对话中自动补拉，或点「同步数据」",
+      };
+    }
     return {
       pills: [
         `<span class="context-pill context-pill--bound-stock"><span class="data-status-dot" aria-hidden="true"></span>已绑定 · ${escapeHtml(codeLabel)}</span>`,
@@ -376,7 +400,86 @@ function buildComposerContext(session) {
   return { pills: [], sub: "拖 PDF、绑定报告，或直接输入公司名提问" };
 }
 
-function syncComposerChrome(session) {
+function primaryCoverageFromBoot(boot, code) {
+  const stocks = boot?.stocks && typeof boot.stocks === "object" ? boot.stocks : {};
+  return stocks[code]?.coverage || null;
+}
+
+function invalidateSessionCoverage(session) {
+  for (const code of sessionStockCodes(session)) {
+    chatState.coverageCache.delete(code);
+  }
+}
+
+async function refreshSessionCoverage(session, { force = false } = {}) {
+  const codes = sessionStockCodes(session).slice(0, 3);
+  if (!codes.length) return;
+  const toFetch = force ? codes : codes.filter((code) => !chatState.coverageCache.has(code));
+  if (!toFetch.length) return;
+
+  const flightKey = toFetch.join(",");
+  if (chatState.coverageFetchInFlight.has(flightKey)) return;
+  chatState.coverageFetchInFlight.add(flightKey);
+  try {
+    await Promise.all(
+      toFetch.map(async (code) => {
+        try {
+          const cov = await api(`/api/data/stocks/${encodeURIComponent(code)}/coverage`);
+          chatState.coverageCache.set(code, cov);
+        } catch {
+          /* 忽略单只覆盖查询失败 */
+        }
+      }),
+    );
+  } finally {
+    chatState.coverageFetchInFlight.delete(flightKey);
+  }
+}
+
+async function syncSessionData(mode = "full") {
+  if (!chatState.activeSessionId) {
+    App.toast("请先创建或打开对话", "error");
+    return;
+  }
+  const session = chatState.activeSession;
+  const codes = sessionStockCodes(session);
+  if (!codes.length) {
+    App.toast("请先在侧栏或输入框填写股票代码", "error");
+    return;
+  }
+  if (chatState.syncingData) return;
+  chatState.syncingData = true;
+  setSyncDataBusy(true);
+  try {
+    const payload = await api(
+      `/api/chat/sessions/${encodeURIComponent(chatState.activeSessionId)}/bootstrap`,
+      {
+        method: "POST",
+        body: JSON.stringify({ mode: mode === "force" ? "force" : mode === "light" ? "light" : "full" }),
+      },
+    );
+    chatState.activeSession = payload;
+    chatState.bootstrapModalDismissed.delete(payload.id);
+    invalidateSessionCoverage(payload);
+    updateChatHeader(payload);
+    pollSessionBootstrap(payload.id);
+    App.toast(mode === "force" ? "正在强制刷新全部数据…" : "正在同步本地数据…");
+  } catch (err) {
+    App.toast(err.message || "同步失败", "error");
+  } finally {
+    chatState.syncingData = false;
+    setSyncDataBusy(false);
+  }
+}
+
+function setSyncDataBusy(busy) {
+  if (!chatEls.chatSyncDataBtn) return;
+  chatEls.chatSyncDataBtn.disabled = busy || !sessionStockCodes(chatState.activeSession).length;
+  const label = chatEls.chatSyncDataBtn.querySelector("[data-sync-label]");
+  if (label) label.textContent = busy ? "同步中…" : "同步数据";
+}
+
+function syncComposerChrome(session, options = {}) {
   const bound = Boolean(session?.report_id);
   if (chatEls.chatAttachReportBtn) {
     const text = bound ? "更换报告" : "绑定报告";
@@ -390,6 +493,16 @@ function syncComposerChrome(session) {
     }
   }
   App.updateChatAttachButton?.();
+  setSyncDataBusy(chatState.syncingData);
+  if (options.skipCoverageRefresh || !session || !sessionStockCodes(session).length) {
+    return;
+  }
+  const codes = sessionStockCodes(session);
+  const needsFetch = options.forceCoverage || codes.some((code) => !chatState.coverageCache.has(code));
+  if (!needsFetch) return;
+  refreshSessionCoverage(session, { force: Boolean(options.forceCoverage) })
+    .then(() => updateChatHeader(session, { skipCoverageRefresh: true }))
+    .catch(() => {});
 }
 
 async function pollSessionBootstrap(sessionId) {
@@ -412,7 +525,8 @@ async function pollSessionBootstrap(sessionId) {
           if (!boot || boot.status !== "running") {
             if (chatState.activeSessionId === sessionId) {
               chatState.activeSession = session;
-              updateChatHeader(session);
+              invalidateSessionCoverage(session);
+              updateChatHeader(session, { forceCoverage: true });
               await loadChatSessions();
             }
             toastBootstrapStatus(session);
@@ -438,7 +552,7 @@ function sessionTitleDisplay(session) {
   return cut.slice(0, 32) || title;
 }
 
-function updateChatHeader(session) {
+function updateChatHeader(session, options = {}) {
   if (chatEls.chatTitle) {
     chatEls.chatTitle.textContent = sessionTitleDisplay(session);
   }
@@ -455,7 +569,7 @@ function updateChatHeader(session) {
   if (chatEls.chatDeleteBtn) {
     chatEls.chatDeleteBtn.disabled = !chatState.activeSessionId;
   }
-  syncComposerChrome(session);
+  syncComposerChrome(session, options);
   syncBootstrapModal(session);
   if (App.isMobileLayout?.()) {
     const mobileSub = ctx.pills.length ? ctx.sub : "";
@@ -538,26 +652,36 @@ function syncChatStockInput(session) {
   }
 }
 
+function chatSessionTitle(stocksPayload) {
+  if (stocksPayload.stock_code) return `${stocksPayload.stock_code} 研报问答`;
+  if (stocksPayload.stocks) {
+    const label = String(stocksPayload.stocks).split(/[,，、\s]+/).find((s) => s.trim())?.trim();
+    if (label) return `${label} 研报问答`;
+  }
+  return "新对话";
+}
+
 async function createChatSession(options = {}) {
   const { stayOnReport = false, resetStockInput = false } = options;
-  if (resetStockInput && chatEls.chatStockInput) {
+  const stocksPayload = chatStocksPayload();
+  const hadSidebarStock = Boolean(stocksPayload.stock_code || stocksPayload.stocks);
+  if (resetStockInput && chatEls.chatStockInput && !hadSidebarStock) {
     chatEls.chatStockInput.value = "";
   }
-  const stocksPayload = chatStocksPayload();
   const stock = String(chatEls.chatStockInput?.value || "").trim();
-  if (!stock && !stayOnReport && !resetStockInput) {
+  if (!stock && !stayOnReport && !hadSidebarStock) {
     App.toast("侧栏股票可选；在对话里直接问公司名也会自动识别并入库", "info");
   }
   const payload = await api("/api/chat/sessions", {
     method: "POST",
     body: JSON.stringify({
-      title: "新对话",
+      title: chatSessionTitle(stocksPayload),
       ...stocksPayload,
     }),
   });
   chatState.bootstrapModalDismissed.delete(payload.id);
   await loadChatSessions();
-  await openChatSession(payload.id, { stayOnReport, clearStockInput: resetStockInput });
+  await openChatSession(payload.id, { stayOnReport, clearStockInput: resetStockInput && !hadSidebarStock });
 }
 
 async function ensureReportChatSession() {
@@ -577,13 +701,7 @@ async function createChatSessionForReport() {
   const reportId = App.state?.activeReportId;
   const report = App.state?.activeReport;
   const stock = report?.stock_code || reportStockPrefix(reportId);
-  const reportType = report?._ui?.report_type || (report?.sections ? "multi_analyze" : "annual_analyze");
-  const title =
-    stock && reportType === "annual_analyze"
-      ? `${stock} 年报问答`
-      : stock
-        ? `${stock} 报告问答`
-        : "新对话";
+  const title = stock ? `${stock} 研报问答` : "新对话";
   if (chatEls.chatStockInput && stock) {
     chatEls.chatStockInput.value = stock;
   }
@@ -832,6 +950,11 @@ function bindChatEvents() {
     chatEls.chatInput.style.height = `${Math.min(chatEls.chatInput.scrollHeight, 160)}px`;
   });
   chatEls.chatAttachReportBtn?.addEventListener("click", () => attachActiveReportToChat().catch((e) => App.toast(e.message, "error")));
+  chatEls.chatSyncDataBtn?.addEventListener("click", () => syncSessionData("full").catch((e) => App.toast(e.message, "error")));
+  chatEls.chatSyncDataBtn?.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    syncSessionData("force").catch((e) => App.toast(e.message, "error"));
+  });
   chatEls.reportPickerClose?.addEventListener("click", closeReportPicker);
   chatEls.bootstrapModalDismiss?.addEventListener("click", (event) => {
     event.stopPropagation();

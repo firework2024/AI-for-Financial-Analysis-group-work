@@ -4,10 +4,12 @@ import pytest
 from datetime import date
 from finagent.stock_utils import (
     AnnualReport,
+    calendar_trading_as_of,
     classify_stock,
     default_as_of,
     normalize_stock_code,
     parse_report_year,
+    resolve_as_of,
     to_order_book_id,
 )
 
@@ -83,6 +85,16 @@ class TestDefaultAsOf:
 
     def test_none_returns_today(self):
         assert default_as_of(None) == date.today()
+
+
+class TestResolveAsOf:
+    def test_weekend_rolls_back_to_friday(self):
+        # 2026-05-31 周日 → 最近交易日 2026-05-29（周五）
+        assert resolve_as_of("2026-05-31") == date(2026, 5, 29)
+        assert calendar_trading_as_of(date(2026, 5, 31)) == date(2026, 5, 29)
+
+    def test_weekday_unchanged(self):
+        assert resolve_as_of("2026-05-29") == date(2026, 5, 29)
 
 
 class TestAnnualReportDataclass:

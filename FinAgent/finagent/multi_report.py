@@ -307,6 +307,19 @@ def multi_report_display_title(*, stock_code: str, sec_name: str = "", suffix: s
     return suffix
 
 
+def resolve_multi_report_title(
+    *,
+    plan: dict[str, Any] | None,
+    stock_code: str,
+    sec_name: str = "",
+    suffix: str = "多智能体研究报告",
+) -> str:
+    custom = str((plan or {}).get("report_title") or "").strip()
+    if custom:
+        return custom[:120]
+    return multi_report_display_title(stock_code=stock_code, sec_name=sec_name, suffix=suffix)
+
+
 def build_multi_toc_entries(
     plan: dict[str, Any],
     ordered_sections: list[tuple[str, str]],
@@ -346,7 +359,8 @@ def render_multi_markdown(
     )
     quality = build_data_quality_summary(data)
     stock_code = str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0])
-    title = multi_report_display_title(
+    title = resolve_multi_report_title(
+        plan=plan,
         stock_code=stock_code,
         sec_name=str(data.get("sec_name") or ""),
         suffix="多智能体研究报告",
@@ -424,7 +438,8 @@ def render_multi_html(
     anchors = toc_id_map(toc_entries)
     quality = build_data_quality_summary(data)
     stock_code = str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0])
-    title = multi_report_display_title(
+    title = resolve_multi_report_title(
+        plan=plan,
         stock_code=stock_code,
         sec_name=str(data.get("sec_name") or ""),
         suffix="多智能体研究报告",
@@ -502,6 +517,13 @@ def build_multi_json_payload(
     payload: dict[str, Any] = {
         "meta": {
             "report_type": "multi_analyze",
+            "report_title": resolve_multi_report_title(
+                plan=plan,
+                stock_code=stock_code,
+                sec_name=sec_name,
+                suffix="多智能体研究报告",
+            ),
+            "narrative_thesis": str(plan.get("narrative_thesis") or "").strip() or None,
             "order_book_id": data.get("order_book_id"),
             "stock_code": stock_code,
             "sec_name": sec_name,
@@ -520,10 +542,20 @@ def build_multi_json_payload(
         "charts": {name: _normalize_chart_path(path) for name, path in charts.items()},
         "validation": validation,
         "plan": {
+            "report_title": plan.get("report_title"),
+            "narrative_thesis": plan.get("narrative_thesis"),
             "objective": plan.get("objective"),
             "tools": plan.get("tools"),
             "risk_controls": plan.get("risk_controls"),
-            "sections": [item.get("name") for item in plan.get("sections") or [] if isinstance(item, dict)],
+            "sections": [
+                {
+                    "name": item.get("name"),
+                    "kind": item.get("kind"),
+                    "rationale": item.get("rationale"),
+                }
+                for item in plan.get("sections") or []
+                if isinstance(item, dict)
+            ],
         },
         "data_summary": build_data_summary(data),
     }
@@ -746,6 +778,7 @@ def local_chart_placement_review(
     sections: dict[str, str],
     charts: dict[str, str],
     data: dict[str, Any] | None = None,
+    plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """规则校验：图/表标题语义与目标章节/小节正文是否匹配。"""
     data = data or {}
@@ -782,7 +815,7 @@ def local_chart_placement_review(
                     "section": section,
                     "anchor": anchor or None,
                     "problem": f"「{caption}」与章节「{section}」正文/小节标题缺乏语义匹配",
-                    "suggested_section": suggest_section_for_chart(key, sections),
+                    "suggested_section": suggest_section_for_chart(key, sections, plan=plan),
                     "suggested_anchor": hints[0] if hints else None,
                 }
             )
@@ -795,7 +828,11 @@ def local_chart_placement_review(
     }
 
 
-def suggest_section_for_chart(chart_name: str, sections: dict[str, str]) -> str | None:
+def suggest_section_for_chart(
+    chart_name: str,
+    sections: dict[str, str],
+    plan: dict[str, Any] | None = None,
+) -> str | None:
     hints = _visual_subheading_hints(chart_name)
     best_section: str | None = None
     best_score = 0
@@ -814,6 +851,14 @@ def suggest_section_for_chart(chart_name: str, sections: dict[str, str]) -> str 
             best_section = section_name
     if best_section:
         return best_section
+    if plan:
+        from .plan_execution import chart_candidates_for_plan_section
+
+        for section_name in sections:
+            if section_name == CHART_INTERPRETATION_SECTION:
+                continue
+            if chart_name in chart_candidates_for_plan_section(section_name, plan):
+                return section_name
     from .chart_catalog import DEFAULT_SECTION_TABLE_CANDIDATES
 
     for section_name, candidates in DEFAULT_SECTION_CHART_CANDIDATES.items():
@@ -833,8 +878,10 @@ def apply_chart_placement_fixes(
     charts: dict[str, str],
     blocked: set[str] | None = None,
     data: dict[str, Any] | None = None,
+    plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """根据验证意见修正 placement（章节、anchor）。"""
+    _ = plan
     data = data or {}
     blocked = blocked or set()
     issue_map = {

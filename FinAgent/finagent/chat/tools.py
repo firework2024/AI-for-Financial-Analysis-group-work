@@ -75,9 +75,18 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
     }
 
     for code in stocks:
+        stale_quote = False
+        if intent.want_live_quote and not valuation_only:
+            try:
+                from ..datastore.market_cache import local_price_volume_available, market_is_current
+
+                stale_quote = local_price_volume_available(code) and not market_is_current(code)
+            except Exception:
+                stale_quote = False
         should_ingest = (not valuation_only) and (
             intent.want_background_ingest
             or (intent.want_live_quote and query_needs_stored_data(query))
+            or stale_quote
         )
         if not should_ingest:
             continue
@@ -121,7 +130,11 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
                     if item.get("stock_code") != code:
                         continue
                     for action in item.get("actions") or []:
-                        if action.get("gap") == "market_snapshot" and action.get("live"):
+                        if action.get("live") and action.get("gap") in (
+                            "quote_refresh",
+                            "market_history",
+                            "market_snapshot",
+                        ):
                             live = action["live"]
                             break
             if valuation_only:
@@ -172,8 +185,9 @@ def gather_tool_context(query: str, session: ChatSession) -> tuple[dict[str, Any
         )
         if intent.valuation_focus:
             extra = (
-                f"【硬性】须对 {'、'.join(stocks)} 逐只回答所问估值指标；"
-                "禁止出现列表外的股票；无数据写暂无。"
+                f"会话含 {len(stocks)} 只：{'、'.join(stocks)}；"
+                f"须逐只回答所问估值指标；缺失时可用 price/shares/pit 推导 PE 并注明口径；"
+                f"禁止出现列表外的股票。"
             )
         payload["answer_guidance"] = f"{payload['answer_guidance']} {extra}"
     return payload, tool_calls

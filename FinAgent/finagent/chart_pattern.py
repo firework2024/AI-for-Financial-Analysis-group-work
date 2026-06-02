@@ -115,7 +115,20 @@ def _ma_shape(price: pd.DataFrame) -> str:
         return "价格位于短均线下、长均线上，呈现震荡整理"
     if last_close < last_ma60 and last_close > last_ma20:
         return "价格位于短均线上、长均线下，均线多空交织"
-    return "价格与均线缠绕，方向尚不明朗"
+    # 默认分支改为更可判读：基于均线距离与短端斜率给出状态，而不是空泛结论。
+    spread = abs(last_ma20 - last_ma60) / (abs(last_close) or 1.0)
+    ma20_slope = float(ma20.iloc[-1] - ma20.iloc[-5]) if len(ma20) >= 5 else 0.0
+    if spread <= 0.01:
+        if ma20_slope > 0:
+            return "短中期均线距离收敛，MA20 小幅上拐，处于震荡后的修复阶段"
+        if ma20_slope < 0:
+            return "短中期均线距离收敛，MA20 小幅下拐，处于震荡偏弱阶段"
+        return "短中期均线距离收敛，价格围绕均线震荡，趋势信号仍待确认"
+    if ma20_slope > 0:
+        return "均线间距仍在收敛但短均线上拐，趋势有修复迹象"
+    if ma20_slope < 0:
+        return "均线间距仍在收敛且短均线下行，趋势修复力度偏弱"
+    return "均线关系处于过渡区间，趋势方向仍需后续确认"
 
 
 def _drawdown_shape(price: pd.DataFrame) -> str:
@@ -198,6 +211,27 @@ def _multi_line_shape(frame: pd.DataFrame, cols: tuple[str, ...]) -> str:
     trends: list[str] = []
     for col in cols:
         if col not in frame.columns:
+            continue
+        series = pd.to_numeric(frame[col], errors="coerce").dropna()
+        if series.empty:
+            continue
+        trends.append(_trend_shape(series))
+    if not trends:
+        return "因子曲线待数据补充"
+    up = sum("上行" in t or "先抑后扬" in t for t in trends)
+    down = sum("下行" in t or "先扬后抑" in t for t in trends)
+    if up >= max(2, len(trends) - 1):
+        return "多条曲线整体向上，指标同步改善"
+    if down >= max(2, len(trends) - 1):
+        return "多条曲线整体向下，指标同步走弱"
+    return "各曲线走势分化，需结合分项观察"
+
+
+def _multi_line_shape_alias(frame: pd.DataFrame, groups: tuple[tuple[str, ...], ...]) -> str:
+    trends: list[str] = []
+    for aliases in groups:
+        col = next((name for name in aliases if name in frame.columns), None)
+        if not col:
             continue
         series = pd.to_numeric(frame[col], errors="coerce").dropna()
         if series.empty:
@@ -329,16 +363,21 @@ def build_chart_pattern(chart_key: str, data: dict[str, Any]) -> dict[str, Any]:
     elif chart_key == "market_cap_trend":
         patterns["shape"] = f"总市值曲线{_trend_shape(_series(frame, 'market_cap'))}"
     elif chart_key == "profitability_factors":
-        patterns["shape"] = _multi_line_shape(
-            frame, ("gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm")
-        )
-    elif chart_key == "growth_factors":
-        patterns["shape"] = _multi_line_shape(
+        patterns["shape"] = _multi_line_shape_alias(
             frame,
             (
-                "net_profit_growth_ratio_ttm",
-                "operating_revenue_growth_ratio_ttm",
-                "gross_profit_growth_ratio_ttm",
+                ("gross_profit_margin_ttm", "gross_margin_ttm", "gross_margin"),
+                ("net_profit_margin_ttm", "net_margin_ttm", "net_margin"),
+                ("roe_ttm", "roe", "return_on_equity_ttm", "roe_ratio_ttm"),
+            ),
+        )
+    elif chart_key == "growth_factors":
+        patterns["shape"] = _multi_line_shape_alias(
+            frame,
+            (
+                ("net_profit_growth_ratio_ttm", "net_profit_parent_company_growth_ratio_ttm"),
+                ("operating_revenue_growth_ratio_ttm", "revenue_growth_ratio_ttm"),
+                ("gross_profit_growth_ratio_ttm",),
             ),
         )
     elif chart_key == "liquidity_factors":

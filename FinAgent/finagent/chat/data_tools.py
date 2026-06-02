@@ -868,12 +868,56 @@ def fetch_valuation_snapshot(stock_code: str) -> dict[str, Any]:
     return _enrich_valuation_payload(slim, code)
 
 
+def executor_payload_to_chat_live(
+    data: dict[str, Any],
+    *,
+    stock_code: str | None = None,
+    as_of: str | None = None,
+) -> dict[str, Any]:
+    """将 data_executor / SQLite _relaxed 载荷转为对话 live_data 结构。"""
+    code = normalize_stock_code(stock_code or data.get("stock_code") or "")
+    as_of_date = default_as_of(as_of)
+    order_book_id = str(data.get("order_book_id") or to_order_book_id(code))
+    price_rows = (data.get("price") or {}).get("rows") or []
+    technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
+    end_date = str(data.get("end_date") or "")
+    quote = _build_quote_summary(price_rows, technical, end_date)
+    payload: dict[str, Any] = {
+        "stock_code": code,
+        "order_book_id": order_book_id,
+        "as_of": as_of_date.isoformat(),
+        "market_context": _market_context(as_of_date),
+        "sec_name": data.get("sec_name"),
+        "end_date": end_date,
+        "source": str(data.get("source") or "local_db"),
+        "quote": quote,
+        "technical": technical,
+        "factor": data.get("factor"),
+        "industry": data.get("industry"),
+        "price_tail": price_rows[-5:],
+        "margin_tail": (data.get("securities_margin") or {}).get("rows", [])[-5:],
+        "pit_financials_tail": (data.get("pit_financials") or {}).get("rows", [])[-3:],
+    }
+    warnings = data.get("local_cache_warnings")
+    if warnings:
+        payload["note"] = "；".join(str(w) for w in warnings)
+    payload["factor"] = _apply_derived_financial_factors(
+        dict(payload.get("factor") or {}),
+        dict(payload.get("quote") or {}),
+        code,
+        technical=technical,
+    )
+    return payload
+
+
 def fetch_market_snapshot(
     stock_code: str,
     *,
     as_of: str | None = None,
     lookback_days: int = 60,
     incremental: bool = True,
+    use_cached_only: bool = False,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     load_dotenv()
     from pathlib import Path
@@ -909,10 +953,21 @@ def fetch_market_snapshot(
             lookback_days=lookback_days,
             output_dir=Path("outputs"),
             incremental_after=incremental_after,
+            use_cached_only=use_cached_only,
+            force_refresh=force_refresh,
         )
     except Exception as exc:
+        from ..datastore.market_cache import MarketCacheError
+        from ..rqdata_quota import is_rqdata_quota_error, mark_rqdata_quota_exceeded, rqdata_quota_exhausted
+
+        if is_rqdata_quota_error(exc):
+            mark_rqdata_quota_exceeded(exc, where="fetch_market_snapshot")
+
+        if isinstance(exc, MarketCacheError):
+            return {**base, "error": str(exc), "source": "cache_required"}
         fallback = _local_snapshot_fallback(code)
-        err_payload = {**base, "error": f"{type(exc).__name__}: {exc}", "source": "rqdata_error"}
+        source = "eastmoney_fallback" if rqdata_quota_exhausted() else "rqdata_error"
+        err_payload = {**base, "error": f"{type(exc).__name__}: {exc}", "source": source}
         if fallback:
             err_payload.update(fallback)
             factor = _apply_derived_financial_factors(
@@ -930,28 +985,13 @@ def fetch_market_snapshot(
             err_payload["note"] = "米筐拉取失败，已回退本地数据库最近快照。"
         return err_payload
 
-    price_rows = (data.get("price") or {}).get("rows") or []
-    technical = data.get("technical") or {}
-    end_date = str(data.get("end_date") or "")
-    quote = _build_quote_summary(price_rows, technical, end_date)
-    payload = {
-        **base,
-        "sec_name": data.get("sec_name"),
-        "end_date": end_date,
-        "source": "rqdata",
-        "quote": quote,
-        "technical": technical,
-        "factor": data.get("factor"),
-        "industry": data.get("industry"),
-        "price_tail": price_rows[-5:],
-        "margin_tail": (data.get("securities_margin") or {}).get("rows", [])[-5:],
-        "pit_financials_tail": (data.get("pit_financials") or {}).get("rows", [])[-3:],
-    }
-    if not quote.get("close"):
+    payload = executor_payload_to_chat_live(data, stock_code=code, as_of=as_of_date.isoformat())
+    payload = {**base, **payload}
+    if not (payload.get("quote") or {}).get("close"):
         fallback = _local_snapshot_fallback(code)
         if fallback:
             payload.update({k: v for k, v in fallback.items() if k not in payload or not payload.get(k)})
-            payload["note"] = "米筐未返回有效收盘价，已补充本地数据库快照。"
+            payload["note"] = "米筐未返回有效收盘价，已补充本地数据库量价。"
     payload["factor"] = _apply_derived_financial_factors(
         dict(payload.get("factor") or {}),
         dict(payload.get("quote") or {}),
@@ -986,6 +1026,12 @@ def _market_context(as_of_date: date) -> dict[str, Any]:
             f"最近交易日收盘价见 quote（约 {last_trade.isoformat()}）。"
         )
     try:
+        from ..rqdata_quota import rqdata_quota_exhausted
+
+        if rqdata_quota_exhausted():
+            notes.append("米筐额度已用尽，交易日历按最近工作日近似。")
+            ctx["notes"] = notes
+            return ctx
         import rqdatac
 
         from ..multiagent import _init_rqdata

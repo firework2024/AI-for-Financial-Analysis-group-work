@@ -33,32 +33,54 @@ class FinancialFetchResult:
 
 def fetch_financials(stock_code: str, report_year: int, years: int = 3) -> FinancialFetchResult:
     from .progress import info
+    from .rqdata_quota import is_rqdata_quota_error, mark_rqdata_quota_exceeded, rqdata_quota_exhausted
+
+    order_book_id = to_order_book_id(stock_code)
+    start_year = report_year - years + 1
+    wanted = [f"{year}q4" for year in range(start_year, report_year + 1)]
+
+    if rqdata_quota_exhausted():
+        info("米筐三表：额度已用尽，跳过 PIT 拉取（将依赖年报文本与本地缓存）")
+        rows = [{"year": year, "quarter": f"{year}q4"} for year in range(start_year, report_year + 1)]
+        return FinancialFetchResult(rows, order_book_id, wanted)
 
     import rqdatac
 
-    _init_rqdata(rqdatac)
-    order_book_id = to_order_book_id(stock_code)
-    start_year = report_year - years + 1
+    try:
+        _init_rqdata(rqdatac)
+    except Exception as exc:
+        if is_rqdata_quota_error(exc):
+            mark_rqdata_quota_exceeded(exc, where="fetch_financials.init")
+            info("米筐三表：额度已用尽，跳过 PIT 拉取（将依赖年报文本与本地缓存）")
+            rows = [{"year": year, "quarter": f"{year}q4"} for year in range(start_year, report_year + 1)]
+            return FinancialFetchResult(rows, order_book_id, wanted)
+        raise
     start_quarter = f"{start_year}q4"
     end_quarter = f"{report_year}q4"
     info(f"米筐三表查询: {order_book_id}, 区间 {start_quarter} ~ {end_quarter}, 字段数 {len(FIELD_NAMES)}")
-    df = _execute_rqdata_call(
-        "获取年报口径财务数据",
-        rqdatac.get_pit_financials_ex,
-        order_book_id,
-        fields=FIELD_NAMES,
-        start_quarter=start_quarter,
-        end_quarter=end_quarter,
-        statements="latest",
-        market="cn",
-    )
+    try:
+        df = _execute_rqdata_call(
+            "获取年报口径财务数据",
+            rqdatac.get_pit_financials_ex,
+            order_book_id,
+            fields=FIELD_NAMES,
+            start_quarter=start_quarter,
+            end_quarter=end_quarter,
+            statements="latest",
+            market="cn",
+        )
+    except RuntimeError as exc:
+        if rqdata_quota_exhausted() or is_rqdata_quota_error(exc):
+            info("米筐三表：额度已用尽，跳过 PIT 拉取（将依赖年报文本与本地缓存）")
+            rows = [{"year": year, "quarter": f"{year}q4"} for year in range(start_year, report_year + 1)]
+            return FinancialFetchResult(rows, order_book_id, wanted)
+        raise
     if df is None or df.empty:
         info("米筐三表接口返回空，使用空行占位")
         rows = [{"year": year, "quarter": f"{year}q4"} for year in range(start_year, report_year + 1)]
     else:
         rows = _frame_to_rows(df)
         info(f"米筐三表返回 {len(rows)} 行原始数据")
-    wanted = [f"{year}q4" for year in range(start_year, report_year + 1)]
     by_quarter = {row["quarter"]: row for row in rows}
     completed = []
     for quarter in wanted:
@@ -75,6 +97,10 @@ def fetch_financials(stock_code: str, report_year: int, years: int = 3) -> Finan
 
 
 def fetch_factor_fallbacks(order_book_id: str, report_year: int, years: int, as_of: date) -> dict[int, dict[str, float]]:
+    from .rqdata_quota import rqdata_quota_exhausted
+
+    if rqdata_quota_exhausted():
+        return {}
     import rqdatac
 
     _init_rqdata(rqdatac)
@@ -112,6 +138,10 @@ def fetch_factor_fallbacks(order_book_id: str, report_year: int, years: int, as_
 
 
 def fetch_metric_factor_fallbacks(order_book_id: str, report_year: int, years: int, as_of: date) -> dict[int, dict[str, float]]:
+    from .rqdata_quota import rqdata_quota_exhausted
+
+    if rqdata_quota_exhausted():
+        return {}
     import rqdatac
 
     _init_rqdata(rqdatac)
@@ -177,12 +207,18 @@ def _init_rqdata(rqdatac_module: Any) -> None:
 
 def _execute_rqdata_call(label: str, func: Any, *args: Any, **kwargs: Any) -> Any:
     from .progress import info
+    from .rqdata_quota import is_rqdata_quota_error, mark_rqdata_quota_exceeded, rqdata_quota_exhausted
+
+    if rqdata_quota_exhausted():
+        raise RuntimeError(_format_rqdata_error(label, Exception("Quota exceeded")))
 
     try:
         result = func(*args, **kwargs)
         info(f"米筐 {label}: 成功")
         return result
     except Exception as exc:
+        if is_rqdata_quota_error(exc):
+            mark_rqdata_quota_exceeded(exc, where=label)
         raise RuntimeError(_format_rqdata_error(label, exc)) from exc
 
 

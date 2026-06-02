@@ -42,7 +42,7 @@ def test_prune_tools_strips_annual_for_quote():
     assert "factor" not in (out.get("live_data") or {})
     assert "annual_report" not in ((out.get("data_api") or {}).get("stored") or {})
     assert "financial_facts" not in (out.get("evidence_summary") or {})
-    assert "【硬性】" in (out.get("answer_guidance") or "")
+    assert "优先直接给出" in (out.get("answer_guidance") or "")
 
 
 def test_focused_metric_keeps_matching_financial_hit():

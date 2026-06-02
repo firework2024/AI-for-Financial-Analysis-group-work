@@ -36,11 +36,14 @@ def main() -> None:
     args = build_parser().parse_args()
 
     start()
-    step("参数解析", f"命令: {args.command}, 股票: {args.stock}, 截止日: {args.as_of or '今天'}")
+    if args.command == "serve":
+        step("参数解析", f"命令: {args.command}, 监听: {args.host}:{args.port}, 重载: {args.reload}")
+    else:
+        step("参数解析", f"命令: {args.command}, 股票: {args.stock}, 截止日: {getattr(args, 'as_of', None) or '今天'}")
 
     try:
         if args.command == "analyze":
-            info("工作模式: 基础年报分析（财务 + MD&A + 投资总监总结）")
+            info("工作模式: 基础年报分析（财务 + MD&A + 经营与财务叙事）")
             result = run(
                 WorkflowOptions(
                     stock=args.stock,

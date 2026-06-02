@@ -24,7 +24,7 @@ from ..chat.store import SessionStore
 from ..llm import llm_text
 from ..llm_settings import activate_llm_settings, has_llm_api_key, reset_llm_settings, use_llm_settings
 
-from ..chat.data_ingest import bootstrap_stock_data, chat_bootstrap_enabled
+from ..chat.data_ingest import bootstrap_stock_data, chat_bootstrap_enabled, fetch_stock_data_full, get_data_coverage, run_data_ingest
 from ..chat.stock_bind import bind_stocks_from_chat, message_requests_data_ingest, should_run_chat_bootstrap
 from ..chat.stock_codes import normalize_stock_codes_list, stocks_display_label
 from ..env import load_dotenv, prepare_rqdata_env, project_root, rqdata_configured
@@ -122,6 +122,8 @@ class MultiAnalyzeRequest(BaseModel):
     stock: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
     as_of: str | None = None
     lookback_days: int = Field(default=260, ge=30, le=520)
+    use_cached_only: bool = False
+    force_refresh: bool = False
 
 
 class ChatCreateRequest(BaseModel):
@@ -148,6 +150,20 @@ class ChatAnalyzeRequest(BaseModel):
     as_of: str | None = None
     lookback_days: int = Field(default=260, ge=30, le=520)
     years: int = Field(default=3, ge=1, le=10)
+    use_cached_only: bool = False
+    force_refresh: bool = False
+
+
+class BootstrapRequest(BaseModel):
+    mode: str = Field(default="light", pattern=r"^(light|full|force)$")
+    lookback_days: int | None = Field(default=None, ge=30, le=365)
+
+
+class DataIngestRequest(BaseModel):
+    mode: str = Field(default="full", pattern=r"^(light|full|force)$")
+    report_year: int | None = Field(default=None, ge=1990, le=2100)
+    lookback_days: int | None = Field(default=None, ge=30, le=365)
+    force_refresh: bool = False
 
 
 class RegisterRequest(BaseModel):
@@ -160,6 +176,16 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
 
 
+class PerformanceSettingsPayload(BaseModel):
+    max_workers: int | None = Field(default=None, ge=1, le=12)
+    auto_ingest_on_new_chat: bool | None = None
+    annual_max_age_days: int | None = Field(default=None, ge=0, le=3650)
+    validation_max_rounds: int | None = Field(default=None, ge=0, le=5)
+    chart_placement_max_rounds: int | None = Field(default=None, ge=1, le=5)
+    validation_skip_revise_min_score: int | None = Field(default=None, ge=0, le=100)
+    bootstrap_lookback_days: int | None = Field(default=None, ge=30, le=365)
+
+
 class SettingsUpdateRequest(BaseModel):
     openai_api_key: str | None = None
     openai_base_url: str | None = None
@@ -167,6 +193,7 @@ class SettingsUpdateRequest(BaseModel):
     clear_api_key: bool = False
     chat_agent_mode: str | None = Field(default=None, pattern=r"^(loop|single)$")
     chat_max_steps: int | None = Field(default=None, ge=1, le=8)
+    performance: PerformanceSettingsPayload | None = None
 
 
 def _list_reports_for_user(user_id: str, report_owners: ReportOwnerStore) -> list[dict[str, Any]]:
@@ -323,9 +350,20 @@ def _set_task(task_id: str, **fields: Any) -> None:
         task.update(fields)
 
 
+def _run_with_user_runtime(user_id: str, user_settings: UserSettingsStore, fn) -> None:
+    from ..runtime_prefs import use_runtime_prefs
+
+    prefs = user_settings.runtime_prefs_map(user_id)
+    with use_runtime_prefs(prefs):
+        fn()
+
+
 def _run_analyze_task(task_id: str, request: AnalyzeRequest, user_id: str, report_owners: ReportOwnerStore, user_settings: UserSettingsStore) -> None:
-    with use_llm_settings(user_settings.to_llm_settings(user_id)):
-        _run_analyze_task_inner(task_id, request, user_id, report_owners)
+    def _inner() -> None:
+        with use_llm_settings(user_settings.to_llm_settings(user_id)):
+            _run_analyze_task_inner(task_id, request, user_id, report_owners)
+
+    _run_with_user_runtime(user_id, user_settings, _inner)
 
 
 def _run_analyze_task_inner(task_id: str, request: AnalyzeRequest, user_id: str, report_owners: ReportOwnerStore) -> None:
@@ -365,8 +403,11 @@ def _run_analyze_task_inner(task_id: str, request: AnalyzeRequest, user_id: str,
 
 
 def _run_multi_task(task_id: str, request: MultiAnalyzeRequest, user_id: str, report_owners: ReportOwnerStore, user_settings: UserSettingsStore) -> None:
-    with use_llm_settings(user_settings.to_llm_settings(user_id)):
-        _run_multi_task_inner(task_id, request, user_id, report_owners)
+    def _inner() -> None:
+        with use_llm_settings(user_settings.to_llm_settings(user_id)):
+            _run_multi_task_inner(task_id, request, user_id, report_owners)
+
+    _run_with_user_runtime(user_id, user_settings, _inner)
 
 
 def _run_multi_task_inner(task_id: str, request: MultiAnalyzeRequest, user_id: str, report_owners: ReportOwnerStore) -> None:
@@ -378,6 +419,8 @@ def _run_multi_task_inner(task_id: str, request: MultiAnalyzeRequest, user_id: s
                 as_of=request.as_of,
                 lookback_days=request.lookback_days,
                 workdir=str(FINAGENT_ROOT),
+                use_cached_only=request.use_cached_only,
+                force_refresh=request.force_refresh,
             )
         )
         json_path = Path(str(result.get("output_json", "")))
@@ -421,6 +464,14 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def disable_static_cache(request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 
     @app.middleware("http")
     async def attach_user_llm_settings(request: Request, call_next):
@@ -528,49 +579,53 @@ def create_app() -> FastAPI:
         def _worker() -> None:
             load_dotenv()
             prepare_rqdata_env()
+            from ..runtime_prefs import use_runtime_prefs
+
+            prefs = user_settings_store.runtime_prefs_map(user_id)
             stocks_state: dict[str, Any] = {c: {"status": "pending"} for c in codes}
             ok_count = 0
 
-            for idx, code in enumerate(codes, start=1):
-                def _on_progress(*, gap: str, index: int, total: int, message: str, _code: str = code) -> None:
-                    _patch_bootstrap_progress(
-                        user_id,
-                        session_id,
-                        message=f"({idx}/{len(codes)}) {_code} · {message}",
-                        stock_codes=codes,
-                        current=_code,
-                        step=gap,
-                        stocks_state=stocks_state,
-                    )
+            with use_runtime_prefs(prefs):
+                for idx, code in enumerate(codes, start=1):
+                    def _on_progress(*, gap: str, index: int, total: int, message: str, _code: str = code) -> None:
+                        _patch_bootstrap_progress(
+                            user_id,
+                            session_id,
+                            message=f"({idx}/{len(codes)}) {_code} · {message}",
+                            stock_codes=codes,
+                            current=_code,
+                            step=gap,
+                            stocks_state=stocks_state,
+                        )
 
-                try:
-                    result = bootstrap_stock_data(code, workdir=project_root(), on_progress=_on_progress)
-                    stocks_state[code] = {
-                        "status": "completed" if result.get("ok") else "failed",
-                        "message": result.get("message"),
-                    }
-                    if result.get("ok"):
-                        ok_count += 1
-                except Exception as exc:
-                    stocks_state[code] = {
-                        "status": "failed",
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
+                    try:
+                        result = bootstrap_stock_data(code, workdir=project_root(), on_progress=_on_progress)
+                        stocks_state[code] = {
+                            "status": "completed" if result.get("ok") else "failed",
+                            "message": result.get("message"),
+                        }
+                        if result.get("ok"):
+                            ok_count += 1
+                    except Exception as exc:
+                        stocks_state[code] = {
+                            "status": "failed",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
 
-                session = session_store.get(user_id, session_id)
-                if session:
-                    from ..chat.stock_codes import merge_session_stock_codes
+                    session = session_store.get(user_id, session_id)
+                    if session:
+                        from ..chat.stock_codes import merge_session_stock_codes
 
-                    merge_session_stock_codes(session, codes)
-                    session.data_bootstrap = {
-                        "status": "running",
-                        "stock_codes": codes,
-                        "stock_code": codes[0],
-                        "stocks": stocks_state,
-                        "current": code,
-                        "message": f"正在入库 ({idx}/{len(codes)}) {code}…",
-                    }
-                    session_store.save(session)
+                        merge_session_stock_codes(session, codes)
+                        session.data_bootstrap = {
+                            "status": "running",
+                            "stock_codes": codes,
+                            "stock_code": codes[0],
+                            "stocks": stocks_state,
+                            "current": code,
+                            "message": f"正在入库 ({idx}/{len(codes)}) {code}…",
+                        }
+                        session_store.save(session)
 
             session = session_store.get(user_id, session_id)
             if not session:
@@ -595,6 +650,97 @@ def create_app() -> FastAPI:
                 session.title = f"{codes[0]} {name}".strip() if name else codes[0]
             elif session.title in {"", "新对话"}:
                 session.title = f"多股 {label}"
+            session_store.save(session)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _start_session_full_ingest(
+        user_id: str,
+        session_id: str,
+        stock_codes: list[str],
+        *,
+        force: bool = False,
+        lookback_days: int | None = None,
+    ) -> None:
+        codes = normalize_stock_codes_list(stock_codes)
+        if not codes:
+            return
+
+        def _worker() -> None:
+            load_dotenv()
+            prepare_rqdata_env()
+            from ..runtime_prefs import use_runtime_prefs
+
+            prefs = user_settings_store.runtime_prefs_map(user_id)
+            stocks_state: dict[str, Any] = {c: {"status": "pending"} for c in codes}
+            ok_count = 0
+
+            with use_runtime_prefs(prefs):
+                for idx, code in enumerate(codes, start=1):
+                    _patch_bootstrap_progress(
+                        user_id,
+                        session_id,
+                        message=f"({idx}/{len(codes)}) {code} · 正在全量同步…",
+                        stock_codes=codes,
+                        current=code,
+                        step="full_ingest",
+                        stocks_state=stocks_state,
+                    )
+                    try:
+                        result = fetch_stock_data_full(
+                            code,
+                            workdir=project_root(),
+                            force_refresh=force,
+                        ) if force else run_data_ingest(
+                            code,
+                            mode="manual_full",
+                            lookback_days=lookback_days,
+                            workdir=project_root(),
+                        )
+                        stocks_state[code] = {
+                            "status": "completed" if result.get("ok") else "failed",
+                            "message": result.get("message"),
+                            "coverage": result.get("coverage"),
+                        }
+                        if result.get("ok"):
+                            ok_count += 1
+                    except Exception as exc:
+                        stocks_state[code] = {
+                            "status": "failed",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+
+                    session = session_store.get(user_id, session_id)
+                    if session:
+                        from ..chat.stock_codes import merge_session_stock_codes
+
+                        merge_session_stock_codes(session, codes)
+                        session.data_bootstrap = {
+                            "status": "running",
+                            "stock_codes": codes,
+                            "stock_code": codes[0],
+                            "stocks": stocks_state,
+                            "current": code,
+                            "message": f"正在全量同步 ({idx}/{len(codes)}) {code}…",
+                        }
+                        session_store.save(session)
+
+            session = session_store.get(user_id, session_id)
+            if not session:
+                return
+            from ..chat.stock_codes import merge_session_stock_codes
+
+            merge_session_stock_codes(session, codes)
+            label = stocks_display_label(codes)
+            final_status = "completed" if ok_count == len(codes) else ("partial" if ok_count else "failed")
+            session.data_bootstrap = {
+                "status": final_status,
+                "stock_codes": codes,
+                "stock_code": codes[0],
+                "stocks": stocks_state,
+                "ok": ok_count == len(codes),
+                "message": f"{label} 全量同步完成（{ok_count}/{len(codes)}）",
+            }
             session_store.save(session)
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -656,6 +802,50 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="暂无该股票数据")
         return payload
 
+    @app.get("/api/data/stocks/{stock_code}/coverage")
+    def stock_data_coverage(
+        stock_code: str,
+        lookback_days: int | None = None,
+        user: AuthUser = Depends(current_user),
+    ) -> dict[str, Any]:
+        _ = user
+        from ..runtime_prefs import use_runtime_prefs
+
+        prefs = user_settings_store.runtime_prefs_map(user.id)
+        with use_runtime_prefs(prefs):
+            lb = lookback_days if lookback_days is not None else None
+            return get_data_coverage(stock_code, lookback_days=lb)
+
+    @app.post("/api/data/stocks/{stock_code}/ingest")
+    def ingest_stock_data(
+        stock_code: str,
+        request: DataIngestRequest,
+        user: AuthUser = Depends(current_user),
+    ) -> dict[str, Any]:
+        from ..runtime_prefs import use_runtime_prefs
+
+        prefs = user_settings_store.runtime_prefs_map(user.id)
+
+        def _ingest() -> dict[str, Any]:
+            mode_map = {"light": "bootstrap_light", "full": "manual_full", "force": "force_all"}
+            ingest_mode = mode_map.get(request.mode, "manual_full")
+            return run_data_ingest(
+                stock_code,
+                mode=ingest_mode,  # type: ignore[arg-type]
+                report_year=request.report_year,
+                lookback_days=request.lookback_days,
+                workdir=project_root(),
+                force_refresh=request.force_refresh or request.mode == "force",
+            )
+
+        with use_runtime_prefs(prefs):
+            load_dotenv()
+            prepare_rqdata_env()
+            try:
+                return _ingest()
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     @app.get("/api/data/search")
     def query_web_search(q: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
         _ = user
@@ -703,6 +893,7 @@ def create_app() -> FastAPI:
 
     @app.put("/api/settings")
     def update_settings(request: SettingsUpdateRequest, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+        perf_patch = request.performance.model_dump(exclude_none=True) if request.performance else None
         user_settings_store.update(
             user.id,
             openai_api_key=request.openai_api_key,
@@ -712,6 +903,7 @@ def create_app() -> FastAPI:
             openai_model=request.openai_model,
             chat_agent_mode=request.chat_agent_mode,
             chat_max_steps=request.chat_max_steps,
+            performance=perf_patch,
         )
         return {"settings": user_settings_store.to_public(user.id)}
 
@@ -784,14 +976,24 @@ def create_app() -> FastAPI:
         return session.to_dict()
 
     @app.post("/api/chat/sessions/{session_id}/bootstrap")
-    def bootstrap_chat_session(session_id: str, user: AuthUser = Depends(current_user)) -> dict[str, Any]:
+    def bootstrap_chat_session(
+        session_id: str,
+        request: BootstrapRequest | None = None,
+        user: AuthUser = Depends(current_user),
+    ) -> dict[str, Any]:
         session = _get_session(user, session_id)
         codes = normalize_stock_codes_list(getattr(session, "stock_codes", None) or [], single=session.stock_code)
         if not codes:
             raise HTTPException(status_code=400, detail="请先填写股票代码或公司名称")
         session.data_bootstrap = None
         session_store.save(session)
-        _schedule_bootstrap_if_needed(session, codes)
+        req = request or BootstrapRequest()
+        if req.mode == "full":
+            _start_session_full_ingest(user.id, session_id, codes, lookback_days=req.lookback_days)
+        elif req.mode == "force":
+            _start_session_full_ingest(user.id, session_id, codes, force=True, lookback_days=req.lookback_days)
+        else:
+            _schedule_bootstrap_if_needed(session, codes)
         session = session_store.get(user.id, session_id) or session
         return session.to_dict()
 
@@ -864,8 +1066,11 @@ def create_app() -> FastAPI:
         return {"session": session.to_dict(), "pdf": meta}
 
     def _run_chat_analyze(task_id: str, session_id: str, user_id: str, request: ChatAnalyzeRequest) -> None:
-        with use_llm_settings(user_settings_store.to_llm_settings(user_id)):
-            _run_chat_analyze_inner(task_id, session_id, user_id, request)
+        def _inner() -> None:
+            with use_llm_settings(user_settings_store.to_llm_settings(user_id)):
+                _run_chat_analyze_inner(task_id, session_id, user_id, request)
+
+        _run_with_user_runtime(user_id, user_settings_store, _inner)
 
     def _run_chat_analyze_inner(task_id: str, session_id: str, user_id: str, request: ChatAnalyzeRequest) -> None:
         from ..chat.store import ChatMessage
@@ -888,6 +1093,8 @@ def create_app() -> FastAPI:
                         as_of=request.as_of,
                         lookback_days=request.lookback_days,
                         workdir=str(FINAGENT_ROOT),
+                        use_cached_only=request.use_cached_only,
+                        force_refresh=request.force_refresh,
                     )
                 )
             json_path = Path(str(result.get("output_json", "")))

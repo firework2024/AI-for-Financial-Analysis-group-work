@@ -94,6 +94,11 @@ def test_user_settings_update(client):
     cleared = client.put("/api/settings", json={"clear_api_key": True}, headers=headers)
     assert cleared.json()["settings"]["has_user_api_key"] is False
 
+    got = client.get("/api/settings", headers=headers)
+    assert got.status_code == 200
+    assert "performance" in got.json()["settings"]
+    assert got.json()["settings"]["chat_agent_mode"] in {"loop", "single"}
+
 
 def test_report_owner_filter(tmp_path):
     from finagent.auth.owners import ReportOwnerStore

@@ -808,7 +808,15 @@ def ensure_report_data_for_generation(
     lb = lookback_days if lookback_days is not None else report_market_lookback_days()
     if use_cached_only:
         cov = get_data_coverage(stock_code, lookback_days=lb)
-        missing = list(cov.get("gaps") or [])
+        # 报告离线生成仅要求“本地有量价序列+财务+年报”，
+        # 不依赖快照是否最新交易日或 lookback 元数据是否覆盖请求。
+        missing: list[str] = []
+        if not ((cov.get("market_snapshot") or {}).get("present")):
+            missing.append("market_history")
+        if not ((cov.get("pit_financials") or {}).get("present")):
+            missing.append("pit_financials")
+        if not ((cov.get("annual_report") or {}).get("present")):
+            missing.append("annual_report")
         if missing:
             raise AnnualCacheError(
                 f"本地数据不足：{', '.join(_GAP_LABELS.get(g, g) for g in missing)}。"

@@ -201,13 +201,12 @@ def enrich_financial_analysis_with_mda(
 def build_annual_context_from_store(
     annual: dict[str, Any],
     *,
-    with_director: bool = False,
+    with_narrative: bool = False,
 ) -> dict[str, Any] | None:
     """从 SQLite 年报记录构建含勾稽的多智能体上下文。
 
-    当 ``with_director=True`` 时，额外调用投资总监 LLM 分析并注入
-    ``investment_director`` 与 ``_financial_analysis_raw`` 字段，
-    供多智能体流程的基本面章节使用。
+    当 ``with_narrative=True`` 时，额外调用基本面叙事 LLM 并注入
+    ``fundamental_narrative`` 与 ``_financial_analysis_raw`` 字段。
     """
     if not annual:
         return None
@@ -227,15 +226,9 @@ def build_annual_context_from_store(
         )
         return context
 
-    from .financial_analysis import analyze_financials
+    from .annual_analysis_cache import compute_financial_analysis
 
-    company_context = {
-        "stock_code": annual.get("stock_code"),
-        "sec_name": annual.get("sec_name"),
-        "report_year": annual.get("report_year"),
-    }
-    analysis = analyze_financials(financial_data, {}, company_context)
-    analysis = enrich_financial_analysis_with_mda(analysis, mda_text)
+    analysis = compute_financial_analysis(annual, persist=True)
     from .report_writing import summarize_annual_financial_data
 
     context.update(
@@ -250,19 +243,24 @@ def build_annual_context_from_store(
         }
     )
 
-    if with_director:
-        from .llm import investment_director_analysis
+    if with_narrative:
+        from .llm import fundamental_narrative_analysis
 
+        company_context = {
+            "stock_code": annual.get("stock_code"),
+            "sec_name": annual.get("sec_name"),
+            "report_year": annual.get("report_year"),
+        }
         try:
-            context["investment_director"] = investment_director_analysis(
+            context["fundamental_narrative"] = fundamental_narrative_analysis(
                 mda_text, analysis, company_context
             )
         except Exception as exc:
-            context["investment_director"] = (
-                f"投资总监分析生成失败（{type(exc).__name__}: {exc}），"
+            context["fundamental_narrative"] = (
+                f"经营与财务叙事生成失败（{type(exc).__name__}: {exc}），"
                 "请参考下方财务信号审核与 MD&A 勾稽信息。"
             )
-            context["_director_error"] = str(exc)
+            context["_narrative_error"] = str(exc)
 
     return context
 

@@ -1,11 +1,16 @@
 import pytest
 
 from finagent.chat.data_ingest import (
+    AnnualCacheError,
     annual_report_needs_update,
     bootstrap_stock_data,
+    ensure_annual_report_in_store,
+    ensure_report_data_for_generation,
     ensure_stored_data,
+    get_data_coverage,
     get_data_gaps,
     ingest_market_snapshot,
+    run_data_ingest,
     target_annual_report_year,
 )
 from finagent.chat.store import ChatSession
@@ -24,7 +29,7 @@ def temp_db(tmp_path, monkeypatch):
 
 def test_get_data_gaps_market_only(temp_db):
     gaps = get_data_gaps("300750", "宁德时代最新股价多少")
-    assert "market_snapshot" in gaps
+    assert "market_history" in gaps
     assert "annual_report" not in gaps
 
 
@@ -205,3 +210,106 @@ def test_ingest_market_snapshot_uses_latest_snapshot(monkeypatch, temp_db):
     result = ingest_market_snapshot("300750")
     assert result["ok"] is True
     assert result["snapshot_id"] == 1
+
+
+def test_ensure_annual_report_in_store_cached_only(temp_db):
+    from finagent.chat.data_ingest import AnnualCacheError, ensure_annual_report_in_store
+    from finagent.datastore import save_annual_report_record
+
+    with pytest.raises(AnnualCacheError):
+        ensure_annual_report_in_store("000001", use_cached_only=True)
+
+    save_annual_report_record(
+        stock_code="000001",
+        report_year=2024,
+        sec_name="平安银行",
+        title="2024年报",
+        pdf_path="x.pdf",
+        financial_data=[{"year": 2024, "quarter": "2024q4"}],
+        mda_text="MD&A 摘要",
+    )
+    annual = ensure_annual_report_in_store("000001", use_cached_only=True)
+    assert annual is not None
+    assert annual.get("report_year") == 2024
+
+
+def test_get_data_coverage_empty_db(temp_db):
+    cov = get_data_coverage("300750")
+    assert cov["stock_code"] == "300750"
+    assert "market_history" in cov["gaps"]
+    assert cov["ready_for_chat"] is False
+
+
+def test_report_generation_cached_only_accepts_stale_local_data(temp_db):
+    from finagent.datastore import save_annual_report_record, save_data_snapshot, save_pit_financials
+    from types import SimpleNamespace
+
+    save_data_snapshot(
+        {
+            "order_book_id": "300750.XSHE",
+            "end_date": "2025-01-10",
+            "start_date": "2024-01-01",
+            "price": {"rows": [{"date": "2025-01-10", "close": 200.0}], "row_count": 1},
+        },
+        stock_code="300750",
+        lookback_days=60,
+    )
+    save_pit_financials(
+        SimpleNamespace(
+            order_book_id="300750.XSHE",
+            quarters=["2024q4"],
+            rows=[{"quarter": "2024q4", "net_profit": 1.0}],
+        ),
+        stock_code="300750",
+        report_year=2024,
+        years=3,
+    )
+    save_annual_report_record(
+        stock_code="300750",
+        report_year=2024,
+        sec_name="宁德时代",
+        title="2024年报",
+        pdf_path="x.pdf",
+        financial_data=[{"year": 2024, "quarter": "2024q4"}],
+        mda_text="MD&A 摘要",
+    )
+
+    out = ensure_report_data_for_generation("300750", use_cached_only=True, lookback_days=260)
+    assert out.get("skipped") is True
+    assert out["coverage"]["market_snapshot"]["present"] is True
+
+
+def test_get_data_gaps_stale_triggers_quote_refresh(temp_db):
+    from finagent.datastore import save_data_snapshot
+
+    save_data_snapshot(
+        {
+            "order_book_id": "300750.XSHE",
+            "end_date": "2025-01-10",
+            "price": {"rows": [{"date": "2025-01-10", "close": 200.0}], "row_count": 1},
+        },
+        stock_code="300750",
+        lookback_days=60,
+    )
+    gaps = get_data_gaps("300750", "宁德时代最新股价多少")
+    assert "quote_refresh" in gaps
+
+
+def test_run_data_ingest_query_driven_skips_when_satisfied(monkeypatch, temp_db):
+    monkeypatch.setattr("finagent.chat.data_ingest.get_data_gaps", lambda _c, _q: [])
+    result = run_data_ingest("300750", mode="query_driven", query="这份报告风险是什么")
+    assert result.get("skipped") is True
+    assert result["requested_gaps"] == []
+
+
+def test_ensure_stored_data_uses_run_data_ingest(monkeypatch, temp_db):
+    monkeypatch.setattr(
+        "finagent.chat.data_ingest.run_data_ingest",
+        lambda code, **kw: {"ok": True, "requested_gaps": ["market_snapshot"], "actions": []},
+    )
+    assert ensure_stored_data("300750", "最新股价") is not None
+    monkeypatch.setattr(
+        "finagent.chat.data_ingest.run_data_ingest",
+        lambda code, **kw: {"ok": True, "skipped": True, "requested_gaps": [], "actions": []},
+    )
+    assert ensure_stored_data("300750", "风险是什么") is None

@@ -1,6 +1,7 @@
-/** 用户 API 设置 */
+/** 用户设置（大模型 / 对话 / 性能） */
 
 const settingsEls = {};
+const SETTINGS_TAB_KEY = "finagent_settings_tab";
 
 function initSettingsElements() {
   Object.assign(settingsEls, {
@@ -12,6 +13,13 @@ function initSettingsElements() {
     model: document.getElementById("settingsModel"),
     chatMaxSteps: document.getElementById("settingsChatMaxSteps"),
     chatAgentMode: document.getElementById("settingsChatAgentMode"),
+    maxWorkers: document.getElementById("settingsMaxWorkers"),
+    autoIngest: document.getElementById("settingsAutoIngest"),
+    bootstrapLookback: document.getElementById("settingsBootstrapLookback"),
+    annualMaxAge: document.getElementById("settingsAnnualMaxAge"),
+    validationRounds: document.getElementById("settingsValidationRounds"),
+    placementRounds: document.getElementById("settingsPlacementRounds"),
+    skipReviseScore: document.getElementById("settingsSkipReviseScore"),
     openBtn: document.getElementById("openSettingsBtn"),
     mobileOpenBtn: document.getElementById("mobileSettingsBtn"),
     railOpenBtn: document.getElementById("railSettingsBtn"),
@@ -59,15 +67,67 @@ function renderSettingsStatus(settings) {
     ${masked ? `<span class="settings-mask">${masked}</span>` : ""}`;
 }
 
-function renderSettingsLoading(message = "正在加载 API 设置…") {
+function renderSettingsLoading(message = "正在加载设置…") {
   if (!settingsEls.status) return;
   settingsEls.status.innerHTML = `<span class="settings-pill warn">${message}</span>`;
+}
+
+function setSettingsTab(tabId) {
+  const id = ["llm", "chat", "perf"].includes(tabId) ? tabId : "llm";
+  document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
+    const active = tab.getAttribute("data-settings-tab") === id;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
+    const show = panel.getAttribute("data-settings-panel") === id;
+    panel.classList.toggle("hidden", !show);
+    if (show) {
+      panel.removeAttribute("hidden");
+    } else {
+      panel.setAttribute("hidden", "");
+    }
+  });
+  try {
+    localStorage.setItem(SETTINGS_TAB_KEY, id);
+  } catch (_e) {}
+}
+
+function bindSettingsTabs() {
+  document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      setSettingsTab(tab.getAttribute("data-settings-tab"));
+    });
+  });
+  let saved = "llm";
+  try {
+    saved = localStorage.getItem(SETTINGS_TAB_KEY) || "llm";
+  } catch (_e) {}
+  setSettingsTab(saved);
+}
+
+function validatePerformancePayload(payload) {
+  const checks = [
+    ["max_workers", 1, 12],
+    ["bootstrap_lookback_days", 30, 365],
+    ["annual_max_age_days", 0, 3650],
+    ["validation_max_rounds", 0, 5],
+    ["chart_placement_max_rounds", 1, 5],
+    ["validation_skip_revise_min_score", 0, 100],
+  ];
+  for (const [key, min, max] of checks) {
+    const value = Number(payload[key]);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new Error(`性能参数「${key}」须在 ${min}–${max} 之间`);
+    }
+  }
+  return payload;
 }
 
 function ensureSettingsAuth() {
   const token = window.Auth?.getAuthToken?.();
   if (!token) {
-    throw new Error("请先登录后再配置 API");
+    throw new Error("请先登录后再打开设置");
   }
   if (typeof window.Auth?.authFetch !== "function" && typeof window.Auth?.authHeaders !== "function") {
     throw new Error("登录模块尚未就绪，请刷新页面后重试");
@@ -212,8 +272,31 @@ async function loadSettingsForm() {
   if (settingsEls.model) settingsEls.model.value = settings.openai_model || "";
   if (settingsEls.apiKey) settingsEls.apiKey.value = "";
   applyChatAgentSettings(settings);
+  applyPerformanceSettings(settings.performance || {});
   renderSettingsStatus(settings);
   return settings;
+}
+
+function applyPerformanceSettings(perf) {
+  if (settingsEls.maxWorkers) settingsEls.maxWorkers.value = String(perf.max_workers ?? 4);
+  if (settingsEls.autoIngest) settingsEls.autoIngest.checked = perf.auto_ingest_on_new_chat !== false;
+  if (settingsEls.bootstrapLookback) settingsEls.bootstrapLookback.value = String(perf.bootstrap_lookback_days ?? 90);
+  if (settingsEls.annualMaxAge) settingsEls.annualMaxAge.value = String(perf.annual_max_age_days ?? 120);
+  if (settingsEls.validationRounds) settingsEls.validationRounds.value = String(perf.validation_max_rounds ?? 2);
+  if (settingsEls.placementRounds) settingsEls.placementRounds.value = String(perf.chart_placement_max_rounds ?? 2);
+  if (settingsEls.skipReviseScore) settingsEls.skipReviseScore.value = String(perf.validation_skip_revise_min_score ?? 88);
+}
+
+function collectPerformancePayload() {
+  return validatePerformancePayload({
+    max_workers: Number(settingsEls.maxWorkers?.value || 4),
+    auto_ingest_on_new_chat: Boolean(settingsEls.autoIngest?.checked),
+    bootstrap_lookback_days: Number(settingsEls.bootstrapLookback?.value || 90),
+    annual_max_age_days: Number(settingsEls.annualMaxAge?.value || 120),
+    validation_max_rounds: Number(settingsEls.validationRounds?.value || 2),
+    chart_placement_max_rounds: Number(settingsEls.placementRounds?.value || 2),
+    validation_skip_revise_min_score: Number(settingsEls.skipReviseScore?.value || 88),
+  });
 }
 
 function syncSettingsButtonsVisible(visible = true) {
@@ -233,6 +316,7 @@ function openSettingsModal() {
   }
 
   settingsEls.modal?.classList.remove("hidden");
+  document.body.classList.add("settings-modal-open");
   renderSettingsLoading();
   if (window.App?.isMobileLayout?.()) {
     window.App.closeMobileRail?.();
@@ -243,12 +327,13 @@ function openSettingsModal() {
     if (settingsEls.status) {
       settingsEls.status.innerHTML = `<span class="settings-pill warn">${error.message || "加载失败"}</span>`;
     }
-    showSettingsError(error.message || "无法加载 API 设置");
+    showSettingsError(error.message || "无法加载设置");
   });
 }
 
 function closeSettingsModal() {
   settingsEls.modal?.classList.add("hidden");
+  document.body.classList.remove("settings-modal-open");
 }
 
 async function saveSettings(event) {
@@ -260,6 +345,7 @@ async function saveSettings(event) {
     openai_model: settingsEls.model?.value?.trim() ?? "",
     chat_max_steps: Number.isFinite(steps) ? Math.max(1, Math.min(8, steps)) : 4,
     chat_agent_mode: settingsEls.chatAgentMode?.value === "single" ? "single" : "loop",
+    performance: collectPerformancePayload(),
   };
   const apiKey = settingsEls.apiKey?.value?.trim();
   if (apiKey) body.openai_api_key = apiKey;
@@ -269,6 +355,7 @@ async function saveSettings(event) {
   });
   if (settingsEls.apiKey) settingsEls.apiKey.value = "";
   applyChatAgentSettings(payload.settings);
+  applyPerformanceSettings(payload.settings?.performance || {});
   renderSettingsStatus(payload.settings);
   showSettingsMessage("设置已保存");
   closeSettingsModal();
@@ -303,12 +390,20 @@ async function clearSettingsKey() {
   showSettingsMessage("已清除个人 API Key");
 }
 
+function openSettingsOnTab(tabId) {
+  openSettingsModal();
+  setSettingsTab(tabId);
+}
+
 function bindSettingsEvents() {
   initSettingsElements();
+  bindSettingsTabs();
   document.querySelectorAll(".js-open-settings").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
-      openSettingsModal();
+      const tab = button.getAttribute("data-settings-open");
+      if (tab) openSettingsOnTab(tab);
+      else openSettingsModal();
     });
   });
   settingsEls.railOpenBtn?.addEventListener("click", (event) => {
@@ -370,6 +465,7 @@ function bindChatAgentRailControls() {
 }
 
 window.openSettingsModal = openSettingsModal;
+window.openSettingsOnTab = openSettingsOnTab;
 window.loadUserSettings = loadSettingsForm;
 window.applyChatAgentSettings = applyChatAgentSettings;
 window.syncSettingsButtonsVisible = syncSettingsButtonsVisible;

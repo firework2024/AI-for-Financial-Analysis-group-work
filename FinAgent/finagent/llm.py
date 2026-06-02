@@ -7,7 +7,11 @@ from typing import Any
 from .env import get_env
 from .llm_settings import has_llm_api_key, llm_api_key, llm_base_url, llm_model
 from .report_format import normalize_section_text
-from .report_writing import annual_director_structure_guide, annual_director_system_prompt
+from .report_writing import (
+    FUNDAMENTAL_NARRATIVE_SECTION,
+    fundamental_narrative_system_prompt,
+    fundamental_narrative_writing_guide,
+)
 
 
 def _openai_client(*, timeout: float | None = None):
@@ -74,29 +78,34 @@ def financial_analysis_agent(
     )
 
 
-def investment_director_analysis(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
+def fundamental_narrative_analysis(
+    mda_text: str,
+    financial_analysis: dict[str, Any],
+    company_context: dict[str, Any],
+) -> str:
     from .progress import info
 
+    section = FUNDAMENTAL_NARRATIVE_SECTION
     if not has_llm_api_key():
-        info("投资总监分析：未配置 API Key，使用本地规则摘要模式")
-        return normalize_section_text(_local_summary(mda_text, financial_analysis, company_context), "投资总监分析")
+        info(f"{section}：未配置 API Key，使用本地规则摘要模式")
+        return normalize_section_text(_local_summary(mda_text, financial_analysis, company_context), section)
 
     client = _openai_client()
     model = llm_model()
-    info(f"调用 LLM (investment_director_analysis): model={model}")
-    prompt = _build_prompt(mda_text, financial_analysis, company_context)
+    info(f"调用 LLM (fundamental_narrative_analysis): model={model}")
+    prompt = _build_fundamental_narrative_prompt(mda_text, financial_analysis, company_context)
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
             messages=[
-                {"role": "system", "content": annual_director_system_prompt()},
+                {"role": "system", "content": fundamental_narrative_system_prompt()},
                 {"role": "user", "content": prompt},
             ],
             max_tokens=int(get_env("OPENAI_DIRECTOR_MAX_TOKENS", "4096")),
         )
     )
-    info("投资总监分析 LLM 调用完成")
-    return normalize_section_text(_clean_model_text(response.choices[0].message.content or ""), "投资总监分析")
+    info(f"{section} LLM 调用完成")
+    return normalize_section_text(_clean_model_text(response.choices[0].message.content or ""), section)
 
 
 def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
@@ -206,7 +215,11 @@ def _extract_json_object(text: str) -> str:
     return cleaned[start : end + 1]
 
 
-def _build_prompt(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
+def _build_fundamental_narrative_prompt(
+    mda_text: str,
+    financial_analysis: dict[str, Any],
+    company_context: dict[str, Any],
+) -> str:
     metrics = financial_analysis.get("metrics") or []
     crosswalk = financial_analysis.get("mda_crosswalk") or []
     articulation = financial_analysis.get("articulation_checks") or []
@@ -229,14 +242,10 @@ def _build_prompt(mda_text: str, financial_analysis: dict[str, Any], company_con
         )
         + "MD&A 文本：\n"
         f"{mda_text[:12000]}\n\n"
-        + annual_director_structure_guide()
-        + "\n\n请融合财务信号、报表勾稽与 MD&A："
-        "将 mda_crosswalk 中的对照信息写入「利润驱动」「现金流质量」「营运资本」等对应段落，"
-        "用「报表显示…，MD&A 称…，因此…」的句式；禁止单独设「MD&A与报表勾稽」章节或小标题。"
-        "正文与「核心矛盾汇总」表格均勿标注数据来源、字段名或 reviewed_signals/data_notes 引用；"
-        "可追溯性由报告末尾「字段来源概览」承担。"
-        "勿在投资总监正文中输出「字段来源概览」或字段引用表，该节由系统自动生成。"
-        "MD&A 未覆盖项写入数据局限。按上述结构输出完整分析。"
+        + fundamental_narrative_writing_guide()
+        + "\n\n请融合财务信号、报表勾稽与 MD&A，"
+        "按公司实际情况自由组织正文，重点写清核心矛盾与数据依据；"
+        "有 crosswalk 时在相关段落自然对照；MD&A 未覆盖项写入数据局限。"
     )
 
 
@@ -335,7 +344,7 @@ def _local_summary(mda_text: str, financial_analysis: dict[str, Any], company_co
         f"本地摘要模式：{name} 的财务数据积极信号主要包括：{positives}。\n\n"
         f"消极或需要关注的数据信号主要包括：{negatives}。\n\n"
         f"MD&A 摘要：\n{mda_preview}\n\n"
-        "由于未配置 OPENAI_API_KEY，本次未调用外部大模型；以上为基于规则输出的投资总监占位总结。"
+        "由于未配置 OPENAI_API_KEY，本次未调用外部大模型；以上为基于规则输出的基本面叙事占位总结。"
     )
 
 

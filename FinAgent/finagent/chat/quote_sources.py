@@ -70,6 +70,49 @@ def _spot_usable(spot: dict[str, Any] | None) -> bool:
     )
 
 
+def fetch_eastmoney_kline_series(stock_code: str, *, limit: int = 260) -> list[dict[str, Any]]:
+    """拉取日 K 序列（米筐额度用尽时的量价备用源）。"""
+    code = normalize_stock_code(stock_code)
+    secid = eastmoney_secid(code)
+    lmt = max(30, min(int(limit), 1023))
+    params = {
+        "secid": secid,
+        "klt": "101",
+        "fqt": "1",
+        "lmt": str(lmt),
+        "end": "20500101",
+        "fields1": "f1",
+        "fields2": _KLINE_FIELDS,
+    }
+    try:
+        resp = requests.get(_KLINE_URL, params=params, headers=_EM_HEADERS, timeout=20)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception:
+        return []
+
+    klines = ((payload or {}).get("data") or {}).get("klines") or []
+    rows: list[dict[str, Any]] = []
+    for line in klines:
+        row = _parse_kline_row(line)
+        if not row.get("date") or row.get("close") is None:
+            continue
+        rows.append(
+            {
+                "date": row["date"],
+                "open": row.get("open"),
+                "high": row.get("high"),
+                "low": row.get("low"),
+                "close": row.get("close"),
+                "volume": row.get("volume"),
+                "total_turnover": row.get("amount"),
+                "change_pct": row.get("change_pct"),
+                "turnover_rate": row.get("turnover_rate"),
+            }
+        )
+    return rows
+
+
 def fetch_eastmoney_quote(stock_code: str, *, trade_date: date | None = None) -> dict[str, Any]:
     """拉取东方财富行情；若指定 trade_date 则优先取该日 K 线收盘，否则取最新快照。"""
     code = normalize_stock_code(stock_code)

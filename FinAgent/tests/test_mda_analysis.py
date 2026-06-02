@@ -70,7 +70,7 @@ def test_mda_crosswalk_links_statement_and_mda_text():
     assert "MD&A 相关表述" in md
 
 
-def test_annual_context_without_director_still_returns_structured_financial_analysis():
+def test_annual_context_without_narrative_still_returns_structured_financial_analysis():
     annual = {
         "stock_code": "600000",
         "sec_name": "测试公司",
@@ -100,9 +100,9 @@ def test_annual_context_without_director_still_returns_structured_financial_anal
         ],
     }
 
-    context = build_annual_context_from_store(annual, with_director=False)
+    context = build_annual_context_from_store(annual, with_narrative=False)
 
     assert context is not None
     assert "_financial_analysis_raw" in context
-    assert "investment_director" not in context
+    assert "fundamental_narrative" not in context
     assert "financial_years" in context

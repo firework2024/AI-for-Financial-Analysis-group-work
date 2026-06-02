@@ -104,14 +104,16 @@ def market_snapshot_is_stale(snapshot: dict[str, Any] | None, *, as_of: date | N
     end = str(snapshot.get("end_date") or "")[:10]
     if not end:
         return True
-    today = as_of or date.today()
+    from ..stock_utils import calendar_trading_as_of
+
+    ref = calendar_trading_as_of(as_of) if as_of is not None else calendar_trading_as_of(date.today())
     try:
         last = date.fromisoformat(end)
     except ValueError:
         return True
-    if today.weekday() >= 5:
-        return (today - last).days > 3
-    return last < today - timedelta(days=1)
+    if ref.weekday() >= 5:
+        return (ref - last).days > 3
+    return last < ref - timedelta(days=1)
 
 
 def upsert_market_snapshot(

@@ -8,7 +8,18 @@ from typing import Any
 
 from ..env import get_env
 from ..llm_settings import LLMSettings
+from ..runtime_prefs import resolve_runtime_prefs_map
 from .crypto import decrypt_secret, encrypt_secret
+
+PERFORMANCE_FIELD_MAP = {
+    "max_workers": "FINAGENT_MAX_WORKERS",
+    "auto_ingest_on_new_chat": "FINAGENT_AUTO_INGEST_ON_NEW_CHAT",
+    "annual_max_age_days": "FINAGENT_ANNUAL_MAX_AGE_DAYS",
+    "validation_max_rounds": "FINAGENT_VALIDATION_MAX_ROUNDS",
+    "chart_placement_max_rounds": "FINAGENT_CHART_PLACEMENT_MAX_ROUNDS",
+    "validation_skip_revise_min_score": "FINAGENT_VALIDATION_SKIP_REVISE_MIN_SCORE",
+    "bootstrap_lookback_days": "FINAGENT_BOOTSTRAP_LOOKBACK_DAYS",
+}
 
 
 @dataclass
@@ -79,6 +90,9 @@ class UserSettingsStore:
             existing = self.load_raw(user_id)
             if "openai_api_key_enc" in existing:
                 payload["openai_api_key_enc"] = existing["openai_api_key_enc"]
+        existing = self.load_raw(user_id)
+        if isinstance(existing.get("performance"), dict):
+            payload["performance"] = existing["performance"]
         path = self._path(user_id)
         with self._lock:
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -94,6 +108,7 @@ class UserSettingsStore:
         openai_model: str | None = None,
         chat_agent_mode: str | None = None,
         chat_max_steps: int | None = None,
+        performance: dict[str, Any] | None = None,
     ) -> UserAPISettings:
         from datetime import datetime
 
@@ -111,9 +126,30 @@ class UserSettingsStore:
             current.chat_agent_mode = mode if mode in {"loop", "single"} else None
         if chat_max_steps is not None:
             current.chat_max_steps = max(1, min(8, int(chat_max_steps)))
+        if performance is not None:
+            self._merge_performance(user_id, performance)
         current.updated_at = datetime.now().isoformat(timespec="seconds")
         self.save(user_id, current)
         return current
+
+    def _merge_performance(self, user_id: str, patch: dict[str, Any]) -> None:
+        raw = self.load_raw(user_id)
+        perf = dict(raw.get("performance") or {}) if isinstance(raw.get("performance"), dict) else {}
+        for field, env_key in PERFORMANCE_FIELD_MAP.items():
+            if field not in patch or patch[field] is None:
+                continue
+            value = patch[field]
+            if field == "auto_ingest_on_new_chat":
+                perf[env_key] = "true" if bool(value) else "false"
+            else:
+                perf[env_key] = str(value).strip()
+        raw["performance"] = perf
+        path = self._path(user_id)
+        with self._lock:
+            path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def runtime_prefs_map(self, user_id: str) -> dict[str, str]:
+        return resolve_runtime_prefs_map(self.load_raw(user_id))
 
     def to_llm_settings(self, user_id: str) -> LLMSettings:
         settings = self.load(user_id)
@@ -142,7 +178,33 @@ class UserSettingsStore:
             "chat_agent_mode": settings.chat_agent_mode or _default_chat_agent_mode(),
             "chat_max_steps": settings.chat_max_steps if settings.chat_max_steps is not None else _default_chat_max_steps(),
             "updated_at": settings.updated_at,
+            "performance": public_performance_settings(self.load_raw(user_id)),
         }
+
+
+def public_performance_settings(raw: dict[str, Any] | None = None) -> dict[str, Any]:
+    """前端展示用：合并 .env 与用户 performance 后的有效值。"""
+    effective = resolve_runtime_prefs_map(raw or {})
+    auto_raw = effective.get("FINAGENT_AUTO_INGEST_ON_NEW_CHAT", "true").lower()
+    return {
+        "max_workers": _safe_int(effective.get("FINAGENT_MAX_WORKERS"), 4, 1, 12),
+        "auto_ingest_on_new_chat": auto_raw not in {"0", "false", "no", "off"},
+        "annual_max_age_days": _safe_int(effective.get("FINAGENT_ANNUAL_MAX_AGE_DAYS"), 120, 0, 3650),
+        "validation_max_rounds": _safe_int(effective.get("FINAGENT_VALIDATION_MAX_ROUNDS"), 2, 0, 5),
+        "chart_placement_max_rounds": _safe_int(effective.get("FINAGENT_CHART_PLACEMENT_MAX_ROUNDS"), 2, 1, 5),
+        "validation_skip_revise_min_score": _safe_int(
+            effective.get("FINAGENT_VALIDATION_SKIP_REVISE_MIN_SCORE"), 88, 0, 100
+        ),
+        "bootstrap_lookback_days": _safe_int(effective.get("FINAGENT_BOOTSTRAP_LOOKBACK_DAYS"), 90, 30, 365),
+    }
+
+
+def _safe_int(raw: str | None, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(float(str(raw or default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
 
 
 def _default_chat_agent_mode() -> str:

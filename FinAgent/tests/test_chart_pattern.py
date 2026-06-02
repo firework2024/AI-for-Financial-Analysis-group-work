@@ -42,3 +42,4 @@ def test_margin_balances_detects_uptrend():
 def test_moving_averages_note_is_morphology():
     note = chart_pattern_note("moving_averages", _price_data(rising=True))
     assert any(word in note for word in ("均线", "趋势", "震荡", "缠绕", "之上", "之下"))
+    assert "方向尚不明朗" not in note

@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..chat.rag import chunk_text, format_hits, search_chunks
 from ..pdf_text import MdaExtraction
 
 
@@ -35,6 +34,9 @@ def mda_storage_payload(mda: MdaExtraction) -> dict[str, Any]:
 
 def search_mda_hits(mda_text: str, query: str, *, top_k: int = 4) -> list[dict[str, Any]]:
     """在已存 MD&A 全文中按段落分块检索，保留原文格式。"""
+    # 延迟导入以打断 datastore <-> chat 的模块初始化循环依赖。
+    from ..chat.rag import chunk_text, format_hits, search_chunks
+
     text = normalize_mda_text(mda_text)
     if not text:
         return []

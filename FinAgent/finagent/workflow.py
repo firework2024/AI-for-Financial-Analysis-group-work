@@ -9,7 +9,7 @@ from typing import Any
 from .env import load_dotenv
 from .fallback import apply_financial_fallbacks
 from .financial_analysis import analyze_financials
-from .llm import investment_director_analysis, mda_summary_agent
+from .llm import fundamental_narrative_analysis, mda_summary_agent
 from .mda_analysis import enrich_financial_analysis_with_mda
 from .pdf_text import extract_mda
 from .report import build_annual_json_payload, render_markdown
@@ -104,14 +104,14 @@ def run(options: WorkflowOptions) -> dict[str, Any]:
     financial_analysis = enrich_financial_analysis_with_mda(financial_analysis, mda.mda_text)
     info("MD&A 交叉验证完成")
 
-    # ── 第 6 步：投资总监分析 ──
-    section("步骤 6/7：投资总监智能体分析")
+    # ── 第 6 步：经营与财务叙事 ──
+    section("步骤 6/7：经营与财务叙事")
     step("MD&A 摘要生成")
     mda_brief = mda_summary_agent(mda.mda_text, company_context)
     info(f"MD&A 摘要: {mda_brief[:120]}...")
-    step("投资总监综合分析", "整合 MD&A + 财务分析 + 公司上下文")
-    director = investment_director_analysis(mda.mda_text, financial_analysis, company_context)
-    info("投资总监分析完成")
+    step("基本面叙事合成", "整合 MD&A + 财务分析 + 公司上下文")
+    narrative = fundamental_narrative_analysis(mda.mda_text, financial_analysis, company_context)
+    info("经营与财务叙事完成")
 
     # ── 第 7 步：生成报告 ──
     section("步骤 7/7：生成输出报告")
@@ -126,7 +126,7 @@ def run(options: WorkflowOptions) -> dict[str, Any]:
         },
         "financial_data": financial_data,
         "financial_analysis": financial_analysis,
-        "investment_director": director,
+        "fundamental_narrative": narrative,
     }
 
     output_path = Path(options.output) if options.output else root / "outputs" / f"{report.stock_code}_{report.report_year}_report.md"

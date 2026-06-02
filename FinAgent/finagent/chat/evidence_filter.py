@@ -182,10 +182,11 @@ def prune_tools_payload(payload: dict[str, Any] | None, intent: QueryIntent) -> 
     if not payload or not strict_answer_required(intent):
         return payload
 
+    from .prompts import CHAT_NARROW_GUIDANCE
+
     out = copy.deepcopy(payload)
     out["answer_guidance"] = (
-        f"{out.get('answer_guidance') or ''} "
-        "【硬性】只回答 question 直接问到的内容；禁止附带用户未提及的指标、章节或背景数据。"
+        f"{out.get('answer_guidance') or ''} {CHAT_NARROW_GUIDANCE}"
     ).strip()
 
     out["live_data"] = _slim_live_block(out.get("live_data"), intent)

@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css?v=20260601datastatus">
+  <link rel="stylesheet" href="/assets/app.css?v=20260602ui">
 </head>
 <body class="auth-locked">
   <div id="toastHost" class="toast-host" aria-live="polite"></div>
@@ -81,34 +81,46 @@
           </div>
           <button class="rail-settings-btn js-open-settings" type="button" id="openSettingsBtn">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-            API 设置
+            设置
           </button>
         </div>
 
       <details class="rail-analyze">
         <summary class="rail-analyze-trigger">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
-          运行分析
+          生成多智能体研报
         </summary>
-        <form id="analyzeForm" class="analyze-form">
-          <input name="stock" type="text" maxlength="6" placeholder="股票代码 600519" required inputmode="numeric">
-          <input name="as_of" type="date">
-          <select name="mode">
-            <option value="multi">多智能体研报</option>
-            <option value="annual">年报分析</option>
-          </select>
-          <details>
-            <summary>高级</summary>
-            <label class="check"><input name="no_download_cache" type="checkbox"><span>重下 PDF</span></label>
-            <input name="years" type="number" min="1" max="10" value="3" placeholder="财务年数">
-            <input name="lookback_days" type="number" min="30" max="520" value="260" placeholder="回看天数">
-          </details>
-          <button class="rail-primary rail-analyze-submit" type="submit" id="submitBtn">开始分析</button>
+        <form id="analyzeForm" class="analyze-form" novalidate>
+          <div class="analyze-form-fields">
+            <label class="analyze-field">
+              <span class="analyze-field-label">股票代码</span>
+              <input name="stock" type="text" maxlength="6" placeholder="如 600519" required inputmode="numeric">
+            </label>
+            <label class="analyze-field">
+              <span class="analyze-field-label">截止日期</span>
+              <input name="as_of" type="date" title="非交易日将自动取最近交易日">
+            </label>
+          </div>
+          <button type="button" class="analyze-advanced-toggle" id="analyzeAdvancedToggle" aria-expanded="false" aria-controls="analyzeAdvancedPanel">
+            <span>高级选项</span>
+            <span class="analyze-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="analyze-advanced-panel hidden" id="analyzeAdvancedPanel">
+            <div class="analyze-check-group">
+              <label class="check"><input name="use_cached_only" type="checkbox" value="1"><span>仅用本地数据（量价+年报）</span></label>
+              <label class="check"><input name="force_refresh" type="checkbox" value="1"><span>强制刷新外网数据</span></label>
+            </div>
+            <label class="analyze-field analyze-field--compact">
+              <span class="analyze-field-label">回看天数</span>
+              <input name="lookback_days" type="number" min="30" max="520" value="260" inputmode="numeric">
+            </label>
+          </div>
+          <button class="rail-primary rail-analyze-submit" type="submit" id="submitBtn">开始生成</button>
+          <div class="task-box hidden" id="taskBox">
+            <div class="task-row"><span class="spinner" id="taskSpinner"></span><span id="taskMessage">处理中…</span></div>
+            <div class="task-meta" id="taskMeta"></div>
+          </div>
         </form>
-        <div class="task-box hidden" id="taskBox">
-          <div class="task-row"><span class="spinner" id="taskSpinner"></span><span id="taskMessage">处理中…</span></div>
-          <div class="task-meta" id="taskMeta"></div>
-        </div>
       </details>
       </div>
     </aside>
@@ -116,12 +128,14 @@
     <div class="rail-overlay" id="railOverlay" aria-hidden="true"></div>
 
     <main class="stage" id="mainStage">
-      <button class="rail-expand-tab hidden" type="button" id="railExpandBtn" aria-label="展开侧栏" title="展开侧栏">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-      </button>
-      <button class="rail-settings-tab hidden" type="button" id="railSettingsBtn" aria-label="API 设置" title="API 设置">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-      </button>
+      <div class="rail-edge-controls" id="railEdgeControls" aria-hidden="true">
+        <button class="rail-expand-tab hidden" type="button" id="railExpandBtn" aria-label="展开侧栏" title="展开侧栏">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="rail-settings-tab hidden js-open-settings" type="button" id="railSettingsBtn" aria-label="设置" title="设置">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
+      </div>
       <header class="mobile-bar" id="mobileBar">
         <button class="mobile-icon-btn" type="button" id="mobileMenuBtn" aria-label="打开菜单">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
@@ -130,7 +144,7 @@
           <span class="mobile-bar-title" id="mobileBarTitle">FinAgent</span>
           <span class="mobile-bar-sub" id="mobileBarSub"></span>
         </div>
-        <button class="mobile-icon-btn js-open-settings" type="button" id="mobileSettingsBtn" aria-label="API 设置">
+        <button class="mobile-icon-btn js-open-settings" type="button" id="mobileSettingsBtn" aria-label="设置">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         </button>
         <button class="mobile-icon-btn" type="button" id="mobileNewChatBtn" aria-label="新对话">
@@ -139,30 +153,58 @@
       </header>
       <!-- Welcome / home -->
       <section class="pane pane-welcome" id="welcomeView">
+        <div class="welcome-mesh" aria-hidden="true"></div>
         <div class="welcome-inner">
-          <p class="welcome-eyebrow">A 股智能研究平台</p>
-          <h1 class="welcome-title">从年报到多维度研报<br><span>一站式财务分析</span></h1>
-          <p class="welcome-lead">直接问公司名或指标即可（如「平安银行净利润」「比亚迪 PE」），系统会自动识别代码并入库；侧栏股票可选。也可拖 PDF、绑定报告追问。</p>
+          <div class="welcome-brand">
+            <img class="welcome-logo" src="/assets/logo.png" width="44" height="44" alt="">
+            <span class="welcome-brand-name">FinAgent</span>
+          </div>
+          <h1 class="welcome-title">
+            <span class="welcome-title-main">A 股多智能体研报</span>
+            <span class="welcome-title-sub">量价 · 基本面 · 对话一体</span>
+          </h1>
+          <p class="welcome-lead">输入公司名或 6 位代码即可开始；侧栏生成研报，也可上传 PDF、绑定报告后继续追问。</p>
           <div class="welcome-actions">
             <button class="welcome-cta" type="button" id="welcomeChatBtn">开始对话</button>
-            <button class="welcome-cta ghost" type="button" id="welcomeReportsBtn">浏览报告</button>
+            <button class="welcome-cta welcome-cta--ghost" type="button" id="welcomeReportsBtn">浏览报告</button>
           </div>
-          <div class="welcome-grid">
-            <article class="welcome-card">
-              <div class="welcome-card-icon annual">年</div>
-              <h3>年报深度分析</h3>
-              <p>巨潮 PDF + 米筐三表，规则引擎与 LLM 信号审核。</p>
-            </article>
-            <article class="welcome-card">
-              <div class="welcome-card-icon multi">研</div>
-              <h3>多智能体研报</h3>
-              <p>量价、估值、资金、宏观多章节，图表编排与形态图注。</p>
-            </article>
-            <article class="welcome-card">
-              <div class="welcome-card-icon chat">聊</div>
-              <h3>RAG 研究对话</h3>
-              <p>PDF 解析、报告追问，对话中可自动拉最新行情数据。</p>
-            </article>
+          <div class="welcome-features">
+            <button type="button" class="welcome-feature" id="welcomeMultiBtn">
+              <span class="welcome-feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+              </span>
+              <span class="welcome-feature-text">
+                <strong>生成多智能体研报</strong>
+                <span>量价、估值、资金与经营质量多章节成稿</span>
+              </span>
+              <span class="welcome-feature-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </span>
+            </button>
+            <button type="button" class="welcome-feature" id="welcomeChatCardBtn">
+              <span class="welcome-feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a4 4 0 01-4 4H7l-4 4V7a4 4 0 014-4h10a4 4 0 014 4z"/></svg>
+              </span>
+              <span class="welcome-feature-text">
+                <strong>研究对话</strong>
+                <span>PDF 解析、报告追问，自动识别股票并入库</span>
+              </span>
+              <span class="welcome-feature-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </span>
+            </button>
+            <button type="button" class="welcome-feature js-open-settings" id="welcomeSettingsBtn" data-settings-open="perf">
+              <span class="welcome-feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+              </span>
+              <span class="welcome-feature-text">
+                <strong>偏好设置</strong>
+                <span>模型、性能与 API 配置</span>
+              </span>
+              <span class="welcome-feature-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </span>
+            </button>
           </div>
           <p class="welcome-disclaimer" id="welcomeDisclaimer"></p>
         </div>
@@ -219,6 +261,10 @@
                 <span class="context-pill muted">拖 PDF 或绑定报告后开始提问</span>
               </div>
               <div class="composer-actions">
+                <button class="composer-action" type="button" id="chatSyncDataBtn" disabled title="同步行情、财务与年报到本地库">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                  <span data-sync-label>同步数据</span>
+                </button>
                 <button class="composer-action" type="button" id="chatAttachReportBtn" disabled>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
                   <span data-bind-label>绑定报告</span>
@@ -258,7 +304,7 @@
                   <p class="report-page-sub" id="reportSubtitle"></p>
                 </div>
               </div>
-              <div class="stage-actions">
+              <div class="stage-actions report-stage-actions">
                 <button class="ghost-btn" type="button" id="reportOutlineToggleHead" title="展开目录">目录</button>
                 <button class="ghost-btn" type="button" id="openHtmlBtn">HTML</button>
                 <button class="ghost-btn primary" type="button" id="askReportBtn">继续追问</button>
@@ -308,59 +354,104 @@
   </div>
 
   <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <div class="modal-card modal-card-wide">
-      <div class="modal-head">
-        <h3 id="settingsTitle">大模型 API 设置</h3>
+    <div class="modal-card modal-card-settings">
+      <div class="modal-drag-handle" aria-hidden="true"></div>
+      <div class="modal-head settings-modal-head">
+        <div class="settings-modal-title-wrap">
+          <h3 id="settingsTitle">偏好设置</h3>
+          <p class="settings-modal-sub">大模型 API · 对话推理 · 研报性能</p>
+        </div>
         <button class="modal-close" type="button" id="settingsClose" aria-label="关闭">×</button>
       </div>
-      <p class="modal-lead">配置后将优先于服务器默认 `.env` 使用。密钥加密保存在服务器，仅你本人可用。</p>
       <form id="settingsForm" class="settings-form">
-        <div class="settings-status" id="settingsStatus"></div>
-        <label class="settings-field">
-          <span>API Key</span>
-          <input id="settingsApiKey" type="password" autocomplete="off" placeholder="留空则不修改；保存新 Key 会覆盖">
-        </label>
-        <label class="settings-field">
-          <span>Base URL</span>
-          <input id="settingsBaseUrl" type="url" placeholder="https://api.openai.com/v1">
-        </label>
-        <label class="settings-field">
-          <span>模型名称</span>
-          <input id="settingsModel" type="text" placeholder="gpt-4.1-mini">
-        </label>
-        <div class="settings-section">
-          <span class="settings-section-title">对话推理</span>
-          <p class="settings-section-lead">与侧栏同步；快速模式不使用多步规划。</p>
-          <div class="agent-control agent-control--modal" id="settingsAgentControl" data-agent-control>
-            <div class="agent-mode-tabs" role="group" aria-label="对话推理模式">
-              <button type="button" class="agent-mode-tab is-active" data-agent-mode-tab="loop" aria-pressed="true">
-                <span class="agent-mode-tab-label">深度</span>
-                <span class="agent-mode-tab-hint">多轮工具</span>
-              </button>
-              <button type="button" class="agent-mode-tab" data-agent-mode-tab="single" aria-pressed="false">
-                <span class="agent-mode-tab-label">快速</span>
-                <span class="agent-mode-tab-hint">单次预取</span>
-              </button>
-            </div>
-            <input type="hidden" id="settingsChatAgentMode" value="loop" data-agent-mode-input>
-            <div class="agent-steps" data-agent-steps>
-              <div class="agent-steps-top">
-                <span class="agent-steps-label">思考步数</span>
-                <span class="agent-steps-value" data-agent-steps-value>4</span>
-              </div>
-              <div class="agent-steps-bar">
-                <button type="button" class="agent-step-nudge" data-agent-steps-down aria-label="减少步数">−</button>
-                <input type="range" class="agent-steps-range" data-agent-steps-range min="1" max="8" step="1" value="4" aria-label="思考步数 1 到 8">
-                <button type="button" class="agent-step-nudge" data-agent-steps-up aria-label="增加步数">+</button>
-              </div>
-              <input type="hidden" id="settingsChatMaxSteps" value="4" data-agent-steps-input>
+        <div class="settings-status" id="settingsStatus" aria-live="polite"></div>
+        <div class="settings-tabs" role="tablist" aria-label="设置分类">
+          <button type="button" class="settings-tab is-active" data-settings-tab="llm" role="tab" aria-selected="true">大模型</button>
+          <button type="button" class="settings-tab" data-settings-tab="chat" role="tab" aria-selected="false">对话</button>
+          <button type="button" class="settings-tab" data-settings-tab="perf" role="tab" aria-selected="false">性能</button>
+        </div>
+        <div class="settings-scroll">
+          <div class="settings-panel" data-settings-panel="llm" role="tabpanel">
+            <p class="settings-panel-lead">个人配置优先于服务器默认 <code>.env</code>；密钥加密存储，仅本账号可用。</p>
+            <label class="settings-field">
+              <span class="settings-field-label">API Key <small>留空表示不修改</small></span>
+              <input id="settingsApiKey" type="password" autocomplete="off" placeholder="sk-…" spellcheck="false">
+            </label>
+            <label class="settings-field">
+              <span class="settings-field-label">Base URL</span>
+              <input id="settingsBaseUrl" type="url" inputmode="url" placeholder="https://api.openai.com/v1">
+            </label>
+            <label class="settings-field">
+              <span class="settings-field-label">模型名称</span>
+              <input id="settingsModel" type="text" placeholder="gpt-4.1-mini" autocomplete="off">
+            </label>
+            <div class="settings-inline-actions">
+              <button class="ghost-btn" type="button" id="settingsTestBtn">测试连接</button>
+              <button class="ghost-btn" type="button" id="settingsClearKeyBtn">清除 Key</button>
             </div>
           </div>
+          <div class="settings-panel hidden" data-settings-panel="chat" role="tabpanel" hidden>
+            <p class="settings-panel-lead">与输入框上方「推理」条同步；快速模式为单次预取，不启用多步规划。</p>
+            <div class="agent-control agent-control--modal" id="settingsAgentControl" data-agent-control>
+              <div class="agent-mode-tabs" role="group" aria-label="对话推理模式">
+                <button type="button" class="agent-mode-tab is-active" data-agent-mode-tab="loop" aria-pressed="true">
+                  <span class="agent-mode-tab-label">深度</span>
+                  <span class="agent-mode-tab-hint">多轮工具</span>
+                </button>
+                <button type="button" class="agent-mode-tab" data-agent-mode-tab="single" aria-pressed="false">
+                  <span class="agent-mode-tab-label">快速</span>
+                  <span class="agent-mode-tab-hint">单次预取</span>
+                </button>
+              </div>
+              <input type="hidden" id="settingsChatAgentMode" value="loop" data-agent-mode-input>
+              <div class="agent-steps" data-agent-steps>
+                <div class="agent-steps-top">
+                  <span class="agent-steps-label">思考步数</span>
+                  <span class="agent-steps-value" data-agent-steps-value>4</span>
+                </div>
+                <div class="agent-steps-bar">
+                  <button type="button" class="agent-step-nudge" data-agent-steps-down aria-label="减少步数">−</button>
+                  <input type="range" class="agent-steps-range" data-agent-steps-range min="1" max="8" step="1" value="4" aria-label="思考步数 1 到 8">
+                  <button type="button" class="agent-step-nudge" data-agent-steps-up aria-label="增加步数">+</button>
+                </div>
+                <input type="hidden" id="settingsChatMaxSteps" value="4" data-agent-steps-input>
+              </div>
+            </div>
+          </div>
+          <div class="settings-panel hidden" data-settings-panel="perf" role="tabpanel" hidden>
+            <p class="settings-panel-lead">影响多智能体研报生成、校验轮次与对话入库速度；数值过大可能增加等待时间。</p>
+            <label class="settings-field settings-field--row">
+              <span class="settings-field-label">并行工作线程 <small>1–12</small></span>
+              <input id="settingsMaxWorkers" type="number" min="1" max="12" step="1" inputmode="numeric">
+            </label>
+            <label class="settings-field settings-field--check settings-field--row">
+              <span class="settings-field-label">新对话自动入库 <small>行情 / 财务 / 年报</small></span>
+              <input id="settingsAutoIngest" type="checkbox">
+            </label>
+            <label class="settings-field settings-field--row">
+              <span class="settings-field-label">入库回看天数 <small>30–365</small></span>
+              <input id="settingsBootstrapLookback" type="number" min="30" max="365" step="1" inputmode="numeric">
+            </label>
+            <label class="settings-field settings-field--row">
+              <span class="settings-field-label">年报缓存有效期 <small>天，0 为不限制</small></span>
+              <input id="settingsAnnualMaxAge" type="number" min="0" max="3650" step="1" inputmode="numeric">
+            </label>
+            <label class="settings-field settings-field--row">
+              <span class="settings-field-label">正文校验轮次 <small>0–5</small></span>
+              <input id="settingsValidationRounds" type="number" min="0" max="5" step="1" inputmode="numeric">
+            </label>
+            <label class="settings-field settings-field--row">
+              <span class="settings-field-label">图表排版轮次 <small>1–5</small></span>
+              <input id="settingsPlacementRounds" type="number" min="1" max="5" step="1" inputmode="numeric">
+            </label>
+            <label class="settings-field settings-field--row">
+              <span class="settings-field-label">跳过重写最低分 <small>0–100</small></span>
+              <input id="settingsSkipReviseScore" type="number" min="0" max="100" step="1" inputmode="numeric">
+            </label>
+          </div>
         </div>
-        <div class="settings-actions">
-          <button class="ghost-btn" type="button" id="settingsTestBtn">测试连接</button>
-          <button class="ghost-btn" type="button" id="settingsClearKeyBtn">清除 Key</button>
-          <button class="auth-submit settings-save" type="submit">保存</button>
+        <div class="settings-actions settings-actions-sticky">
+          <button class="auth-submit settings-save" type="submit">保存全部</button>
         </div>
       </form>
     </div>
@@ -418,8 +509,8 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
   <script src="/assets/auth.js?v=20260531e"></script>
-  <script src="/assets/settings.js?v=20260531agentcompact"></script>
-  <script src="/assets/app.js?v=20260531bootstraptip"></script>
-  <script src="/assets/chat.js?v=20260601fixstack4"></script>
+  <script src="/assets/settings.js?v=20260602ui"></script>
+  <script src="/assets/app.js?v=20260602ui"></script>
+  <script src="/assets/chat.js?v=20260602coveragefix"></script>
 </body>
 </html>

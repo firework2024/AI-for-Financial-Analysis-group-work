@@ -119,22 +119,24 @@ def local_chart_need(
     sections: dict[str, str],
     plan: dict[str, Any],
 ) -> dict[str, Any]:
-    """无 API：按章节正文关键词 + 默认候选决定子集。"""
-    _ = plan
+    """无 API：按 Plan 节名/kind/data 候选 + 正文关键词决定子集。"""
+    from .plan_execution import chart_candidates_for_plan_section, section_chart_limit_for_plan
+
     charts: list[dict[str, Any]] = []
     skip: list[dict[str, str]] = []
     used: set[str] = set()
 
-    for section_name, candidates in DEFAULT_SECTION_CHART_CANDIDATES.items():
-        if section_name == CHART_INTERPRETATION_SECTION or section_name not in sections:
+    for section_name in sections:
+        if section_name == CHART_INTERPRETATION_SECTION:
             continue
         content = str(sections.get(section_name) or "")
         if not content.strip():
             continue
         structure = extract_section_structure({section_name: content}).get(section_name, [])
+        chart_limit = section_chart_limit_for_plan(section_name, plan)
         picked = 0
-        for chart_key in candidates:
-            if picked >= MAX_CHARTS_PER_SECTION or chart_key in used:
+        for chart_key in chart_candidates_for_plan_section(section_name, plan):
+            if picked >= chart_limit or chart_key in used:
                 continue
             if not data_available_for_chart(chart_key, data):
                 continue
@@ -150,7 +152,7 @@ def local_chart_need(
                     "section": section_name,
                     "anchor": anchor,
                     "needed": True,
-                    "reason": "本地规则：正文与图类型匹配",
+                    "reason": "本地规则：Plan 候选图 + 正文匹配",
                     "fallback_template": chart_key,
                 }
             )
@@ -158,12 +160,13 @@ def local_chart_need(
             picked += 1
 
     if not charts and data_available_for_chart("price_volume", data):
+        fallback_section = MARKET_TECH_SECTION if MARKET_TECH_SECTION in sections else next(iter(sections), MARKET_TECH_SECTION)
         charts.extend(
             [
                 {
                     "chart_key": "price_volume",
                     "caption": CHART_CAPTIONS["price_volume"],
-                    "section": MARKET_TECH_SECTION if MARKET_TECH_SECTION in sections else next(iter(sections), MARKET_TECH_SECTION),
+                    "section": fallback_section,
                     "anchor": "价格",
                     "needed": True,
                     "fallback_template": "price_volume",
@@ -171,7 +174,7 @@ def local_chart_need(
                 {
                     "chart_key": "nav_curve",
                     "caption": CHART_CAPTIONS.get("nav_curve", "净值曲线"),
-                    "section": MARKET_TECH_SECTION if MARKET_TECH_SECTION in sections else next(iter(sections), MARKET_TECH_SECTION),
+                    "section": fallback_section,
                     "anchor": "走势",
                     "needed": True,
                     "fallback_template": "nav_curve",
@@ -224,7 +227,7 @@ def chart_need_agent(
             + '\n返回 {"charts":[{"chart_key","caption","section","anchor","needed",true,"reason","fallback_template"}],'
             + '"skip":[{"chart_key","reason"}]}',
         )
-        return _sanitize_chart_need(result, fallback, sections)
+        return _sanitize_chart_need(result, fallback, sections, plan=plan)
     except Exception as exc:
         fallback["need_error"] = f"{type(exc).__name__}: {exc}"
         return fallback
@@ -508,7 +511,13 @@ def build_placement_from_chart_need(need: dict[str, Any], charts: dict[str, str]
     return {"placements": placements, "omitted": [], "unused": unused}
 
 
-def _sanitize_chart_need(result: dict[str, Any], fallback: dict[str, Any], sections: dict[str, str]) -> dict[str, Any]:
+def _sanitize_chart_need(
+    result: dict[str, Any],
+    fallback: dict[str, Any],
+    sections: dict[str, str],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     valid_sections = set(sections.keys()) - {CHART_INTERPRETATION_SECTION}
     charts: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -522,7 +531,7 @@ def _sanitize_chart_need(result: dict[str, Any], fallback: dict[str, Any], secti
             continue
         section = str(item.get("section") or "").strip()
         if section not in valid_sections:
-            section = suggest_section_for_chart(chart_key, sections) or MARKET_TECH_SECTION
+            section = suggest_section_for_chart(chart_key, sections, plan=plan) or MARKET_TECH_SECTION
         if section not in valid_sections:
             continue
         seen.add(chart_key)

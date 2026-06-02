@@ -127,27 +127,32 @@ class QueryIntent:
         if self.valuation_focus and self.focused_metrics:
             names = "、".join(self.focused_metrics)
             return (
-                f"【硬性】只回答「{names}」；逐只列出会话内股票，禁止写未提及的标的或其它指标；"
-                f"用 evidence_summary.valuation_facts / observations 中 fetch_factor 结果；"
-                f"无有效数值写「暂无」，勿编造。"
+                f"用户问「{names}」：逐只列出会话内股票；"
+                f"优先用 evidence_summary.valuation_facts / fetch_factor；"
+                f"缺失时可用 price×shares/净利润或 market_cap/净利润估算并注明口径；"
+                f"无有效输入写「暂无」，勿编造。"
             )
         if self.narrow_answer and self.focused_metrics:
+            from .prompts import CHAT_NARROW_GUIDANCE
+
             names = "、".join(self.focused_metrics)
-            return (
-                f"倾向：用户明确收窄到「{names}」，可先给核心数字；"
-                f"若对理解有帮助，可一两句补充口径或同比。"
-            )
+            return f"用户收窄到「{names}」。{CHAT_NARROW_GUIDANCE}"
         if self.focused_metrics:
             names = "、".join(self.focused_metrics)
             return (
-                f"【硬性】只回答与「{names}」直接相关的内容；"
-                f"禁止附带用户未问到的其它财务指标、股价或研报段落。"
+                f"用户关注「{names}」：以该指标为主作答；"
+                f"若对理解有帮助，可一两句补充同比或推导口径，勿大段展开无关指标。"
             )
         if self.annual or self.disclosure:
-            return "倾向：披露/年报可看 annual_report 与 retrieved_chunks。"
+            return "倾向：披露/年报可看 annual_report 与 retrieved_chunks；可结合 pit 行计算同比。"
         if self.fundamentals:
-            return "倾向：财务问题可结合 data_api 与年报字段。"
-        return "【硬性】只回答 question 直接问到的内容；未提及的指标、章节、背景数据一律不要写。"
+            return (
+                "倾向：财务问题可结合 data_api、pit_financials 原始行与年报字段；"
+                "允许自行计算同比、CAGR、收现比等，须注明口径。"
+            )
+        from .prompts import CHAT_ANSWER_POLICY
+
+        return CHAT_ANSWER_POLICY
 
 
 def _metric_context_from_session(session: Any | None, query: str) -> str:

@@ -1,5 +1,6 @@
 from finagent.multiagent import DEFAULT_SECTIONS, TOOL_REGISTRY, _sanitize_plan
 from finagent.plan_execution import (
+    chart_candidates_for_plan_section,
     chart_candidates_for_section,
     chart_keys_for_plan,
     filter_prompt_payload,
@@ -53,6 +54,36 @@ def test_chart_candidates_for_custom_title():
     keys = chart_candidates_for_section("产业链盈利与估值对比", ["get_factor"])
     assert "valuation_factors" in keys
     assert "profitability_factors" in keys
+
+
+def test_chart_candidates_for_plan_custom_operating_quality_section():
+    plan = {
+        "sections": [
+            {
+                "name": "盈利与现金流质量",
+                "kind": "operating_quality",
+                "data": ["get_factor"],
+            }
+        ]
+    }
+    keys = chart_candidates_for_plan_section("盈利与现金流质量", plan)
+    assert "revenue_profit_trend" in keys
+    assert "margin_roe_trend" in keys
+
+
+def test_chart_keys_for_plan_custom_capital_section():
+    plan = {
+        "sections": [
+            {
+                "name": "北向与两融跟踪",
+                "kind": "capital",
+                "data": ["get_securities_margin"],
+            }
+        ]
+    }
+    keys = chart_keys_for_plan(plan, allowed_tools=ALLOWED)
+    assert keys is not None
+    assert "margin_enhanced" in keys
 
 
 def test_infer_section_tools_from_title():

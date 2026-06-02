@@ -32,7 +32,12 @@ const els = {
   chatSessionsPanel: document.getElementById("chatSessionsPanel"),
   welcomeView: document.getElementById("welcomeView"),
   welcomeChatBtn: document.getElementById("welcomeChatBtn"),
+  welcomeChatCardBtn: document.getElementById("welcomeChatCardBtn"),
+  welcomeMultiBtn: document.getElementById("welcomeMultiBtn"),
   welcomeReportsBtn: document.getElementById("welcomeReportsBtn"),
+  railAnalyze: document.querySelector(".rail-analyze"),
+  analyzeAdvancedToggle: document.getElementById("analyzeAdvancedToggle"),
+  analyzeAdvancedPanel: document.getElementById("analyzeAdvancedPanel"),
   brandHome: document.getElementById("brandHome"),
   mainStage: document.getElementById("mainStage"),
   rail: document.getElementById("rail"),
@@ -121,11 +126,15 @@ function syncRailCollapseUi() {
   els.shell?.classList.toggle("rail-collapsed", collapsed);
   els.railExpandBtn?.classList.toggle("hidden", !collapsed);
   els.railSettingsBtn?.classList.toggle("hidden", !collapsed || !window.Auth?.state?.user);
+  if (els.railCollapseBtn) {
+    els.railCollapseBtn.setAttribute("aria-label", collapsed ? "侧栏已收起" : "收起侧栏");
+    els.railCollapseBtn.title = collapsed ? "侧栏已收起，请点左侧边缘展开" : "收起侧栏";
+  }
 }
 
 function setRailCollapsed(collapsed) {
-  state.railCollapsed = collapsed;
-  localStorage.setItem("finagent_rail_collapsed", collapsed ? "1" : "0");
+  state.railCollapsed = Boolean(collapsed);
+  localStorage.setItem("finagent_rail_collapsed", state.railCollapsed ? "1" : "0");
   syncRailCollapseUi();
 }
 
@@ -133,7 +142,9 @@ function syncMobileBar(title, sub = "") {
   if (els.mobileBarTitle) els.mobileBarTitle.textContent = title || "FinAgent";
   if (els.mobileBarSub) {
     els.mobileBarSub.textContent = sub || "";
-    els.mobileBarSub.style.display = isMobileLayout() ? "none" : sub ? "block" : "none";
+    const showSub = Boolean(sub);
+    els.mobileBarSub.classList.toggle("hidden", !showSub);
+    els.mobileBar?.classList.toggle("mobile-bar--has-sub", showSub && isMobileLayout());
   }
 }
 
@@ -156,7 +167,12 @@ function updateMobileBarForView(view) {
   }
   if (view === "report" && state.activeReport) {
     const ui = state.activeReport._ui || {};
-    syncMobileBar(ui.title || state.activeReport.meta?.stock_code || "分析报告", ui.subtitle || "");
+    const reportType = resolveReportType(state.activeReport);
+    const sub =
+      els.reportSubtitle?.textContent?.trim() ||
+      ui.subtitle ||
+      (reportType === "annual_analyze" ? "年报分析" : "多智能体研报");
+    syncMobileBar(ui.title || state.activeReport.meta?.stock_code || "分析报告", sub);
     return;
   }
   if (view === "chat") {
@@ -283,6 +299,44 @@ function setSidebarPanel(panel) {
   });
   els.chatSessionsPanel?.classList.toggle("hidden", panel !== "chat");
   els.reportsPanel?.classList.toggle("hidden", panel !== "reports");
+}
+
+function syncAnalyzeRailLayout() {
+  const open = Boolean(els.railAnalyze?.open);
+  els.rail?.classList.toggle("rail-analyze-open", open);
+  if (open) {
+    window.requestAnimationFrame(() => {
+      els.railAnalyze?.scrollIntoView({ block: "end", behavior: "smooth" });
+    });
+  }
+}
+
+function toggleAnalyzeAdvanced(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const panel = els.analyzeAdvancedPanel;
+  const toggle = els.analyzeAdvancedToggle;
+  if (!panel || !toggle) return;
+  const expanded = panel.classList.toggle("hidden") === false;
+  toggle.setAttribute("aria-expanded", String(expanded));
+  if (expanded) {
+    window.requestAnimationFrame(() => {
+      panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }
+}
+
+function focusMultiAnalyzePanel() {
+  setSidebarPanel("chat");
+  if (els.railAnalyze && els.railAnalyze.tagName === "DETAILS") {
+    els.railAnalyze.open = true;
+  }
+  syncAnalyzeRailLayout();
+  const stockInput = els.analyzeForm?.elements?.stock;
+  if (stockInput) {
+    window.setTimeout(() => stockInput.focus(), 80);
+  }
+  if (isMobileLayout()) openMobileRail();
 }
 
 function normalizeFilePath(path) {
@@ -458,9 +512,22 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function resolveReportType(reportOrType) {
+  if (typeof reportOrType === "string") {
+    return reportOrType === "multi_analyze" ? "multi_analyze" : reportOrType === "annual_analyze" ? "annual_analyze" : "unknown";
+  }
+  const report = reportOrType || {};
+  const ui = report._ui || {};
+  if (ui.report_type) return String(ui.report_type);
+  if (report.sections || report.charts) return "multi_analyze";
+  if (report.annual_report || report.signals) return "annual_analyze";
+  return "unknown";
+}
+
 function reportTypeLabel(type) {
-  if (type === "multi_analyze") return "多智能体";
-  if (type === "annual_analyze") return "年报分析";
+  const resolved = resolveReportType(type);
+  if (resolved === "multi_analyze") return "多智能体";
+  if (resolved === "annual_analyze") return "年报分析";
   return "报告";
 }
 
@@ -476,6 +543,11 @@ function setTaskState(status, message, meta = "") {
   els.taskSpinner.classList.toggle("hidden", status === "completed" || status === "failed");
   els.taskBox.classList.toggle("failed", status === "failed");
   els.taskBox.classList.toggle("completed", status === "completed");
+  if (status === "running" || status === "queued") {
+    window.requestAnimationFrame(() => {
+      els.taskBox?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }
 }
 
 function filterReports(reports, query) {
@@ -696,7 +768,7 @@ function buildAnnualTocFallback(report) {
     "执行摘要",
     "核心指标",
     "审核后重点信号",
-    "投资总监分析",
+    "经营与财务分析",
     "MD&A 摘要",
   ];
   if (Array.isArray(dataNotes) && dataNotes.length) titles.push("数据说明");
@@ -709,7 +781,7 @@ function resolveReportToc(report) {
   if (Array.isArray(report.table_of_contents) && report.table_of_contents.length) {
     return report.table_of_contents;
   }
-  const reportType = report._ui?.report_type || (report.sections ? "multi_analyze" : "annual_analyze");
+  const reportType = resolveReportType(report);
   return reportType === "multi_analyze" ? buildMultiTocFallback(report) : buildAnnualTocFallback(report);
 }
 
@@ -790,11 +862,63 @@ function renderReportToc(report) {
   return tocIdMap(entries);
 }
 
-function cardSection(title, innerHtml, anchorId) {
+function cardSection(title, innerHtml, anchorId, blockClass = "report-block-accent") {
   const id = anchorId || sectionAnchor(title);
-  return `<section class="report-block report-block-accent" id="${id}">
+  const blockExtra = blockClass ? ` ${blockClass}` : "";
+  return `<section class="report-block${blockExtra}" id="${id}">
     <header class="report-section-head"><h2 class="report-section-title">${title}</h2></header>
     <div class="report-section-body">${innerHtml}</div>
+  </section>`;
+}
+
+function signalSeverityClass(severity) {
+  const key = String(severity || "").toLowerCase();
+  if (key === "critical") return "signal-card--critical";
+  if (key === "high") return "signal-card--high";
+  if (key === "medium") return "signal-card--medium";
+  if (key === "low") return "signal-card--low";
+  return "signal-card--neutral";
+}
+
+function signalSeverityLabel(severity) {
+  const map = { critical: "严重", high: "高", medium: "中", low: "低" };
+  const key = String(severity || "").toLowerCase();
+  return map[key] || severity || "—";
+}
+
+function renderAnnualHero(report) {
+  const meta = report.meta || {};
+  const ar = report.annual_report || {};
+  const secName = meta.sec_name || ar.sec_name || meta.stock_code || "—";
+  const year = meta.report_year || ar.report_year || "—";
+  const code = meta.stock_code || meta.order_book_id || ar.order_book_id || "";
+  const signals = report.signals || report.financial_analysis || {};
+  const displayCount = Array.isArray(signals.display_signals)
+    ? signals.display_signals.length
+    : Array.isArray(signals.reviewed_signals)
+      ? signals.reviewed_signals.length
+      : 0;
+  const metrics = report.metrics || report.financial_analysis?.metrics || [];
+  const metricYears = Array.isArray(metrics) ? metrics.map((m) => m.year).filter(Boolean) : [];
+
+  return `<section class="report-block report-block-hero report-annual-hero" id="annual-report-hero">
+    <div class="annual-hero-inner">
+      <div class="annual-hero-copy">
+        <span class="annual-hero-eyebrow">年报分析</span>
+        <h2 class="annual-hero-title">${secName}</h2>
+        <p class="annual-hero-meta">${year} 年度报告${code ? ` · ${code}` : ""}</p>
+      </div>
+      <div class="annual-hero-stats">
+        <div class="annual-stat">
+          <span class="annual-stat-value">${displayCount}</span>
+          <span class="annual-stat-label">重点信号</span>
+        </div>
+        <div class="annual-stat">
+          <span class="annual-stat-value">${metricYears.length || "—"}</span>
+          <span class="annual-stat-label">财务年度</span>
+        </div>
+      </div>
+    </div>
   </section>`;
 }
 
@@ -846,38 +970,43 @@ function extractExecutiveSummary(text) {
   return first.length > 600 ? `${first.slice(0, 600)}…` : first;
 }
 
+function renderSignalCard(item, { useSummary = false } = {}) {
+  const severity = item.severity || "";
+  const category = item.category_cn || item.category || "";
+  const summary = String(useSummary ? item.summary : item.title || item.summary || "").trim();
+  if (!summary) return "";
+  const evidence = String(item.evidence || "").trim().replace(/。$/, "");
+  const merged = Number(item.merged_count || 1);
+  let body = summary.replace(/。$/, "");
+  if (evidence && merged <= 1 && !body.includes(evidence)) {
+    body += `（${evidence}）`;
+  }
+  return `<article class="signal-card ${signalSeverityClass(severity)}">
+    <header class="signal-card-head">
+      <span class="signal-card-severity">${signalSeverityLabel(severity)}</span>
+      ${category ? `<span class="signal-card-category">${category}</span>` : ""}
+    </header>
+    <p class="signal-card-body">${body}。</p>
+  </article>`;
+}
+
 function renderDisplaySignals(displaySignals, reviewedSignals) {
   if (Array.isArray(displaySignals) && displaySignals.length) {
-    const items = displaySignals
-      .map((item) => {
-        const severity = item.severity || "";
-        const category = item.category_cn || item.category || "";
-        let summary = String(item.summary || "").trim().replace(/。$/, "");
-        const evidence = String(item.evidence || "").trim().replace(/。$/, "");
-        const merged = Number(item.merged_count || 1);
-        if (!summary) return "";
-        let text = `<strong>[${severity}/${category}]</strong> ${summary}`;
-        if (evidence && merged <= 1 && !summary.includes(evidence)) {
-          text += `（${evidence}）`;
-        }
-        return `<li>${text}。</li>`;
-      })
+    const cards = displaySignals
+      .map((item) => renderSignalCard(item, { useSummary: true }))
       .filter(Boolean)
       .join("");
-    return items ? `<ul class="signal-list">${items}</ul>` : '<div class="empty">未形成可展示的结构化审核信号</div>';
+    return cards
+      ? `<div class="signal-grid">${cards}</div>`
+      : '<div class="empty">未形成可展示的结构化审核信号</div>';
   }
   if (Array.isArray(reviewedSignals) && reviewedSignals.length) {
-    const items = reviewedSignals
+    const cards = reviewedSignals
       .slice(0, 12)
-      .map((item) => {
-        const severity = item.severity || "";
-        const category = item.category_cn || item.category || "";
-        const title = item.title || "";
-        const evidence = item.evidence || "";
-        return `<li><strong>[${severity}/${category}]</strong> ${title}${evidence ? `（${evidence}）` : ""}。</li>`;
-      })
+      .map((item) => renderSignalCard(item))
+      .filter(Boolean)
       .join("");
-    return `<ul class="signal-list">${items}</ul>`;
+    return cards ? `<div class="signal-grid">${cards}</div>` : '<div class="empty">未形成可展示的结构化审核信号</div>';
   }
   return '<div class="empty">未形成可展示的结构化审核信号</div>';
 }
@@ -977,16 +1106,19 @@ function renderAnnualReport(report, anchors = {}) {
   const mda = report.mda || {};
   const metrics = report.metrics || analysis.metrics || [];
   const dataNotes = signals.data_notes || analysis.data_notes || [];
-  const directorText = report.summary || report.investment_director || "";
-  const executiveSummary = report.executive_summary || extractExecutiveSummary(directorText) || "";
+  const narrativeText =
+    report.fundamental_narrative || report.summary || report.investment_director || "";
+  const executiveSummary = report.executive_summary || extractExecutiveSummary(narrativeText) || "";
 
   els.multiSections.innerHTML = "";
   els.annualSections.innerHTML = [
+    renderAnnualHero(report),
     executiveSummary
       ? cardSection(
           "执行摘要",
           `<div class="prose prose-lead">${renderMarkdown(executiveSummary)}</div>`,
-          anchors["执行摘要"]
+          anchors["执行摘要"],
+          "report-block-accent report-block-summary"
         )
       : "",
     cardSection("核心指标", renderAnnualMetricsTable(metrics), anchors["核心指标"]),
@@ -995,7 +1127,11 @@ function renderAnnualReport(report, anchors = {}) {
       renderDisplaySignals(signals.display_signals || analysis.display_signals, signals.reviewed_signals || analysis.reviewed_signals),
       anchors["审核后重点信号"]
     ),
-    cardSection("投资总监分析", `<div class="prose">${renderMarkdown(directorText)}</div>`, anchors["投资总监分析"]),
+    cardSection(
+      "经营与财务分析",
+      `<div class="prose">${renderMarkdown(narrativeText)}</div>`,
+      anchors["经营与财务分析"]
+    ),
     cardSection(
       "MD&A 摘要",
       `<div class="prose">${renderMarkdown(mda.summary_brief || mda.summary || analysis.mda_summary || "")}</div>`,
@@ -1081,7 +1217,7 @@ function renderMultiReport(report, anchors = {}) {
 
 function renderReportDetail(report) {
   const ui = report._ui || {};
-  const reportType = ui.report_type || (report.sections ? "multi_analyze" : "annual_analyze");
+  const reportType = resolveReportType(report);
   const anchors = renderReportToc(report);
 
   els.reportTags.innerHTML = `
@@ -1104,7 +1240,10 @@ function renderReportDetail(report) {
   } else {
     renderAnnualReport(report, anchors);
   }
+  els.reportView?.classList.toggle("report-view--annual", reportType === "annual_analyze");
+  els.reportView?.classList.toggle("report-view--multi", reportType === "multi_analyze");
   syncReportBindFab();
+  updateMobileBarForView(state.view);
 }
 
 async function pollTask(taskId, options = {}) {
@@ -1145,10 +1284,20 @@ async function pollTask(taskId, options = {}) {
 
 async function handleSubmit(event) {
   event.preventDefault();
+  if (!els.analyzeForm) return;
   const formData = new FormData(els.analyzeForm);
   const stock = String(formData.get("stock") || "").trim();
   if (!/^\d{6}$/.test(stock)) {
     toast("请输入 6 位 A 股代码", "error");
+    els.analyzeForm.elements.stock?.focus();
+    return;
+  }
+
+  const lookbackRaw = Number(formData.get("lookback_days"));
+  const lookbackDays = Number.isFinite(lookbackRaw) ? lookbackRaw : 260;
+  if (lookbackDays < 30 || lookbackDays > 520) {
+    toast("回看天数需在 30–520 之间", "error");
+    els.analyzeForm.elements.lookback_days?.focus();
     return;
   }
 
@@ -1156,27 +1305,28 @@ async function handleSubmit(event) {
     stock,
     as_of: formData.get("as_of") || null,
   };
-  const mode = formData.get("mode");
+  const useCachedOnly = formData.has("use_cached_only");
+  const forceRefresh = formData.has("force_refresh");
   els.submitBtn.disabled = true;
-  setTaskState("running", mode === "multi" ? "正在启动多智能体分析…" : "正在启动年报分析…");
+  setTaskState(
+    "running",
+    useCachedOnly
+      ? "正在用本地已入库数据生成多智能体研报（离线）…"
+      : forceRefresh
+        ? "正在强制刷新并生成多智能体研报…"
+        : "正在生成多智能体研报…"
+  );
 
   try {
-    let response;
-    if (mode === "multi") {
-      response = await api("/api/multi-analyze", {
-        method: "POST",
-        body: JSON.stringify({ ...payload, lookback_days: Number(formData.get("lookback_days") || 260) }),
-      });
-    } else {
-      response = await api("/api/analyze", {
-        method: "POST",
-        body: JSON.stringify({
-          ...payload,
-          years: Number(formData.get("years") || 3),
-          no_download_cache: Boolean(formData.get("no_download_cache")),
-        }),
-      });
-    }
+    const response = await api("/api/multi-analyze", {
+      method: "POST",
+      body: JSON.stringify({
+        ...payload,
+        lookback_days: lookbackDays,
+        use_cached_only: useCachedOnly,
+        force_refresh: forceRefresh,
+      }),
+    });
     await pollTask(response.task_id);
   } catch (error) {
     setTaskState("failed", error.message || "任务启动失败");
@@ -1206,7 +1356,10 @@ async function bootstrapAppData() {
 async function bootstrap() {
   navigate("welcome");
 
-  els.analyzeForm.addEventListener("submit", handleSubmit);
+  els.analyzeForm?.addEventListener("submit", handleSubmit);
+  els.railAnalyze?.addEventListener("toggle", syncAnalyzeRailLayout);
+  els.analyzeAdvancedToggle?.addEventListener("click", toggleAnalyzeAdvanced);
+  syncAnalyzeRailLayout();
   els.refreshBtn.addEventListener("click", () => loadReports().catch((e) => toast(e.message, "error")));
   els.sidebarSearch?.addEventListener("input", (event) => {
     state.searchQuery = event.target.value;
@@ -1259,10 +1412,14 @@ async function bootstrap() {
       navigate("welcome");
     }
   });
-  els.welcomeChatBtn?.addEventListener("click", () => {
+  function startWelcomeChat() {
     setSidebarPanel("chat");
     navigate("chat");
-  });
+  }
+
+  els.welcomeChatBtn?.addEventListener("click", startWelcomeChat);
+  els.welcomeChatCardBtn?.addEventListener("click", startWelcomeChat);
+  els.welcomeMultiBtn?.addEventListener("click", focusMultiAnalyzePanel);
   els.welcomeReportsBtn?.addEventListener("click", () => {
     setSidebarPanel("reports");
     navigate(state.activeReportId ? "report" : "report-empty");
@@ -1279,8 +1436,16 @@ async function bootstrap() {
       .catch((e) => toast(e.message, "error"));
   });
   els.mobileMenuBtn?.addEventListener("click", toggleMobileRail);
-  els.railCollapseBtn?.addEventListener("click", () => setRailCollapsed(true));
-  els.railExpandBtn?.addEventListener("click", () => setRailCollapsed(false));
+  els.railCollapseBtn?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setRailCollapsed(true);
+  });
+  els.railExpandBtn?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setRailCollapsed(false);
+  });
   els.railOverlay?.addEventListener("click", closeMobileRail);
   els.mobileNewChatBtn?.addEventListener("click", () => {
     if (typeof window.createChatSessionQuick === "function") {
@@ -1332,6 +1497,7 @@ window.App = {
   formatDate,
   renderMarkdown,
   openMobileRail,
+  focusMultiAnalyzePanel,
   closeMobileRail,
   syncMobileBar,
   updateMobileBarForView,

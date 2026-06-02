@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from .fields import FIELD_MAP
+from .report_writing import FUNDAMENTAL_NARRATIVE_SECTION
 from .financial_analysis import consolidate_reviewed_signals
 from .report_format import (
     DISCLAIMER,
@@ -40,9 +41,14 @@ ANNUAL_METRIC_KEYS = (
 
 MISSING_FIELDS_PREVIEW = 8
 _LLM_PREAMBLE = re.compile(
-    r"^(?:好的[，,].*?投资总监.*?(?:\n\n|\n(?=#)))",
+    r"^(?:好的[，,].*?(?:投资总监|财务分析).*?(?:\n\n|\n(?=#)))",
     re.DOTALL,
 )
+
+
+def _fundamental_narrative_from_result(result: dict[str, Any]) -> str:
+    raw = result.get("fundamental_narrative") or result.get("investment_director") or ""
+    return normalize_section_text(raw, FUNDAMENTAL_NARRATIVE_SECTION)
 _CORE_CONCLUSION = re.compile(
     r"(?:^|\n)(#{1,3}\s*核心结论[^\n]*\n(?:.*?(?=\n#{1,3}\s|\Z)))",
     re.DOTALL,
@@ -53,8 +59,8 @@ def render_markdown(result: dict[str, Any], *, order_book_id: str | None = None)
     report = result["annual_report"]
     analysis = result["financial_analysis"]
     mda = result.get("mda") or {}
-    director = normalize_section_text(result.get("investment_director"), "投资总监分析")
-    executive = _extract_executive_summary(director)
+    narrative = _fundamental_narrative_from_result(result)
+    executive = _extract_executive_summary(narrative)
     display_signals = analysis.get("display_signals") or consolidate_reviewed_signals(analysis.get("reviewed_signals") or [])
     provenance = build_field_provenance(result.get("financial_data") or [])
 
@@ -99,7 +105,7 @@ def render_markdown(result: dict[str, Any], *, order_book_id: str | None = None)
         *markdown_section("执行摘要", anchors["执行摘要"], executive),
         *markdown_section("核心指标", anchors["核心指标"], "\n".join(metrics_table)),
         *markdown_section("审核后重点信号", anchors["审核后重点信号"], "\n".join(_format_display_signals(display_signals))),
-        *markdown_section("投资总监分析", anchors["投资总监分析"], director),
+        *markdown_section(FUNDAMENTAL_NARRATIVE_SECTION, anchors[FUNDAMENTAL_NARRATIVE_SECTION], narrative),
         *markdown_section("MD&A 摘要", anchors["MD&A 摘要"], _mda_brief_text(mda)),
     ]
     if data_notes:
@@ -117,7 +123,7 @@ def build_annual_toc_entries(data_notes: list[str] | None = None) -> list[dict[s
         "执行摘要",
         "核心指标",
         "审核后重点信号",
-        "投资总监分析",
+        FUNDAMENTAL_NARRATIVE_SECTION,
         "MD&A 摘要",
     ]
     if data_notes:
@@ -137,7 +143,7 @@ def build_annual_json_payload(
     report = result["annual_report"]
     analysis = result["financial_analysis"]
     mda = result.get("mda") or {}
-    director = normalize_section_text(result.get("investment_director"), "投资总监分析")
+    narrative = _fundamental_narrative_from_result(result)
     data_notes = dedupe_strings(analysis.get("data_notes") or [])
     return {
         "meta": {
@@ -153,8 +159,9 @@ def build_annual_json_payload(
             "local_text": report.get("local_text"),
             "mda_confidence": mda.get("confidence"),
         },
-        "summary": director,
-        "executive_summary": _extract_executive_summary(director),
+        "summary": narrative,
+        "fundamental_narrative": narrative,
+        "executive_summary": _extract_executive_summary(narrative),
         "mda": _mda_for_json(mda),
         "signals": {
             "reviewed_signals": analysis.get("reviewed_signals") or [],

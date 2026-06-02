@@ -179,3 +179,38 @@ def test_save_annual_report_and_query(temp_db):
     assert "管理层" in stored["annual_report"]["mda_hits"][0]["text"]
     assert "\n" in stored["annual_report"]["mda_hits"][0]["text"] or "管理层讨论与分析" in stored["annual_report"]["mda_hits"][0]["text"]
     assert stored["annual_report"]["financial_data"][0]["fields"]["revenue"]["source"] == "annual_report"
+
+
+def test_relaxed_local_load_ignores_lookback_metadata(temp_db):
+    from datetime import date
+
+    from finagent.datastore.market_cache import (
+        load_executor_payload_from_snapshot,
+        snapshot_usable_for_executor,
+    )
+
+    data = {
+        "order_book_id": "000001.XSHE",
+        "start_date": "2025-01-01",
+        "end_date": "2025-05-29",
+        "price": {
+            "rows": [{"date": "2025-05-28", "close": 10.0}, {"date": "2025-05-29", "close": 10.5}],
+            "row_count": 2,
+            "columns": ["date", "close"],
+        },
+    }
+    save_data_snapshot(data, stock_code="000001", lookback_days=90)
+    snap = get_latest_snapshot("000001")
+    assert snap is not None
+    assert snapshot_usable_for_executor(snap, as_of=date(2026, 6, 2), lookback_days=260) is False
+
+    payload = load_executor_payload_from_snapshot(
+        "000001",
+        lookback_days=260,
+        relaxed=True,
+        as_of=date(2026, 6, 2),
+    )
+    assert payload is not None
+    assert payload["source"] == "local_db_relaxed"
+    assert payload["price"]["row_count"] == 2
+    assert any("回看" in note for note in (payload.get("local_cache_warnings") or []))

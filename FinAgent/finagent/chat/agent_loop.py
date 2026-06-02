@@ -284,18 +284,18 @@ def _synthesize_answer(
     graph_hits: list[dict[str, Any]],
     tools_payload: dict[str, Any] | None,
 ) -> str:
+    from .prompts import CHAT_ANSWER_POLICY
+
     system = (
         "你是 FinAgent 研究助手。请根据 observations 与证据给出最终回答。"
-        "【硬性】只回答 question 直接问到的内容；禁止附带未提及的指标、章节或背景数字。"
-        "用户问 PE/市盈率时只写 PE，不要写毛利率、PB、营收等其它 factor 字段。"
+        f"{CHAT_ANSWER_POLICY} "
+        "用户明确只问 PE/市盈率时以 PE 为主，但若推导需要可简要说明所用净利润/市值口径。"
         "多只股票时逐只列出会话 stock_codes 中的标的；禁止写入未出现在问题或 session 中的股票代码。"
-        "tools.answer_guidance 必须遵守；与问题无关的 observation 片段一律忽略。"
-        "数字必须来自 observations/tools.evidence_summary；某只无 factor.pe_ratio_ttm 写「暂无有效 PE」，勿编造。"
-        "pe_ratio_ttm_source 为 derived_* 时表示由本地原始字段估算（总市值/净利润、股价×股本/净利润等），须在回答中注明为估算且基于最近年报口径。"
+        "tools.answer_guidance 须遵守；与问题无关的 observation 片段一律忽略。"
+        "数字须来自 observations/tools/evidence_summary 或其可推导结果；某只缺关键输入再写「暂无」。"
         "若 result.eastmoney_error 存在，说明服务器连东方财富失败，应提示「行情源暂不可用」而非声称网站无数据。"
         "observations 里已有 stock_codes 时直接作答，勿让用户去侧栏填代码。"
-        "quote.close 为最近交易日收盘；intent.quote_primary 或只问股价时勿写财务指标。"
-        "不要输出 JSON，不要套话，不要给买卖建议。"
+        "quote.close 为最近交易日收盘。"
     )
     payload = {
         "question": user_query,

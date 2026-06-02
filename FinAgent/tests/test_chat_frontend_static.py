@@ -35,12 +35,14 @@ def test_bootstrap_polling_is_deduplicated_per_session():
     assert "chatState.bootstrapPolls.delete(sessionId)" in body
 
 
-def test_new_chat_resets_stock_input_before_building_payload():
+def test_new_chat_preserves_sidebar_stock_in_payload():
     source = CHAT_JS.read_text(encoding="utf-8")
     body = _function_body(source, "createChatSession")
-    reset_pos = body.index("chatEls.chatStockInput.value = \"\"")
     payload_pos = body.index("const stocksPayload = chatStocksPayload()")
-    assert reset_pos < payload_pos
+    reset_pos = body.index('chatEls.chatStockInput.value = ""')
+    assert payload_pos < reset_pos
+    assert "hadSidebarStock" in body
+    assert "clearStockInput: resetStockInput && !hadSidebarStock" in body
 
 
 def test_ready_status_requires_per_stock_detail():
@@ -55,4 +57,13 @@ def test_ready_status_requires_per_stock_detail():
 
 def test_index_uses_latest_chat_cache_buster():
     html = INDEX_HTML.read_text(encoding="utf-8")
-    assert "/assets/chat.js?v=20260601fixstack4" in html
+    assert "/assets/chat.js?v=20260602coveragefix" in html
+    assert 'id="chatSyncDataBtn"' in html
+
+
+def test_chat_has_sync_data_handler():
+    source = CHAT_JS.read_text(encoding="utf-8")
+    assert "syncSessionData" in source
+    assert "chatSyncDataBtn" in source
+    assert "/api/chat/sessions/" in source
+    assert "/bootstrap" in source

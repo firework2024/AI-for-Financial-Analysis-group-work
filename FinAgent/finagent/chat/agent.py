@@ -672,17 +672,16 @@ def _llm_answer(
     session: ChatSession,
 ) -> str:
     from ..llm import llm_text
+    from .prompts import CHAT_ANSWER_POLICY
 
     system = (
         "你是 FinAgent 研究助手，像同事聊天：自然、直接。"
-        "【硬性】只回答 question 直接问到的内容；禁止附带用户未提及的指标、章节、背景数字。"
-        "tools.answer_guidance 与 tools.intent 必须遵守；retrieved_chunks 里与问题无关的片段一律忽略。"
-        "evidence_summary 有对应字段才引用；勿从其它字段「顺便」补充未问到的数据。"
+        f"{CHAT_ANSWER_POLICY} "
+        "tools.answer_guidance 与 tools.intent 须遵守；retrieved_chunks 里与问题无关的片段一律忽略。"
+        "evidence_summary 有对应字段优先引用，也可结合 pit/price/shares 原始序列推导。"
         "股价：quote.close 为最近交易日收盘价；prev_close 是昨收。"
-        "intent.quote_primary 时只答行情（日期、收盘价、涨跌幅），勿写净利润、营收、MD&A。"
-        "数字尽量来自上下文；缺数就说明缺口，不要编造。注意 session.binding_warnings 里的股票绑定。"
+        "注意 session.binding_warnings 里的股票绑定。"
         "若 tools 或 session 中已有 stock_codes（含从公司名解析），勿要求用户填写侧栏股票代码。"
-        "不要输出 JSON，不要套话，不要给买卖建议。"
     )
     payload = {
         "clock": _chat_clock(),
