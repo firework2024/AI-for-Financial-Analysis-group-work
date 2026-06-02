@@ -131,6 +131,10 @@ DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
         "trading_activity_table",
         "share_structure_table",
     ),
+    "基本面与估值": (
+        "latest_valuation_snapshot",
+        "latest_growth_snapshot",
+    ),
 }
 
 TABLE_ALL_KEYS = frozenset(
@@ -185,7 +189,6 @@ CHART_GROUPS: list[tuple[str, tuple[str, ...]]] = [
             "liquidity_factors",
             "debt_ratio_trend",
             "dividend_history",
-            "share_structure",
             "latest_valuation_snapshot",
             "latest_quality_snapshot",
             "latest_liquidity_snapshot",
@@ -221,7 +224,7 @@ CHART_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "valuation_factors": ("估值", "PE", "PB", "PS"),
     "market_cap_trend": ("市值", "总市值"),
     "profitability_factors": ("盈利", "毛利率", "净利率", "ROE"),
-    "growth_factors": ("增长", "成长", "营收", "利润增速"),
+    "growth_factors": ("增长", "成长", "增速", "利润增速"),
     "liquidity_factors": ("流动比率", "速动", "流动性"),
     "debt_ratio_trend": ("负债", "资产负债率", "杠杆"),
     "dividend_history": ("分红", "股息"),
@@ -239,7 +242,7 @@ CHART_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "industry_dbscan_anomaly": ("DBSCAN", "聚类", "异常", "噪声点", "同行", "横向对比"),
     "share_structure_pie": ("股本", "流通", "结构"),
     "dividend_spread": ("股息", "分红", "利差"),
-    "revenue_profit_trend": ("营收", "收入", "利润", "归母净利润"),
+    "revenue_profit_trend": ("营收", "营业收入", "收入", "归母净利润", "净利润"),
     "profit_vs_cashflow": ("现金流", "经营现金流", "净现比"),
     "free_cashflow_trend": ("自由现金流", "资本开支"),
     "margin_roe_trend": ("毛利率", "ROE", "盈利能力"),
@@ -298,19 +301,17 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
         "industry_profitability_compare",
         "industry_growth_leverage_compare",
         "industry_dbscan_anomaly",
+        "revenue_profit_trend",
+        "profit_vs_cashflow",
         "market_cap_trend",
         "profitability_factors",
         "growth_factors",
         "liquidity_factors",
         "debt_ratio_trend",
         "dividend_history",
-        "share_structure",
-        "share_structure_pie",
         "latest_quality_snapshot",
         "latest_liquidity_snapshot",
         "latest_growth_snapshot",
-        "revenue_profit_trend",
-        "profit_vs_cashflow",
         "free_cashflow_trend",
         "margin_roe_trend",
     ),
@@ -324,6 +325,15 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
         "margin_activity",
     ),
     "宏观利率背景": ("shibor_rates", "gov_yield_trend", "yield_curve_snapshot"),
+    "基本面与估值": (
+        "valuation_factors",
+        "valuation_percentile",
+        "profitability_factors",
+        "growth_factors",
+        "market_cap_trend",
+        "latest_valuation_snapshot",
+        "dividend_spread",
+    ),
     "量价与趋势": _MARKET_TECH_CHART_CANDIDATES,
     "技术因素": (
         "technical_indicators",
@@ -336,10 +346,12 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
 
 MAX_INLINE_CHARTS_PER_SECTION = 2
 SECTION_INLINE_CHART_LIMITS: dict[str, int] = {
-    MARKET_TECH_SECTION: 4,
-    "经营质量分析": 5,
-    "量价与趋势": 4,
-    "宏观利率背景": 2,
+    MARKET_TECH_SECTION: 2,
+    "经营质量分析": 2,
+    "基本面与估值": 2,
+    "量价与趋势": 2,
+    "宏观利率背景": 1,
+    "资金与交易结构": 2,
 }
 
 

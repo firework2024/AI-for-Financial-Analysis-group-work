@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from finagent.chart_dynamic import execute_parametric_chart, local_chart_need
-from finagent.chart_plots import chart_agent
+from finagent.chart_plots import _extract_annual_metric, chart_agent
 from finagent.chart_catalog import CHART_CAPTIONS, MARKET_TECH_SECTION
 
 
@@ -194,3 +194,59 @@ def test_technical_indicators_chart_uses_trimmed_window(tmp_path: Path):
     charts = chart_agent(data=data, output_dir=tmp_path, only_keys={"technical_indicators"})
     assert "technical_indicators" in charts
     assert Path(charts["technical_indicators"]).stat().st_size > 500
+
+
+def test_extract_annual_metric_handles_alias_and_sorts_year():
+    financial_data = [
+        {"year": 2024, "fields": {"operating_revenue": {"value": 200.0}, "net_profit": {"value": 20.0}}},
+        {"year": 2022, "fields": {"operating_revenue": {"value": 120.0}, "net_profit": {"value": 8.0}}},
+        {"year": 2023, "fields": {"operating_revenue": {"value": 150.0}, "net_profit": {"value": 12.0}}},
+    ]
+    years, revenue = _extract_annual_metric(financial_data, "revenue", aliases=("operating_revenue",))
+    _, profit = _extract_annual_metric(financial_data, "net_profit_parent_company", aliases=("net_profit",))
+
+    assert years == [2022, 2023, 2024]
+    assert revenue == [120.0, 150.0, 200.0]
+    assert profit == [8.0, 12.0, 20.0]
+
+
+def test_profitability_factors_accepts_roe_alias(tmp_path: Path):
+    data = _sample_data()
+    for row in data["factor_history"]["rows"]:
+        row["roe"] = 0.12
+        row.pop("roe_ttm", None)
+    charts = chart_agent(data=data, output_dir=tmp_path, only_keys={"profitability_factors"})
+    assert "profitability_factors" in charts
+    assert Path(charts["profitability_factors"]).exists()
+
+
+def test_margin_roe_trend_accepts_roe_ttm_alias(tmp_path: Path):
+    data = _sample_data()
+    data["annual_analysis"] = {
+        "financial_data": [
+            {
+                "year": 2023,
+                "fields": {
+                    "gross_profit_margin_ttm": {"value": 0.20},
+                    "roe_ttm": {"value": 0.10},
+                },
+            },
+            {
+                "year": 2024,
+                "fields": {
+                    "gross_profit_margin_ttm": {"value": 0.22},
+                    "roe_ttm": {"value": 0.11},
+                },
+            },
+            {
+                "year": 2025,
+                "fields": {
+                    "gross_profit_margin_ttm": {"value": 0.24},
+                    "roe_ttm": {"value": 0.12},
+                },
+            },
+        ]
+    }
+    charts = chart_agent(data=data, output_dir=tmp_path, only_keys={"margin_roe_trend"})
+    assert "margin_roe_trend" in charts
+    assert Path(charts["margin_roe_trend"]).exists()

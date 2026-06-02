@@ -3,6 +3,7 @@ from finagent.multi_report import (
     resolve_multi_sec_name,
     strip_data_limitation_blocks,
 )
+from finagent.report_writing import FUNDAMENTAL_NARRATIVE_SECTION
 from finagent.report_format import build_report_toc, clean_chart_prose, normalize_section_text, polish_field_refs, render_toc_markdown, section_anchor
 
 
@@ -46,6 +47,30 @@ def test_polish_field_refs_drops_data_source_table_column():
     assert "依赖央行借款" in out
 
 
+def test_polish_field_refs_drops_data_source_description_column():
+    text = (
+        "| 指标 | 数值 | 数据来源说明 |\n"
+        "| --- | --- | --- |\n"
+        "| ROE | 8.15% | 最新因子数据（derived_pit） |\n"
+    )
+    out = polish_field_refs(text)
+    assert "数据来源说明" not in out
+    assert "derived_pit" not in out
+    assert "| 指标 | 数值 |" in out
+
+
+def test_normalize_section_text_converts_tsv_rows_to_markdown_table():
+    text = (
+        "指标\t平安银行（2026-05-29）\t行业均值（银行）\t数据来源说明\n"
+        "资产负债率（%）\t90.98\t未提供\t最新因子数据\n"
+        "市盈率（PE TTM）\t4.93\t未提供\t最新因子数据\n"
+    )
+    out = normalize_section_text(text, "风险监控")
+    assert "| 指标 | 平安银行（2026-05-29） | 行业均值（银行） |" in out
+    assert "| 资产负债率（%） | 90.98 | 未提供 |" in out
+    assert "\t" not in out
+
+
 def test_strip_pipeline_only_sections_from_director():
     from finagent.report_format import strip_pipeline_only_sections
 
@@ -64,7 +89,7 @@ def test_strip_pipeline_only_sections_from_director():
     assert "2025年经营承压" in out
 
 
-def test_normalize_director_strips_embedded_provenance_table():
+def test_normalize_narrative_strips_embedded_provenance_table():
     text = (
         "好的，以下是分析。\n\n"
         "### 总结\n\n"
@@ -72,7 +97,7 @@ def test_normalize_director_strips_embedded_provenance_table():
         "### 字段来源概览\n\n"
         "| 维度 | 字段 |\n|---|---|\n| 利润 | `net_profit` |\n"
     )
-    out = normalize_section_text(text, "投资总监分析")
+    out = normalize_section_text(text, FUNDAMENTAL_NARRATIVE_SECTION)
     assert "字段来源概览" not in out
     assert "net_profit" not in out
     assert "正文结束" in out
@@ -251,6 +276,22 @@ def test_local_visual_need_picks_margin_for_capital_section():
     assert "margin_enhanced" in keys or "margin_snapshot_table" in keys
 
 
+def test_local_visual_need_prefers_revenue_profit_trend_for_revenue_profit_narrative():
+    from finagent.visual_placement import local_visual_need
+
+    sections = {
+        "经营质量分析": "2025年营业收入下滑，归母净利润同步承压，需要对比近三年的营收与归母净利润趋势。"
+    }
+    charts = {
+        "revenue_profit_trend": "charts/test/revenue_profit_trend.png",
+        "growth_factors": "charts/test/growth_factors.png",
+    }
+    data = {"factor_history": {"row_count": 12, "rows": [{"date": "2026-05-29"}]}}
+    need = local_visual_need(data=data, sections=sections, charts=charts)
+    keys = [item["visual_key"] for item in need.get("visuals") or []]
+    assert "revenue_profit_trend" in keys
+
+
 def test_section_writing_style_hint_for_risk_section():
     from finagent.report_format import section_writing_style_hint
 
@@ -265,7 +306,7 @@ def test_normalize_core_conclusion_removes_orphan_colon():
         "：2025年营收与净利润连续第二年下滑，但经营现金流暴增398.7%，利润与现金流严重背离。\n\n"
         "### 后续章节"
     )
-    out = normalize_section_text(raw, "投资总监分析")
+    out = normalize_section_text(raw, FUNDAMENTAL_NARRATIVE_SECTION)
     assert "\n\n：2025" not in out
     assert "2025年营收" in out
 

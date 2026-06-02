@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .report_writing import FUNDAMENTAL_NARRATIVE_SECTION
+
 DISCLAIMER = "本报告仅供课程研究与信息展示，不构成投资建议。"
 MISSING_LABEL = "数据缺失"
 TABLE_EMPTY = "—"
@@ -53,7 +55,7 @@ def _strip_data_source_columns_from_tables(text: str) -> str:
     lines = text.splitlines()
     out: list[str] = []
     i = 0
-    drop_headers = {"数据来源"}
+    drop_headers = {"数据来源", "数据来源说明"}
     while i < len(lines):
         line = lines[i]
         if (
@@ -67,6 +69,44 @@ def _strip_data_source_columns_from_tables(text: str) -> str:
                 block.append(lines[j])
                 j += 1
             out.extend(_drop_table_columns(block, drop_headers))
+            i = j
+            continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
+def _normalize_tsv_tables(text: str) -> str:
+    """把模型输出的制表符表格标准化为 Markdown 表格。"""
+    lines = str(text or "").splitlines()
+    if not lines:
+        return str(text or "")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if "\t" not in line:
+            out.append(line)
+            i += 1
+            continue
+        block: list[str] = []
+        j = i
+        while j < len(lines):
+            raw = lines[j]
+            if not raw.strip():
+                break
+            if "\t" not in raw:
+                break
+            cells = [cell.strip() for cell in re.split(r"\t+", raw.strip()) if cell.strip()]
+            if len(cells) < 2:
+                break
+            block.append("| " + " | ".join(cells) + " |")
+            j += 1
+        if len(block) >= 2:
+            col_count = len(_split_md_table_row(block[0]))
+            out.append(block[0])
+            out.append("| " + " | ".join(["---"] * col_count) + " |")
+            out.extend(block[1:])
             i = j
             continue
         out.append(line)
@@ -180,16 +220,18 @@ def normalize_section_text(content: Any, section_name: str) -> str:
                 lines.pop(0)
     text = "\n".join(lines).strip()
     text = _strip_llm_preamble(text)
+    text = _normalize_tsv_tables(text)
     text = _expand_inline_labels(text)
     from .report_writing import normalize_core_conclusion_markdown
 
     text = normalize_core_conclusion_markdown(text)
     text = _structure_section_readability(text, section_name)
     text = _normalize_body_headings(text)
-    if "投资总监" in section_name:
+    if section_name in (FUNDAMENTAL_NARRATIVE_SECTION, "投资总监分析") or "投资总监" in section_name:
         text = strip_pipeline_only_sections(text)
     text = polish_field_refs(text)
-    if not any(skip in section_name for skip in ("执行摘要", "免责声明", "数据与工具", "验证", "投资总监")):
+    skip_lead = ("执行摘要", "免责声明", "数据与工具", "验证", "投资总监", FUNDAMENTAL_NARRATIVE_SECTION, "经营与财务")
+    if not any(skip in section_name for skip in skip_lead):
         from .report_writing import ensure_section_lead_conclusion
 
         text = ensure_section_lead_conclusion(text, section_name)

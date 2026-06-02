@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from .stock_utils import default_as_of, normalize_stock_code, to_order_book_id
+from .stock_utils import default_as_of, normalize_stock_code, resolve_as_of, to_order_book_id
 from .concurrency import env_flag, finagent_max_workers, parallel_map
 from .env import get_env, load_dotenv
 from .llm import llm_json, llm_text
@@ -20,14 +20,15 @@ from .multi_report import (
     multi_report_display_title,
     render_multi_html,
     render_multi_markdown,
+    resolve_multi_report_title,
 )
+from .narrative_plan import build_plan_data_briefing, is_operating_quality_section
 from .visual_placement import resolve_section_visuals
 from .report_format import normalize_section_text, normalize_sections, section_writing_style_hint
 from .report_writing import (
     analytical_writing_core,
-    annual_director_structure_guide,
-    annual_director_system_prompt,
     build_analytical_evidence,
+    fundamental_narrative_system_prompt,
     section_opening_conclusion_rule,
     summarize_annual_financial_data,
 )
@@ -116,6 +117,8 @@ class MultiAgentOptions:
     lookback_days: int = 260
     output: str | None = None
     workdir: str = "."
+    use_cached_only: bool = False
+    force_refresh: bool = False
 
 
 def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
@@ -125,32 +128,51 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
     root = Path(options.workdir)
     output_path = Path(options.output) if options.output else root / "outputs" / f"{normalize_stock_code(options.stock)}_multi_agent_report.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    as_of_date = default_as_of(options.as_of)
+    raw_as_of = default_as_of(options.as_of)
+    as_of_date = resolve_as_of(options.as_of)
     stock_code = normalize_stock_code(options.stock)
     order_book_id = to_order_book_id(stock_code)
 
     section("多智能体研究报告流程")
     info(f"股票代码: {stock_code} → 米筐合约: {order_book_id}")
-    info(f"截止日期: {as_of_date}, 回看天数: {options.lookback_days}")
+    if raw_as_of != as_of_date:
+        info(f"截止日期: {raw_as_of} 非交易日，已按最近工作日取 {as_of_date}")
+    else:
+        info(f"截止日期: {as_of_date}")
+    info(f"回看天数: {options.lookback_days}")
 
-    # ── 第 1 步：规划 ──
-    section("步骤 1/8：规划 Agent — 制定研究计划")
-    plan = planner_agent(stock_code=stock_code, order_book_id=order_book_id, as_of=as_of_date, lookback_days=options.lookback_days)
-    objectives = str(plan.get("objective", ""))[:120]
-    info(f"研究目标: {objectives}")
-    tools = plan.get("tools", [])
-    sections_spec = plan.get("sections", [])
-    info(f"计划使用的米筐函数: {len(tools)} 个")
-    info(f"计划生成的章节: {len(sections_spec)} 个")
-    data_table(
-        ["章节名称", "写作 Agent", "数据源"],
-        [[s.get("name", ""), s.get("agent", ""), ", ".join(s.get("data", [])[:3])] for s in sections_spec],
-    )
+    try:
+        from .chat.data_ingest import ensure_report_data_for_generation
 
-    # ── 第 2 步：数据采集 ──
-    section("步骤 2/8：数据执行 Agent — 采集米筐数据")
+        prep = ensure_report_data_for_generation(
+            stock_code,
+            lookback_days=options.lookback_days,
+            workdir=root,
+            use_cached_only=options.use_cached_only,
+            force_refresh=options.force_refresh,
+        )
+        if prep.get("message") and not prep.get("skipped"):
+            info(f"报告数据预检: {prep['message']}")
+    except Exception as exc:
+        from .chat.data_ingest import AnnualCacheError
+        from .datastore.market_cache import MarketCacheError
+
+        if isinstance(exc, (AnnualCacheError, MarketCacheError)):
+            raise
+        warn(f"报告数据预入库跳过: {type(exc).__name__}: {exc}")
+
+    # ── 第 1 步：数据采集 ──
+    section("步骤 1/8：数据执行 Agent — 采集米筐数据")
     step("初始化 RQData 并拉取全量数据")
-    data = data_executor_agent(order_book_id=order_book_id, as_of=as_of_date, lookback_days=options.lookback_days, output_dir=output_path.parent)
+    data = data_executor_agent(
+        order_book_id=order_book_id,
+        as_of=as_of_date,
+        lookback_days=options.lookback_days,
+        output_dir=output_path.parent,
+        workdir=root,
+        use_cached_only=options.use_cached_only,
+        force_refresh=options.force_refresh,
+    )
     sec_name = data.get("sec_name", "")
     info(f"公司名称: {sec_name or '（未获取）'}")
     info(f"数据区间: {data.get('start_date')} → {data.get('end_date')}")
@@ -184,6 +206,44 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
     pit = data.get("pit_financials", {})
     if pit:
         info(f"PIT 财务数据: {pit.get('row_count', 0)} 行, 最新报告期: {pit.get('report_year')}")
+
+    # ── 第 2 步：数据驱动叙事规划 ──
+    section("步骤 2/8：规划 Agent — 基于数据制定叙事与章节")
+    plan = planner_agent(
+        stock_code=stock_code,
+        order_book_id=order_book_id,
+        as_of=as_of_date,
+        lookback_days=options.lookback_days,
+        data=data,
+    )
+    report_title = resolve_multi_report_title(
+        plan=plan,
+        stock_code=stock_code,
+        sec_name=str(sec_name or ""),
+        suffix="多智能体研究报告",
+    )
+    objectives = str(plan.get("objective", ""))[:120]
+    thesis = str(plan.get("narrative_thesis", ""))[:160]
+    info(f"报告标题: {report_title}")
+    if thesis:
+        info(f"叙事主线: {thesis}")
+    info(f"研究目标: {objectives}")
+    tools = plan.get("tools", [])
+    sections_spec = plan.get("sections", [])
+    info(f"计划使用的米筐函数: {len(tools)} 个")
+    info(f"计划生成的章节: {len(sections_spec)} 个")
+    data_table(
+        ["章节名称", "类型", "写作 Agent", "数据源"],
+        [
+            [
+                s.get("name", ""),
+                s.get("kind", ""),
+                s.get("agent", ""),
+                ", ".join(s.get("data", [])[:3]),
+            ]
+            for s in sections_spec
+        ],
+    )
 
     # ── 第 3 步：生成图表 ──
     section("步骤 3/8：图表 Agent — 生成可视化图表")
@@ -245,6 +305,8 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
         lookback_days=options.lookback_days,
         output_dir=output_path.parent,
         chart_output_dir=chart_output_dir,
+        use_cached_only=options.use_cached_only,
+        force_refresh=options.force_refresh,
     )
     refined = validation.get("refinement_performed")
     if refined:
@@ -301,7 +363,8 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
             export_latex(
                 markdown_text=final_markdown,
                 output_tex_path=tex_path,
-                title=multi_report_display_title(
+                title=resolve_multi_report_title(
+                    plan=plan,
                     stock_code=stock_code,
                     sec_name=str(data.get("sec_name") or ""),
                     suffix="多智能体研究报告",
@@ -330,15 +393,31 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
     return payload
 
 
-def planner_agent(*, stock_code: str, order_book_id: str, as_of: date, lookback_days: int) -> dict[str, Any]:
+def planner_agent(
+    *,
+    stock_code: str,
+    order_book_id: str,
+    as_of: date,
+    lookback_days: int,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     fallback = {
+        "report_title": "",
+        "narrative_thesis": "",
         "objective": "生成覆盖量价、基本面、资金流、技术因素的 A 股多智能体研究报告",
         "tools": list(TOOL_REGISTRY),
         "sections": DEFAULT_SECTIONS,
         "risk_controls": ["仅基于可取得数据写结论", "不输出买卖建议", "说明缺失数据"],
     }
     if not get_env("OPENAI_API_KEY"):
-        return fallback
+        return _sanitize_plan(fallback, fallback)
+    briefing_block = ""
+    if data:
+        briefing = build_plan_data_briefing(data)
+        briefing_block = (
+            "\n\n已采集数据摘要（请据此制定差异化 report_title、narrative_thesis 与章节，勿无视 narrative_signals）："
+            f"\n{json.dumps(briefing, ensure_ascii=False)[:8000]}"
+        )
     try:
         plan = llm_json(
             "你是金融研究系统的计划 Agent。只返回 JSON，不要写 Markdown。",
@@ -347,13 +426,21 @@ def planner_agent(*, stock_code: str, order_book_id: str, as_of: date, lookback_
             f"\n截至日期: {as_of.isoformat()}，回看天数: {lookback_days}"
             f"\n可用米筐函数: {json.dumps(TOOL_REGISTRY, ensure_ascii=False)}"
             f"\n图表质量要求: {json.dumps(CHART_QUALITY_REQUIREMENTS, ensure_ascii=False)}"
-            "\n必须返回 objective/tools/sections/risk_controls。sections 每项包含 name/agent/data。"
-            "\nsections 可按研究重点自由规划章节名称与顺序，不必固定五节模板；data 仅填可用米筐函数名。"
-            "\n禁止规划宏观、行业、新闻、Wind、券商预测等未在可用函数中的数据。",
+            "\n必须返回 report_title, narrative_thesis, objective, tools, sections, risk_controls。"
+            "\nreport_title: 中文定制标题（含公司简称或代码，体现本轮叙事，勿用泛化「多智能体报告」）。"
+            "\nnarrative_thesis: 1-2 句主线（如「成长与估值错配」「资金驱动下的趋势延续」）。"
+            "\nsections 每项包含 name, agent, data, kind, rationale。"
+            "\n章节标题采用软引导：建议写成「类型：结论」结构（例如「量价趋势：中期上行但短期震荡」），"
+            "保证标题本身先给判断，再在正文展开证据；这只是写作建议，不是硬性格式约束。"
+            "\nkind 枚举: operating_quality|market|valuation|capital|macro|risk。"
+            "\n需要 MD&A 深度经营分析时 kind=operating_quality（节名可自定义，不必叫「经营质量分析」）。"
+            "\ndata 仅填可用米筐函数名；sections 可按研究重点自由规划章节名称与顺序。"
+            "\n禁止规划宏观、行业、新闻、Wind、券商预测等未在可用函数中的数据。"
+            + briefing_block,
         )
         return _sanitize_plan(plan, fallback)
     except Exception:
-        return fallback
+        return _sanitize_plan(fallback, fallback)
 
 
 def _sanitize_plan(plan: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
@@ -371,6 +458,8 @@ def _sanitize_plan(plan: dict[str, Any], fallback: dict[str, Any]) -> dict[str, 
         "只能引用本系统实际采集的米筐数据与本地计算指标",
         "不得声称使用 Wind、行业调研、宏观数据、新闻或预测模型",
     ]
+    result["report_title"] = str(result.get("report_title") or "").strip()[:120]
+    result["narrative_thesis"] = str(result.get("narrative_thesis") or "").strip()[:400]
     result["objective"] = str(result.get("objective") or fallback["objective"])
     return result
 
@@ -389,11 +478,20 @@ def _read_instrument_symbol(instrument: Any) -> str:
 
 
 def _fetch_sec_name(rqdatac, order_book_id: str, stock_code: str) -> str:
+    from .rqdata_quota import rqdata_quota_exhausted
+
+    if rqdatac is not None and not rqdata_quota_exhausted():
+        try:
+            instrument = _safe_rq_call("instruments", lambda: rqdatac.instruments(order_book_id))
+        except Exception:
+            instrument = None
+    else:
+        instrument = None
     try:
-        instrument = _safe_rq_call("instruments", lambda: rqdatac.instruments(order_book_id))
-        symbol = _read_instrument_symbol(instrument)
-        if symbol and symbol != stock_code and not symbol.endswith((".XSHG", ".XSHE")):
-            return symbol
+        if instrument is not None:
+            symbol = _read_instrument_symbol(instrument)
+            if symbol and symbol != stock_code and not symbol.endswith((".XSHG", ".XSHE")):
+                return symbol
     except Exception:
         pass
     try:
@@ -407,6 +505,103 @@ def _fetch_sec_name(rqdatac, order_book_id: str, stock_code: str) -> str:
     return ""
 
 
+def _data_executor_eastmoney_fallback(
+    *,
+    order_book_id: str,
+    as_of: date,
+    lookback_days: int,
+    output_dir: Path,
+    workdir: Path | None = None,
+) -> dict[str, Any]:
+    """米筐额度用尽时：东方财富日 K + 现货估值，构建与 data_executor 兼容的载荷。"""
+    from .chat.quote_sources import fetch_eastmoney_kline_series, fetch_eastmoney_quote
+    from .progress import info
+    from .stock_utils import calendar_trading_as_of
+
+    stock_code = order_book_id.split(".")[0]
+    info(f"量价数据：米筐不可用，改由东方财富拉取 {stock_code} 日 K（约 {lookback_days} 日）")
+    rows = fetch_eastmoney_kline_series(stock_code, limit=max(30, lookback_days))
+    if not rows:
+        raise RuntimeError("米筐额度已用尽，且东方财富 K 线未返回数据，请稍后重试或先完成对话入库。")
+
+    em = fetch_eastmoney_quote(stock_code)
+    sec_name = str(em.get("name") or "").strip() or _fetch_sec_name(None, order_book_id, stock_code)
+    end_date_str = str(rows[-1].get("date") or calendar_trading_as_of(as_of).isoformat())
+    start_date_str = str(rows[0].get("date") or end_date_str)
+    price_df = pd.DataFrame(rows)
+    frames = {"price": _flatten_frame(price_df)}
+    factor: dict[str, Any] = {}
+    if em.get("pe_ttm") is not None:
+        factor["pe_ratio_ttm"] = em.get("pe_ttm")
+        factor["pe_ratio_ttm_source"] = "eastmoney"
+    if em.get("pb") is not None:
+        factor["pb_ratio_ttm"] = em.get("pb")
+        factor["pb_ratio_ttm_source"] = "eastmoney"
+    if em.get("market_cap") is not None:
+        factor["market_cap"] = em.get("market_cap")
+        factor["market_cap_source"] = "eastmoney"
+
+    payload = {
+        "order_book_id": order_book_id,
+        "stock_code": stock_code,
+        "sec_name": sec_name,
+        "start_date": start_date_str,
+        "end_date": end_date_str,
+        "source": "eastmoney_fallback",
+        "rqdata_quota_fallback": True,
+        "data_notes": [
+            "米筐 API 额度已用尽；量价序列改由东方财富日 K 获取。",
+            "两融、资金流向、宏观利率等米筐专属序列本报告可能缺失。",
+        ],
+        "tool_registry": TOOL_REGISTRY,
+        "chart_quality_requirements": CHART_QUALITY_REQUIREMENTS,
+        "price": _frame_summary(frames["price"], tail=max(260, lookback_days)),
+        "price_change_rate": {"rows": [], "row_count": 0, "columns": []},
+        "turnover": {"rows": [], "row_count": 0, "columns": []},
+        "capital_flow": {"rows": [], "row_count": 0, "net_buy_value_sum": None},
+        "securities_margin": {"rows": [], "row_count": 0, "columns": []},
+        "dividend": {"rows": [], "row_count": 0, "columns": []},
+        "shares": {"rows": [], "row_count": 0, "columns": []},
+        "suspended": {"rows": [], "row_count": 0, "columns": []},
+        "st_stock": {"rows": [], "row_count": 0, "columns": []},
+        "industry": {},
+        "interbank_rate": {"rows": [], "row_count": 0, "columns": []},
+        "yield_curve": {"rows": [], "row_count": 0, "columns": []},
+        "factor": factor,
+        "factor_history": {"rows": [], "row_count": 0, "columns": []},
+        "industry_comparison": {
+            "industry": {"source": "citics_2019", "selected_level": None},
+            "peers": {
+                "selected_level": None,
+                "candidate_count": 0,
+                "effective_count": 0,
+                "order_book_ids": [],
+                "sample_order_book_ids": [],
+            },
+            "metrics": {},
+            "relative_signals": [],
+            "cluster_anomalies": {"method": "DBSCAN", "status": "skipped", "reason": "rqdata_quota"},
+            "data_notes": ["行业对比依赖米筐，额度用尽时已跳过。"],
+        },
+        "technical": _technical_summary(frames["price"]),
+    }
+    _enrich_multi_factor_payload(payload, stock_code)
+    from .datastore import persist_market_snapshot
+
+    snapshot_id = persist_market_snapshot(payload, lookback_days=lookback_days, source="eastmoney_fallback")
+    if snapshot_id is not None:
+        payload["data_snapshot_id"] = snapshot_id
+    _attach_stored_fundamentals(
+        payload,
+        stock_code,
+        workdir=workdir or output_dir.parent,
+        use_cached_only=False,
+        force_refresh=False,
+    )
+    _enrich_multi_factor_payload(payload, stock_code)
+    return payload
+
+
 def data_executor_agent(
     *,
     order_book_id: str,
@@ -414,13 +609,106 @@ def data_executor_agent(
     lookback_days: int,
     output_dir: Path,
     incremental_after: str | None = None,
+    workdir: Path | None = None,
+    use_cached_only: bool = False,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     import rqdatac
 
+    from .datastore.market_cache import MarketCacheError, load_executor_payload_from_snapshot, snapshot_usable_for_executor
     from .datastore.snapshot_merge import incremental_fetch_start
 
-    _init_rqdata(rqdatac)
     stock_code = order_book_id.split(".")[0]
+
+    def _finalize_cached_payload(cached: dict[str, Any], *, offline: bool) -> dict[str, Any]:
+        from .progress import info
+
+        if offline:
+            info("量价数据：使用本地已入库序列（离线模式，不访问外网）")
+            for note in cached.get("local_cache_warnings") or []:
+                info(f"  · {note}")
+        else:
+            info("量价数据：使用本地 SQLite 已入库数据（跳过米筐拉取）")
+        cached["tool_registry"] = TOOL_REGISTRY
+        cached["chart_quality_requirements"] = CHART_QUALITY_REQUIREMENTS
+        _ensure_technical_from_price_rows(cached)
+        _enrich_multi_factor_payload(cached, stock_code)
+        _attach_stored_fundamentals(
+            cached,
+            stock_code,
+            workdir=workdir or output_dir.parent,
+            use_cached_only=use_cached_only,
+            force_refresh=force_refresh,
+        )
+        _enrich_multi_factor_payload(cached, stock_code)
+        return cached
+
+    if use_cached_only:
+        if force_refresh:
+            raise MarketCacheError("不能同时勾选「仅用本地数据」和「强制刷新外网数据」。")
+        cached = load_executor_payload_from_snapshot(
+            stock_code,
+            lookback_days=lookback_days,
+            relaxed=True,
+            as_of=as_of,
+        )
+        if not cached:
+            raise MarketCacheError(
+                "本地没有已保存的报告级量价数据。"
+                "请先在对话中对标的完成入库，或取消「仅用本地数据」。"
+            )
+        return _finalize_cached_payload(cached, offline=True)
+
+    if not force_refresh:
+        try:
+            from .datastore.db import get_latest_snapshot
+
+            snapshot = get_latest_snapshot(stock_code)
+            if snapshot_usable_for_executor(snapshot, as_of=as_of, lookback_days=lookback_days):
+                cached = load_executor_payload_from_snapshot(
+                    stock_code,
+                    lookback_days=lookback_days,
+                    relaxed=False,
+                    as_of=as_of,
+                )
+                if cached:
+                    return _finalize_cached_payload(cached, offline=False)
+        except MarketCacheError:
+            raise
+        except Exception as exc:
+            print(f"[market_cache] load skipped: {type(exc).__name__}: {exc}")
+
+    from .rqdata_quota import is_rqdata_quota_error, mark_rqdata_quota_exceeded, rqdata_quota_exhausted
+
+    if rqdata_quota_exhausted():
+        return _finalize_cached_payload(
+            _data_executor_eastmoney_fallback(
+                order_book_id=order_book_id,
+                as_of=as_of,
+                lookback_days=lookback_days,
+                output_dir=output_dir,
+                workdir=workdir,
+            ),
+            offline=False,
+        )
+
+    try:
+        _init_rqdata(rqdatac)
+    except Exception as exc:
+        if is_rqdata_quota_error(exc):
+            mark_rqdata_quota_exceeded(exc, where="data_executor.init")
+            return _finalize_cached_payload(
+                _data_executor_eastmoney_fallback(
+                    order_book_id=order_book_id,
+                    as_of=as_of,
+                    lookback_days=lookback_days,
+                    output_dir=output_dir,
+                    workdir=workdir,
+                ),
+                offline=False,
+            )
+        raise
+
     sec_name = _fetch_sec_name(rqdatac, order_book_id, stock_code)
     end_date = _previous_trading_date(rqdatac, as_of)
     start_date = incremental_fetch_start(
@@ -430,7 +718,22 @@ def data_executor_agent(
     )
     fundamentals_start = end_date - timedelta(days=730)
     macro_start = end_date - timedelta(days=120)
-    available_factors = set(rqdatac.get_all_factor_names())
+    try:
+        available_factors = set(rqdatac.get_all_factor_names())
+    except Exception as exc:
+        if is_rqdata_quota_error(exc):
+            mark_rqdata_quota_exceeded(exc, where="get_all_factor_names")
+            return _finalize_cached_payload(
+                _data_executor_eastmoney_fallback(
+                    order_book_id=order_book_id,
+                    as_of=as_of,
+                    lookback_days=lookback_days,
+                    output_dir=output_dir,
+                    workdir=workdir,
+                ),
+                offline=False,
+            )
+        available_factors = set()
     factors = list(dict.fromkeys(name for name in FACTOR_CANDIDATES if name in available_factors))
 
     rq_tasks: dict[str, Any] = {
@@ -510,6 +813,21 @@ def data_executor_agent(
         return value if isinstance(value, pd.DataFrame) else pd.DataFrame()
 
     price = _rq_frame("price")
+    if (price.empty and rqdata_quota_exhausted()) or (
+        isinstance(rq_raw.get("price"), BaseException) and is_rqdata_quota_error(rq_raw.get("price"))
+    ):
+        if isinstance(rq_raw.get("price"), BaseException):
+            mark_rqdata_quota_exceeded(rq_raw.get("price"), where="price")
+        return _finalize_cached_payload(
+            _data_executor_eastmoney_fallback(
+                order_book_id=order_book_id,
+                as_of=as_of,
+                lookback_days=lookback_days,
+                output_dir=output_dir,
+                workdir=workdir,
+            ),
+            offline=False,
+        )
     turnover = _rq_frame("turnover")
     capital = _rq_frame("capital")
     price_change = _rq_frame("price_change")
@@ -587,7 +905,13 @@ def data_executor_agent(
     snapshot_id = persist_market_snapshot(payload, lookback_days=lookback_days, source="data_executor")
     if snapshot_id is not None:
         payload["data_snapshot_id"] = snapshot_id
-    _attach_stored_fundamentals(payload, stock_code)
+    _attach_stored_fundamentals(
+        payload,
+        stock_code,
+        workdir=workdir or output_dir.parent,
+        use_cached_only=use_cached_only,
+        force_refresh=force_refresh,
+    )
     _enrich_multi_factor_payload(payload, stock_code)
     return payload
 
@@ -667,8 +991,29 @@ def _safe_number(value: Any) -> float | None:
     return number
 
 
-def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> None:
+def _attach_stored_fundamentals(
+    payload: dict[str, Any],
+    stock_code: str,
+    *,
+    workdir: Path | None = None,
+    use_cached_only: bool = False,
+    force_refresh: bool = False,
+) -> None:
     """挂载本地 SQLite 中的 PIT 财务与年报 MD&A，供经营质量章节深度分析。"""
+    try:
+        from .chat.data_ingest import AnnualCacheError, ensure_annual_report_in_store
+
+        ensure_annual_report_in_store(
+            stock_code,
+            workdir=workdir,
+            use_cached_only=use_cached_only,
+            force_refresh=force_refresh,
+        )
+    except AnnualCacheError:
+        raise
+    except Exception as exc:
+        print(f"[fundamentals] annual ensure skipped: {type(exc).__name__}: {exc}")
+
     annual = None
     try:
         from .datastore.db import get_annual_report, get_pit_financials
@@ -686,28 +1031,58 @@ def _attach_stored_fundamentals(payload: dict[str, Any], stock_code: str) -> Non
         print(f"[fundamentals] load cache skipped: {type(exc).__name__}: {exc}")
 
     if not payload.get("pit_financials"):
-        try:
-            from .stock_utils import default_as_of
-            from .rqdata_client import fetch_financials
+        if use_cached_only:
+            # 仅用本地数据模式下，禁止触发任何外部财务拉取。
+            pass
+        else:
+            try:
+                from .stock_utils import default_as_of
+                from .rqdata_client import fetch_financials
 
-            report_year = int((annual or {}).get("report_year") or default_as_of(None).year)
-            fetched = fetch_financials(stock_code, report_year, years=3)
+                report_year = int((annual or {}).get("report_year") or default_as_of(None).year)
+                fetched = fetch_financials(stock_code, report_year, years=3)
+                payload["pit_financials"] = {
+                    "rows": fetched.rows,
+                    "row_count": len(fetched.rows),
+                    "report_year": report_year,
+                    "years": 3,
+                }
+            except Exception as exc:
+                print(f"[fundamentals] pit_financials fetch skipped: {type(exc).__name__}: {exc}")
+
+    if use_cached_only and not payload.get("pit_financials") and annual:
+        fin_rows = annual.get("financial_data") if isinstance(annual.get("financial_data"), list) else []
+        if fin_rows:
             payload["pit_financials"] = {
-                "rows": fetched.rows,
-                "row_count": len(fetched.rows),
-                "report_year": report_year,
-                "years": 3,
+                "rows": fin_rows,
+                "row_count": len(fin_rows),
+                "report_year": annual.get("report_year"),
+                "years": len(fin_rows),
+                "source": "annual_report_records",
             }
-        except Exception as exc:
-            print(f"[fundamentals] pit_financials fetch skipped: {type(exc).__name__}: {exc}")
+
+    if use_cached_only and not payload.get("pit_financials"):
+        from .chat.data_ingest import AnnualCacheError
+
+        raise AnnualCacheError(
+            "本地没有已保存的财务序列或年报三表。"
+            "请先在对话中完成入库，或取消「仅用本地数据」。"
+        )
 
     if not annual:
+        if use_cached_only:
+            from .chat.data_ingest import AnnualCacheError
+
+            raise AnnualCacheError(
+                "本地没有已保存的年报数据。"
+                "请先在对话中完成年报/PDF 入库，或取消「仅用本地数据」。"
+            )
         return
     from .mda_analysis import build_annual_context_from_store
 
-    # ── 加载年报上下文。multi-agent 路径不再额外生成投资总监成品文本。 ──
+    # ── 加载年报上下文。multi-agent 路径不再额外生成基本面叙事成品文本。 ──
     try:
-        ctx = build_annual_context_from_store(annual, with_director=False)
+        ctx = build_annual_context_from_store(annual, with_narrative=False)
     except Exception as exc:
         print(f"[annual_analysis] context path failed ({type(exc).__name__}: {exc}), falling back to basic context")
         ctx = None
@@ -748,8 +1123,8 @@ def section_writer_agents(*, plan: dict[str, Any], data: dict[str, Any], charts:
     def _write_spec(spec: dict[str, Any]) -> tuple[str, str]:
         name = str(spec.get("name") or "分析章节")
         agent = str(spec.get("agent") or "section_writer")
-        prompt_data = _compact_data_for_prompt(data, charts, name)
-        return name, _write_section(agent=agent, section_name=name, data=prompt_data)
+        prompt_data = _compact_data_for_prompt(data, charts, name, plan=plan)
+        return name, _write_section(agent=agent, section_name=name, data=prompt_data, plan=plan)
 
     parallel = bool(get_env("OPENAI_API_KEY")) and env_flag("FINAGENT_SECTION_PARALLEL", default=True)
     if not parallel or len(specs) == 1:
@@ -853,11 +1228,11 @@ def revise_sections_with_validation(
         section_relevance = relevance.get(name) if isinstance(relevance.get(name), dict) else {}
         if section_relevance.get("decision") == "rewrite":
             section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
-        prompt_data = _compact_data_for_prompt(data, charts, name)
+        prompt_data = _compact_data_for_prompt(data, charts, name, plan=plan)
         revise_director_guidance = ""
-        if _is_operating_quality_section(name):
+        if is_operating_quality_section(name, plan):
             revise_director_guidance = _operating_quality_writer_guidance()
-        revise_industry_guidance = _industry_comparison_writer_guidance(name, prompt_data)
+        revise_industry_guidance = _industry_comparison_writer_guidance(name, prompt_data, plan=plan)
         try:
             text = normalize_section_text(
                 llm_text(
@@ -931,6 +1306,8 @@ def refinement_loop(
     lookback_days: int,
     output_dir: Path,
     chart_output_dir: Path,
+    use_cached_only: bool = False,
+    force_refresh: bool = False,
 ) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
     """Allow one bounded data/chart retry after the validator sees the draft."""
     requests = _refinement_requests(validation)
@@ -941,7 +1318,14 @@ def refinement_loop(
         return data, charts, validation
     next_lookback = max(lookback_days, int(requests.get("lookback_days") or lookback_days))
     if requests.get("refresh_data"):
-        data = data_executor_agent(order_book_id=order_book_id, as_of=as_of, lookback_days=next_lookback, output_dir=output_dir)
+        data = data_executor_agent(
+            order_book_id=order_book_id,
+            as_of=as_of,
+            lookback_days=next_lookback,
+            output_dir=output_dir,
+            use_cached_only=use_cached_only,
+            force_refresh=force_refresh,
+        )
         data.pop("_chart_metadata", None)  # 显式清除旧元数据，防止 stale metadata 传递到组装阶段
     if requests.get("refresh_charts"):
         chart_files = chart_agent(data=data, output_dir=chart_output_dir)
@@ -1000,6 +1384,7 @@ def _assemble_multi_report(
         sections=normalized,
         charts=charts,
         data=data,
+        plan=plan,
         blocked=blocked,
         validation=validation,
     )
@@ -1012,7 +1397,7 @@ def _assemble_multi_report(
         figure_notes=None,
     )
 
-    executive_summary = generate_multi_executive_summary(data=data, sections=sections_inline)
+    executive_summary = generate_multi_executive_summary(data=data, sections=sections_inline, plan=plan)
 
     final_markdown = render_multi_markdown(
         summary=executive_summary,
@@ -1055,7 +1440,12 @@ def _assemble_multi_report(
     return final_markdown, payload
 
 
-def generate_multi_executive_summary(*, data: dict[str, Any], sections: dict[str, str]) -> str:
+def generate_multi_executive_summary(
+    *,
+    data: dict[str, Any],
+    sections: dict[str, str],
+    plan: dict[str, Any] | None = None,
+) -> str:
     """基于各章节结论与核心指标，生成报告级执行摘要（1 段核心矛盾 + 数字）。"""
     from .multi_report import build_data_summary
     from .report_writing import local_multi_executive_summary, multi_executive_summary_prompt
@@ -1072,6 +1462,7 @@ def generate_multi_executive_summary(*, data: dict[str, Any], sections: dict[str
                     "order_book_id": data.get("order_book_id"),
                     "stock_code": data.get("stock_code"),
                     "sec_name": data.get("sec_name"),
+                    "narrative_thesis": (plan or {}).get("narrative_thesis"),
                     "date_range": [data.get("start_date"), data.get("end_date")],
                     "technical": data.get("technical"),
                     "factor": data.get("factor"),
@@ -1204,7 +1595,6 @@ def layout_optimizer(markdown_text: str, charts: dict[str, str]) -> str:
             "growth_factors",
             "liquidity_factors",
             "debt_ratio_trend",
-            "share_structure_pie",
         ],
         "宏观利率背景": ["shibor_rates", "gov_yield_trend", "yield_curve_snapshot"],
     }
@@ -1250,21 +1640,21 @@ def layout_optimizer(markdown_text: str, charts: dict[str, str]) -> str:
 
     return "".join(output_parts)
 
-def _write_section(*, agent: str, section_name: str, data: dict[str, Any]) -> str:
+def _write_section(*, agent: str, section_name: str, data: dict[str, Any], plan: dict[str, Any] | None = None) -> str:
     if not get_env("OPENAI_API_KEY"):
         return f"{agent} 本地摘要：{section_name} 已基于可用数据完成。"
     style_hint = section_writing_style_hint(section_name)
 
-    director_guidance = _operating_quality_writer_guidance() if _is_operating_quality_section(section_name) else ""
-    industry_guidance = _industry_comparison_writer_guidance(section_name, data)
+    director_guidance = _operating_quality_writer_guidance() if is_operating_quality_section(section_name, plan) else ""
+    industry_guidance = _industry_comparison_writer_guidance(section_name, data, plan=plan)
 
     try:
         role_prompt = (
-            annual_director_system_prompt()
-            if _is_operating_quality_section(section_name)
+            fundamental_narrative_system_prompt()
+            if is_operating_quality_section(section_name, plan)
             else f"你是 {agent}。请写研报中的《{section_name}》章节。"
         )
-        max_chars = 36000 if _is_operating_quality_section(section_name) else 24000
+        max_chars = 36000 if is_operating_quality_section(section_name, plan) else 24000
         return normalize_section_text(
             llm_text(
                 role_prompt
@@ -1293,15 +1683,32 @@ def _write_section(*, agent: str, section_name: str, data: dict[str, Any]) -> st
 
 
 def _previous_trading_date(rqdatac: Any, value: date) -> date:
-    if rqdatac.is_trading_date(value):
-        return value
-    return rqdatac.get_previous_trading_date(value)
+    from .rqdata_quota import is_rqdata_quota_error, mark_rqdata_quota_exceeded, rqdata_quota_exhausted
+    from .stock_utils import calendar_trading_as_of
+
+    if rqdatac is None or rqdata_quota_exhausted():
+        return calendar_trading_as_of(value)
+    try:
+        if rqdatac.is_trading_date(value):
+            return value
+        return rqdatac.get_previous_trading_date(value)
+    except Exception as exc:
+        if is_rqdata_quota_error(exc):
+            mark_rqdata_quota_exceeded(exc, where="previous_trading_date")
+        return calendar_trading_as_of(value)
 
 
 def _safe_rq_call(name: str, fn: Any) -> Any:
+    from .rqdata_quota import is_rqdata_quota_error, mark_rqdata_quota_exceeded, rqdata_quota_exhausted
+
+    if rqdata_quota_exhausted():
+        return pd.DataFrame()
     try:
         return fn()
     except Exception as exc:
+        if is_rqdata_quota_error(exc):
+            mark_rqdata_quota_exceeded(exc, where=name)
+            return pd.DataFrame()
         print(f"[rqdatac] {name} skipped: {type(exc).__name__}: {exc}")
         return pd.DataFrame()
 
@@ -1356,6 +1763,36 @@ def _technical_summary(df: pd.DataFrame) -> dict[str, Any]:
         "rsi14": _float(rsi.iloc[-1]),
         "avg_volume_20d": _float(volume.tail(20).mean()) if not volume.empty else None,
     }
+
+
+def _ensure_technical_from_price_rows(payload: dict[str, Any]) -> None:
+    """本地缓存路径兜底：technical 缺项时基于 price.rows 重算。"""
+    price = payload.get("price") if isinstance(payload.get("price"), dict) else {}
+    rows = price.get("rows") if isinstance(price.get("rows"), list) else []
+    if not rows:
+        return
+    technical = payload.get("technical") if isinstance(payload.get("technical"), dict) else {}
+    required = ("latest_close", "return_20d", "return_60d", "ma20", "ma60", "rsi14")
+    if all(technical.get(key) is not None for key in required):
+        return
+
+    df = pd.DataFrame(rows)
+    if df.empty or "close" not in df.columns:
+        return
+    if "date" in df.columns:
+        try:
+            df = df.sort_values("date")
+        except Exception:
+            pass
+    computed = _technical_summary(df)
+    if not computed:
+        return
+    merged = dict(technical)
+    for key, value in computed.items():
+        if merged.get(key) is None and value is not None:
+            merged[key] = value
+    if merged:
+        payload["technical"] = merged
 
 
 def _data_inventory(data: dict[str, Any]) -> dict[str, Any]:
@@ -1770,11 +2207,16 @@ def _industry_comparison_prompt_brief(industry_comparison: Any) -> str:
     return "\n".join(lines)
 
 
-def _industry_comparison_writer_guidance(section_name: str, data: dict[str, Any]) -> str:
-    if not _section_uses_industry_comparison(section_name) or not data.get("industry_comparison"):
+def _industry_comparison_writer_guidance(
+    section_name: str,
+    data: dict[str, Any],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> str:
+    if not _section_uses_industry_comparison(section_name, plan) or not data.get("industry_comparison"):
         return ""
     brief = str(data.get("industry_comparison_brief") or "").strip()
-    if _is_operating_quality_section(section_name):
+    if is_operating_quality_section(section_name, plan):
         return (
             "本章节必须把同行对比作为经营质量分析坐标，而不是附录。写作时按以下要求处理："
             "1) 在「同行横向坐标」中说明实际采用的同行池层级和有效同行数量；"
@@ -1805,14 +2247,9 @@ def _industry_comparison_writer_guidance(section_name: str, data: dict[str, Any]
 
 def _operating_quality_writer_guidance() -> str:
     return (
-        "本章节是投资总监式「经营质量分析」，直接基于年报 MD&A、财务信号审核、PIT 财务表和同行经营质量数据写作，"
-        "不得再转述或引用 investment_director_analysis 成品文本。"
-        "必须采用以下结构：**核心经营表现概述**、**业务/收入结构变化**、**利润与费用驱动**、"
-        "**现金流质量**、**营运资本与偿债**、**同行横向坐标**、**核心矛盾汇总**、"
-        "**关注事项与数据局限**、**总结**。"
-        "请复用投资总监的克制、可追溯、结论先行风格，围绕经营质量和核心矛盾组织，而不是按估值/盈利/成长/杠杆四段机械拆分。"
-        f"投资总监结构参考：{annual_director_structure_guide()}"
-        "本章节必须丢弃估值信息：禁止输出 PE/PB/PS、股息率、估值分位、估值吸引力或估值与基本面匹配判断。"
+        "本章节写经营与基本面：优先 annual_financial_analysis、pit、MD&A 与同行经营类对比；"
+        "正文结构自由，不必固定八段模板；多年数据须用表格。"
+        "禁止写 PE/PB/PS、股息率、估值分位或估值匹配判断。"
     )
 
 
@@ -1882,7 +2319,7 @@ def _industry_comparison_section_feedback(data: dict[str, Any], sections: dict[s
         return {}
     feedback: dict[str, list[str]] = {}
     for section_name, content in sections.items():
-        is_operating = _is_operating_quality_section(section_name)
+        is_operating = is_operating_quality_section(section_name)
         if not is_operating and "基本面" not in section_name and "估值" not in section_name:
             continue
         text = str(content or "")
@@ -1913,9 +2350,6 @@ def _section_mentions_valuation(content: str) -> bool:
     return any(term in text for term in forbidden)
 
 
-def _is_operating_quality_section(section_name: str) -> bool:
-    return OPERATING_QUALITY_SECTION in str(section_name or "")
-
 
 def _strip_valuation_fields(value: Any) -> Any:
     if isinstance(value, dict):
@@ -1935,7 +2369,13 @@ def _filter_operating_quality_charts(charts: dict[str, str]) -> dict[str, str]:
     return {name: path for name, path in charts.items() if name not in blocked}
 
 
-def _compact_data_for_prompt(data: dict[str, Any], charts: dict[str, str], section_name: str) -> dict[str, Any]:
+def _compact_data_for_prompt(
+    data: dict[str, Any],
+    charts: dict[str, str],
+    section_name: str,
+    *,
+    plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     tail = 20 if "量价" in section_name or "技术" in section_name else 12
     payload = {
         "section_name": section_name,
@@ -1965,21 +2405,21 @@ def _compact_data_for_prompt(data: dict[str, Any], charts: dict[str, str], secti
         },
         "charts": charts,
     }
-    if _section_uses_industry_comparison(section_name):
+    if _section_uses_industry_comparison(section_name, plan):
         industry_summary = (
             _operating_quality_industry_summary(data.get("industry_comparison"))
-            if _is_operating_quality_section(section_name)
+            if is_operating_quality_section(section_name, plan)
             else _industry_comparison_prompt_summary(data.get("industry_comparison"))
         )
         payload["industry_comparison_summary"] = industry_summary
         payload["industry_comparison"] = industry_summary
         payload["industry_comparison_brief"] = _industry_comparison_prompt_brief(industry_summary)
-    if _is_operating_quality_section(section_name):
+    if is_operating_quality_section(section_name, plan):
         payload["factor"] = _strip_valuation_fields(payload.get("factor"))
         payload["factor_history_recent"] = _strip_valuation_fields(payload.get("factor_history_recent"))
         payload["dividend_recent"] = []
         payload["charts"] = _filter_operating_quality_charts(payload.get("charts", {}))
-    if _is_operating_quality_section(section_name) or "基本面" in section_name or "风险" in section_name:
+    if is_operating_quality_section(section_name, plan) or "基本面" in section_name or "风险" in section_name:
         payload["pit_financials"] = data.get("pit_financials")
         ctx = data.get("annual_report_context")
         payload["annual_report_context"] = ctx
@@ -1993,8 +2433,10 @@ def _compact_data_for_prompt(data: dict[str, Any], charts: dict[str, str], secti
     return payload
 
 
-def _section_uses_industry_comparison(section_name: str) -> bool:
-    return _is_operating_quality_section(section_name) or any(token in section_name for token in ("基本面", "估值", "风险"))
+def _section_uses_industry_comparison(section_name: str, plan: dict[str, Any] | None = None) -> bool:
+    return is_operating_quality_section(section_name, plan) or any(
+        token in section_name for token in ("基本面", "估值", "风险")
+    )
 
 
 def _markdown_path(path: str, base_dir: Path) -> str:

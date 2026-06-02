@@ -62,7 +62,6 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
     margin = pd.DataFrame(data.get("securities_margin", {}).get("rows", []))
     info(f"量价数据: {len(price)} 行, 换手率: {len(turnover)} 行, 资金流: {len(capital)} 行, 两融: {len(margin)} 行")
     dividend = pd.DataFrame(data.get("dividend", {}).get("rows", []))
-    shares = pd.DataFrame(data.get("shares", {}).get("rows", []))
     interbank_rate = pd.DataFrame(data.get("interbank_rate", {}).get("rows", []))
     yield_curve = pd.DataFrame(data.get("yield_curve", {}).get("rows", []))
     factor_history = pd.DataFrame(data.get("factor_history", {}).get("rows", []))
@@ -341,15 +340,16 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             close_figure(fig)
             charts["valuation_percentile"] = str(path)
 
-        growth_cols = (
-            "net_profit_growth_ratio_ttm",
-            "operating_profit_growth_ratio_ttm",
-            "gross_profit_growth_ratio_ttm",
-            "operating_revenue_growth_ratio_ttm",
+        growth_candidates = (
+            ("net_profit_growth_ratio_ttm", ("net_profit_growth_ratio_ttm", "net_profit_parent_company_growth_ratio_ttm")),
+            ("operating_profit_growth_ratio_ttm", ("operating_profit_growth_ratio_ttm",)),
+            ("gross_profit_growth_ratio_ttm", ("gross_profit_growth_ratio_ttm",)),
+            ("operating_revenue_growth_ratio_ttm", ("operating_revenue_growth_ratio_ttm", "revenue_growth_ratio_ttm")),
         )
         fig, ax = new_figure()
         plotted = False
-        for idx, col in enumerate(growth_cols):
+        growth_cols = _resolve_factor_series_columns(factor_history, growth_candidates)
+        for idx, (label_key, col) in enumerate(growth_cols):
             if col in factor_history.columns and factor_history[col].notna().any():
                 plot_line(
                     ax,
@@ -357,7 +357,7 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
                     factor_to_chart_scale(col, factor_history[col]),
                     color=SERIES_COLORS[idx % len(SERIES_COLORS)],
                     linewidth=1.7,
-                    label=label(col),
+                    label=label(label_key),
                 )
                 plotted = True
         if plotted:
@@ -369,10 +369,15 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             charts["growth_factors"] = str(path)
         close_figure(fig)
 
-        profit_cols = ("gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm")
+        profit_candidates = (
+            ("gross_profit_margin_ttm", ("gross_profit_margin_ttm", "gross_margin_ttm", "gross_margin")),
+            ("net_profit_margin_ttm", ("net_profit_margin_ttm", "net_margin_ttm", "net_margin")),
+            ("roe_ttm", ("roe_ttm", "roe", "return_on_equity_ttm", "roe_ratio_ttm")),
+        )
         fig, ax = new_figure()
         plotted = False
-        for idx, col in enumerate(profit_cols):
+        profit_cols = _resolve_factor_series_columns(factor_history, profit_candidates)
+        for idx, (label_key, col) in enumerate(profit_cols):
             if col in factor_history.columns and factor_history[col].notna().any():
                 plot_line(
                     ax,
@@ -380,7 +385,7 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
                     factor_to_chart_scale(col, factor_history[col]),
                     color=SERIES_COLORS[idx % len(SERIES_COLORS)],
                     linewidth=1.7,
-                    label=label(col),
+                    label=label(label_key),
                 )
                 plotted = True
         if plotted:
@@ -391,10 +396,14 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             charts["profitability_factors"] = str(path)
         close_figure(fig)
 
-        liquidity_cols = ("current_ratio", "quick_ratio")
+        liquidity_candidates = (
+            ("current_ratio", ("current_ratio", "current_ratio_ttm")),
+            ("quick_ratio", ("quick_ratio", "quick_ratio_ttm")),
+        )
         fig, ax = new_figure()
         plotted = False
-        for idx, col in enumerate(liquidity_cols):
+        liquidity_cols = _resolve_factor_series_columns(factor_history, liquidity_candidates)
+        for idx, (label_key, col) in enumerate(liquidity_cols):
             if col in factor_history.columns and factor_history[col].notna().any():
                 plot_line(
                     ax,
@@ -402,7 +411,7 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
                     factor_history[col],
                     color=SERIES_COLORS[idx % len(SERIES_COLORS)],
                     linewidth=1.7,
-                    label=label(col),
+                    label=label(label_key),
                 )
                 plotted = True
         if plotted:
@@ -413,12 +422,20 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             charts["liquidity_factors"] = str(path)
         close_figure(fig)
 
-        if "debt_to_asset_ratio" in factor_history.columns and factor_history["debt_to_asset_ratio"].notna().any():
+        debt_col = next(
+            (
+                col
+                for col in ("debt_to_asset_ratio", "debt_to_assets", "debt_to_asset_ratio_ttm")
+                if col in factor_history.columns and factor_history[col].notna().any()
+            ),
+            None,
+        )
+        if debt_col:
             fig, ax = new_figure()
             plot_line(
                 ax,
                 factor_history["date"],
-                factor_history["debt_to_asset_ratio"],
+                factor_history[debt_col],
                 color=PALETTE["negative"],
                 linewidth=1.8,
             )
@@ -535,50 +552,6 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
             save_chart(fig, path)
             close_figure(fig)
             charts["margin_enhanced"] = str(path)
-
-    if not shares.empty and "date" in shares.columns:
-        shares["date"] = pd.to_datetime(shares["date"])
-        for col in ("total", "circulation_a", "free_circulation"):
-            if col in shares.columns:
-                shares[col] = pd.to_numeric(shares[col], errors="coerce")
-        fig, ax = new_figure()
-        plotted = False
-        for idx, col in enumerate(("total", "circulation_a", "free_circulation")):
-            if col in shares.columns and shares[col].notna().any():
-                plot_line(ax, shares["date"], shares[col], color=SERIES_COLORS[idx], linewidth=1.7, label=label(col))
-                plotted = True
-        if plotted:
-            style_axes(ax, title=chart_title(stock, "share_structure"), ylabel="股本", date_index=shares["date"])
-            style_legend(ax, ncol=3)
-            path = output_dir / "share_structure.png"
-            save_chart(fig, path)
-            charts["share_structure"] = str(path)
-        close_figure(fig)
-
-        latest = shares.iloc[-1]
-        total = safe_float(latest.get("total")) or 0
-        circ_a = safe_float(latest.get("circulation_a")) or 0
-        free_circ = safe_float(latest.get("free_circulation")) or 0
-        non_free = max(circ_a - free_circ, 0) if circ_a and free_circ else 0
-        other = max(total - circ_a, 0) if total else 0
-        pie_labels = ["自由流通股本", "限售流通股", "其他"]
-        pie_sizes = [free_circ, non_free, other]
-        if total and any(size > 0 for size in pie_sizes):
-            fig, ax = new_figure(figsize=(10.2, 4.8))
-            ax.pie(
-                pie_sizes,
-                labels=pie_labels,
-                autopct="%1.1f%%",
-                startangle=90,
-                colors=SERIES_COLORS[:3],
-                wedgeprops={"linewidth": 0.6, "edgecolor": "#FFFFFF"},
-                textprops={"color": PALETTE["text"], "fontsize": 9},
-            )
-            ax.set_title(chart_title(stock, "share_structure_pie"), loc="left", color=PALETTE["text"], fontsize=12.5, fontweight=600, pad=12)
-            path = output_dir / "share_structure_pie.png"
-            save_chart(fig, path)
-            close_figure(fig)
-            charts["share_structure_pie"] = str(path)
 
     if not dividend.empty:
         cash_col = "dividend_cash_before_tax"
@@ -856,6 +829,19 @@ def _scaled_metric_value(key: str, value: Any) -> float | None:
     return None if scaled is None else float(scaled)
 
 
+def _resolve_factor_series_columns(
+    frame: pd.DataFrame,
+    candidates: tuple[tuple[str, tuple[str, ...]], ...],
+) -> list[tuple[str, str]]:
+    """为因子图解析列别名，返回 (label_key, actual_column)。"""
+    resolved: list[tuple[str, str]] = []
+    for label_key, aliases in candidates:
+        actual = next((col for col in aliases if col in frame.columns and frame[col].notna().any()), None)
+        if actual:
+            resolved.append((label_key, actual))
+    return resolved
+
+
 # ── 图表元数据生成（供 placement 智能体使用） ──
 
 
@@ -1040,24 +1026,46 @@ def __enrich_price(price: pd.DataFrame) -> pd.DataFrame:
 
 
 def _extract_annual_metric(
-    financial_data: list[dict[str, Any]], field_name: str
+    financial_data: list[dict[str, Any]],
+    field_name: str,
+    *,
+    aliases: tuple[str, ...] = (),
 ) -> tuple[list[int], list[float]]:
     """从 workflow 格式 financial_data 提取逐年 (years, values)。
 
     workflow 格式: ``[{"year": 2024, "fields": {"revenue": {"value": 1200, ...}}}]``
     """
-    years: list[int] = []
-    values: list[float] = []
+    series_by_year: dict[int, float] = {}
+    field_candidates = (field_name, *aliases)
     for row in financial_data:
         year = row.get("year")
+        if year is None:
+            continue
+        try:
+            y = int(year)
+        except (TypeError, ValueError):
+            continue
         fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
-        info = fields.get(field_name)
-        if isinstance(info, dict) and info.get("value") is not None:
-            try:
-                years.append(int(year))
-                values.append(float(info["value"]))
-            except (TypeError, ValueError):
-                continue
+        value: float | None = None
+        for key in field_candidates:
+            info = fields.get(key)
+            if isinstance(info, dict) and info.get("value") is not None:
+                try:
+                    value = float(info["value"])
+                    break
+                except (TypeError, ValueError):
+                    continue
+            # 兼容已扁平化的 financial_data 结构
+            if value is None and row.get(key) is not None:
+                try:
+                    value = float(row.get(key))
+                    break
+                except (TypeError, ValueError):
+                    continue
+        if value is not None:
+            series_by_year[y] = value
+    years = sorted(series_by_year)
+    values = [series_by_year[y] for y in years]
     return years, values
 
 
@@ -1072,34 +1080,68 @@ def _format_amount(value: float) -> str:
         return f"{value:.2f}"
 
 
+def _to_percent_points(value: float) -> float:
+    """兼容比例值(0.0815)和百分数值(8.15)两种口径。"""
+    return value * 100 if abs(value) <= 1 else value
+
+
 def _plot_annual_financial_charts(
     financial_data: list[dict[str, Any]], output_dir: Path, stock: str
 ) -> dict[str, str]:
     """基于 workflow 格式年报财务数据生成 4 张图表。"""
+    from matplotlib.ticker import FuncFormatter
+
     charts: dict[str, str] = {}
 
-    # 1. 营收 / 净利润多年趋势对比（双轴）
-    rev_years, rev_values = _extract_annual_metric(financial_data, "revenue")
-    np_years, np_values = _extract_annual_metric(financial_data, "net_profit_parent_company")
-    if rev_years and np_years:
-        fig, ax1 = new_figure()
-        bar_on_dates(ax1, rev_years, rev_values, color=PALETTE["secondary"], alpha=0.55, width=0.55)
-        ax1.set_ylabel("营收（元）", color=PALETTE["secondary"], fontsize=9)
-        ax1.tick_params(axis="y", labelcolor=PALETTE["secondary"])
-        ax2 = ax1.twinx()
-        plot_line(ax2, np_years, np_values, color=PALETTE["accent"], linewidth=2.2, marker="o", markersize=6)
-        ax2.set_ylabel("归母净利润（元）", color=PALETTE["accent"], fontsize=9)
-        ax2.tick_params(axis="y", labelcolor=PALETTE["accent"])
-        style_axes(ax1, title=chart_title(stock, "revenue_profit_trend"), xlabel="年份")
-        ax1.set_xticks(rev_years)
-        ax1.set_xticklabels([str(y) for y in rev_years])
+    # 1. 营收 / 净利润多年趋势对比（年度离散轴）
+    rev_years, rev_values = _extract_annual_metric(financial_data, "revenue", aliases=("operating_revenue",))
+    np_years, np_values = _extract_annual_metric(
+        financial_data,
+        "net_profit_parent_company",
+        aliases=("net_profit_parent", "net_profit"),
+    )
+    rev_map = dict(zip(rev_years, rev_values))
+    np_map = dict(zip(np_years, np_values))
+    shared_years = sorted(set(rev_map) & set(np_map))
+    if len(shared_years) >= 2:
+        # 两条折线统一用“亿元”口径，横轴按年份离散点展示。
+        rev_plot = [rev_map[y] / 1e8 for y in shared_years]
+        np_plot = [np_map[y] / 1e8 for y in shared_years]
+        fig, ax = new_figure()
+        ax.plot(
+            shared_years,
+            rev_plot,
+            color=PALETTE["secondary"],
+            linewidth=2.2,
+            marker="o",
+            markersize=6,
+            label="营业收入（亿元）",
+        )
+        ax.plot(
+            shared_years,
+            np_plot,
+            color=PALETTE["accent"],
+            linewidth=2.2,
+            marker="o",
+            markersize=6,
+            label="归母净利润（亿元）",
+        )
+        style_axes(ax, title=chart_title(stock, "revenue_profit_trend"), xlabel="年份", ylabel="金额（亿元）")
+        ax.set_xticks(shared_years)
+        ax.set_xticklabels([str(y) for y in shared_years])
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:,.0f}"))
+        style_legend(ax, loc="upper right", ncol=2)
         path = output_dir / "revenue_profit_trend.png"
         save_chart(fig, path)
         close_figure(fig)
         charts["revenue_profit_trend"] = str(path)
 
-    # 2. 净利润 vs 经营现金流对比
-    _, np_vals = _extract_annual_metric(financial_data, "net_profit_parent_company")
+    # 2. 净利润 vs 经营现金流对比（年度并列柱）
+    _, np_vals = _extract_annual_metric(
+        financial_data,
+        "net_profit_parent_company",
+        aliases=("net_profit_parent", "net_profit"),
+    )
     ocf_years, ocf_vals = _extract_annual_metric(financial_data, "cash_flow_from_operating_activities")
     if np_vals and ocf_years:
         fig, ax = new_figure()
@@ -1107,8 +1149,11 @@ def _plot_annual_financial_charts(
         np_plot = [np_vals[np_years.index(y)] for y in years_shared if y in np_years]
         ocf_plot = [ocf_vals[ocf_years.index(y)] for y in years_shared if y in ocf_years]
         if len(years_shared) == len(np_plot) == len(ocf_plot):
-            bar_on_dates(ax, years_shared, np_plot, color=PALETTE["secondary"], alpha=0.55, width=0.45, label="归母净利润")
-            bar_on_dates(ax, [y + 0.18 for y in years_shared], ocf_plot, color=PALETTE["accent"], alpha=0.55, width=0.45, label="经营现金流")
+            bar_width = 0.36
+            np_x = [y - bar_width / 2 for y in years_shared]
+            ocf_x = [y + bar_width / 2 for y in years_shared]
+            ax.bar(np_x, np_plot, color=PALETTE["secondary"], alpha=0.55, width=bar_width, label="归母净利润")
+            ax.bar(ocf_x, ocf_plot, color=PALETTE["accent"], alpha=0.55, width=bar_width, label="经营现金流")
             style_axes(ax, title=chart_title(stock, "profit_vs_cashflow"), xlabel="年份", ylabel="金额（元）")
             ax.set_xticks(years_shared)
             ax.set_xticklabels([str(y) for y in years_shared])
@@ -1118,12 +1163,12 @@ def _plot_annual_financial_charts(
             close_figure(fig)
             charts["profit_vs_cashflow"] = str(path)
 
-    # 3. 自由现金流趋势
+    # 3. 自由现金流趋势（年度离散柱）
     fcf_years, fcf_vals = _extract_annual_metric(financial_data, "free_cash_flow")
     if fcf_years:
         fig, ax = new_figure()
         colors_fcf = [PALETTE["positive"] if v >= 0 else PALETTE["negative"] for v in fcf_vals]
-        bar_on_dates(ax, fcf_years, fcf_vals, color=colors_fcf, alpha=0.78, width=0.58)
+        ax.bar(fcf_years, fcf_vals, color=colors_fcf, alpha=0.78, width=0.58)
         add_zero_line(ax)
         style_axes(ax, title=chart_title(stock, "free_cashflow_trend"), xlabel="年份", ylabel="自由现金流（元）")
         ax.set_xticks(fcf_years)
@@ -1133,20 +1178,50 @@ def _plot_annual_financial_charts(
         close_figure(fig)
         charts["free_cashflow_trend"] = str(path)
 
-    # 4. 毛利率 / ROE 多年趋势（双轴）
-    gm_years, gm_vals = _extract_annual_metric(financial_data, "gross_margin")
-    roe_years, roe_vals = _extract_annual_metric(financial_data, "roe")
+    # 4. 毛利率 / ROE 多年趋势（年度离散轴双轴）
+    gm_years, gm_vals = _extract_annual_metric(
+        financial_data,
+        "gross_margin",
+        aliases=("gross_profit_margin", "gross_profit_margin_ttm"),
+    )
+    roe_years, roe_vals = _extract_annual_metric(
+        financial_data,
+        "roe",
+        aliases=(
+            "roe_ttm",
+            "return_on_equity",
+            "return_on_equity_ttm",
+            "weighted_roe",
+            "weighted_average_roe",
+        ),
+    )
     if gm_years or roe_years:
         fig, ax1 = new_figure()
         if gm_years:
-            gm_pct = [v * 100 for v in gm_vals]  # 小数 → 百分比
-            plot_line(ax1, gm_years, gm_pct, color=PALETTE["secondary"], linewidth=2.0, marker="s", markersize=5, label="毛利率 (%)")
+            gm_pct = [_to_percent_points(v) for v in gm_vals]
+            ax1.plot(
+                gm_years,
+                gm_pct,
+                color=PALETTE["secondary"],
+                linewidth=2.0,
+                marker="s",
+                markersize=5,
+                label="毛利率 (%)",
+            )
         ax1.set_ylabel("毛利率 (%)", color=PALETTE["secondary"], fontsize=9)
         ax1.tick_params(axis="y", labelcolor=PALETTE["secondary"])
         if roe_years:
             ax2 = ax1.twinx()
-            roe_pct = [v * 100 for v in roe_vals]
-            plot_line(ax2, roe_years, roe_pct, color=PALETTE["accent"], linewidth=2.0, marker="o", markersize=5, label="ROE (%)")
+            roe_pct = [_to_percent_points(v) for v in roe_vals]
+            ax2.plot(
+                roe_years,
+                roe_pct,
+                color=PALETTE["accent"],
+                linewidth=2.0,
+                marker="o",
+                markersize=5,
+                label="ROE (%)",
+            )
             ax2.set_ylabel("ROE (%)", color=PALETTE["accent"], fontsize=9)
             ax2.tick_params(axis="y", labelcolor=PALETTE["accent"])
         all_years = sorted(set(gm_years + roe_years))
