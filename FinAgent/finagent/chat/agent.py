@@ -672,11 +672,12 @@ def _llm_answer(
     session: ChatSession,
 ) -> str:
     from ..llm import llm_text
-    from .prompts import CHAT_ANSWER_POLICY
+    from .answer_format import sanitize_chat_answer
+    from .prompts import CHAT_ANSWER_POLICY, CHAT_VISUAL_POLICY
 
     system = (
         "你是 FinAgent 研究助手，像同事聊天：自然、直接。"
-        f"{CHAT_ANSWER_POLICY} "
+        f"{CHAT_ANSWER_POLICY} {CHAT_VISUAL_POLICY} "
         "tools.answer_guidance 与 tools.intent 须遵守；retrieved_chunks 里与问题无关的片段一律忽略。"
         "evidence_summary 有对应字段优先引用，也可结合 pit/price/shares 原始序列推导。"
         "股价：quote.close 为最近交易日收盘价；prev_close 是昨收。"
@@ -698,7 +699,7 @@ def _llm_answer(
         "recent_messages": [{"role": m.role, "content": m.content} for m in history[-8:]],
         "question": query,
     }
-    return llm_text(system, json.dumps(payload, ensure_ascii=False)[:18000])
+    return sanitize_chat_answer(llm_text(system, json.dumps(payload, ensure_ascii=False)[:18000]))
 
 
 def sync_session_stock(session: ChatSession, stock_code: str | None) -> None:
@@ -787,9 +788,11 @@ def _chat_turn_single(session: ChatSession, message: str) -> ChatMessage:
         answer = _local_answer(query, hits, graph_hits, tools_payload)
         answer += f"\n\n（LLM 暂不可用：{exc}）"
 
+    from .answer_format import sanitize_chat_answer
+
     assistant = ChatMessage(
         role="assistant",
-        content=answer.strip(),
+        content=sanitize_chat_answer(answer.strip()),
         created_at=_now(),
         sources=hits[:4],
         tool_calls=tool_calls,

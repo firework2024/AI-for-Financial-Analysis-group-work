@@ -281,6 +281,14 @@ CHART_BRIEF_NOTES: dict[str, str] = {
     "margin_roe_trend": "毛利率与 ROE 多年双轴走势，观察盈利能力和股东回报的变动轨迹。",
 }
 
+# 对话场景不生成/不嵌入的图（短回看 K 线不足 MA60 窗口时易空图）；年报与 multi_analyze 仍可使用
+CHAT_EXCLUDED_CHART_KEYS = frozenset({"moving_averages"})
+
+
+def chart_allowed_for_chat(chart_key: str) -> bool:
+    return str(chart_key or "").strip() not in CHAT_EXCLUDED_CHART_KEYS
+
+
 _MARKET_TECH_CHART_CANDIDATES: tuple[str, ...] = (
     "price_volume",
     "moving_averages",
@@ -346,11 +354,11 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
 
 MAX_INLINE_CHARTS_PER_SECTION = 2
 SECTION_INLINE_CHART_LIMITS: dict[str, int] = {
-    MARKET_TECH_SECTION: 2,
-    "经营质量分析": 2,
+    MARKET_TECH_SECTION: 3,
+    "经营质量分析": 3,
     "基本面与估值": 2,
-    "量价与趋势": 2,
-    "宏观利率背景": 1,
+    "量价与趋势": 3,
+    "宏观利率背景":21,
     "资金与交易结构": 2,
 }
 

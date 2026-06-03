@@ -11,6 +11,13 @@ CHAT_ANSWER_POLICY = (
     "缺数说明缺口，不给买卖建议，不输出 JSON。"
 )
 
+CHAT_VISUAL_POLICY = (
+    "【对话不配长图】禁止插入 Markdown 图片、charts/ 路径或「#### 图 · …」图块；"
+    "尤其不要输出「收盘价与 MA20/MA60」/ moving_averages 图（本地 K 线不足 60 日时易空图）。"
+    "若需说明均线或趋势，只用 technical 中的 latest_close、ma20、ma60、return_20d/return_60d 等数字文字描述。"
+    "多智能体年报报告可配图，本会话对话不配。"
+)
+
 CHAT_NARROW_GUIDANCE = (
     "用户已收窄到特定指标：优先直接给出核心数字；必要时可一两句补充口径、同比或推导过程。"
 )

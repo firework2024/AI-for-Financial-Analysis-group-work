@@ -107,8 +107,12 @@ sudo systemctl enable --now finagent
 
 ## 四、服务器 `.env` 注意项
 
-- `OPENAI_*`、`RQDATAC2_CONF`、`TAVILY_API_KEY`、`FINAGENT_AUTH_SECRET` 与本地一致即可复用授权。
-- 米筐 `RQDATAC2_CONF` 需在**服务器出网**能连 `rqdatad-pro.ricequant.com`（与本地相同授权一般可用）。
+- `OPENAI_*`、`TAVILY_API_KEY`、`FINAGENT_AUTH_SECRET` 与本地一致即可复用授权。
+- 米筐二选一（见 `.env.example`）：
+  - **账号直连**：`RQ_USER`、`RQ_PASSWORD`、`RQ_HOST`（如 `222.29.71.3:16010`），等价 `rqdatac.init(user, password, host)`
+  - **License URI**：`RQDATAC2_CONF='tcp://...'`
+  - 三者齐全时**优先账号直连**；请注释掉未用的 `RQDATAC2_CONF`。
+- 服务器需能访问 `RQ_HOST` 所指地址（校园/内网网关需在安全组与白名单放行）。
 - 若对外网开放 Web，务必设置强随机 `FINAGENT_AUTH_SECRET`，并考虑防火墙只放行内网或 VPN。
 
 ## 五、安全提醒
@@ -117,11 +121,28 @@ sudo systemctl enable --now finagent
 - 同步后检查服务器文件权限：`chmod 600 .env`。
 - 若 `.env` 曾泄露或提交过，请轮换 API Key、米筐 license、Tavily Key 与 `FINAGENT_AUTH_SECRET`。
 
-## 六、验证
+## 六、域名 + HTTPS（宝塔 Nginx）
+
+FinAgent 监听 `127.0.0.1:8765`（或 `0.0.0.0:8765`），对外由 Nginx 反代。参考配置见 [`deploy/nginx-pkufinagent.site.conf`](deploy/nginx-pkufinagent.site.conf)。
+
+```bash
+# 复制到宝塔 vhost 目录（路径按实际修改）
+cp deploy/nginx-pkufinagent.site.conf /www/server/panel/vhost/nginx/pkufinagent.conf
+chmod 600 /www/server/panel/vhost/cert/pkufinagent.site/privkey.pem
+/www/server/nginx/sbin/nginx -t && /www/server/nginx/sbin/nginx -s reload
+```
+
+- 证书：`/www/server/panel/vhost/cert/pkufinagent.site/fullchain.pem` 与 `privkey.pem`
+- 安全组放行 **80**、**443**
+- 新版 Nginx 使用 `listen 443 ssl;` + `http2 on;`（勿写已弃用的 `listen 443 ssl http2`）
+- 宝塔 SSL「文件验证」失败时，可用手动部署证书 + 上述配置，或改用 DNS 验证
+
+## 七、验证
 
 ```bash
 curl -s http://127.0.0.1:8765/api/health
-# 浏览器打开 http://服务器IP:8765
+curl -sI https://pkufinagent.site | head -5
+# 浏览器打开 https://pkufinagent.site
 ```
 
 登录后新建对话，确认入库提示与股价查询正常；米筐异常时查看终端 `[rqdatac]` 日志。

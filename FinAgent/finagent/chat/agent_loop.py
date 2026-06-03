@@ -284,11 +284,12 @@ def _synthesize_answer(
     graph_hits: list[dict[str, Any]],
     tools_payload: dict[str, Any] | None,
 ) -> str:
-    from .prompts import CHAT_ANSWER_POLICY
+    from .answer_format import sanitize_chat_answer
+    from .prompts import CHAT_ANSWER_POLICY, CHAT_VISUAL_POLICY
 
     system = (
         "你是 FinAgent 研究助手。请根据 observations 与证据给出最终回答。"
-        f"{CHAT_ANSWER_POLICY} "
+        f"{CHAT_ANSWER_POLICY} {CHAT_VISUAL_POLICY} "
         "用户明确只问 PE/市盈率时以 PE 为主，但若推导需要可简要说明所用净利润/市值口径。"
         "多只股票时逐只列出会话 stock_codes 中的标的；禁止写入未出现在问题或 session 中的股票代码。"
         "tools.answer_guidance 须遵守；与问题无关的 observation 片段一律忽略。"
@@ -310,7 +311,7 @@ def _synthesize_answer(
         },
         "recent_messages": [{"role": m.role, "content": m.content} for m in session.messages[-8:]],
     }
-    return llm_text(system, json.dumps(payload, ensure_ascii=False)[:20000])
+    return sanitize_chat_answer(llm_text(system, json.dumps(payload, ensure_ascii=False)[:20000]))
 
 
 def chat_turn_loop(
@@ -429,9 +430,11 @@ def chat_turn_loop(
         answer = _local_answer(query, hits, graph_hits, tools_payload)
         answer += f"\n\n（合成回答失败：{exc}）"
 
+    from .answer_format import sanitize_chat_answer
+
     assistant = ChatMessage(
         role="assistant",
-        content=answer.strip(),
+        content=sanitize_chat_answer(answer.strip()),
         created_at=_now(),
         sources=hits[:4],
         tool_calls=tool_trace,
