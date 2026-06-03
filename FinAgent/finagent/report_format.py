@@ -12,6 +12,33 @@ from .report_writing import FUNDAMENTAL_NARRATIVE_SECTION
 DISCLAIMER = "本报告仅供课程研究与信息展示，不构成投资建议。"
 MISSING_LABEL = "数据缺失"
 TABLE_EMPTY = "—"
+
+_INDUSTRY_NAME_KEYS = (
+    "first_industry_name",
+    "industry_name",
+    "citics_industry_name",
+    "sec_industry",
+    "industry",
+)
+
+
+def industry_label(industry: dict[str, Any] | None, *, missing: str = MISSING_LABEL) -> str:
+    """中信一级等行业名称；跳过 *_code，避免显示行业代码数字。"""
+    if not isinstance(industry, dict) or not industry:
+        return missing
+    for key in _INDUSTRY_NAME_KEYS:
+        value = industry.get(key)
+        if value not in (None, ""):
+            return str(value)
+    for key, value in industry.items():
+        if value in (None, ""):
+            continue
+        key_lower = str(key).lower()
+        if "code" in key_lower:
+            continue
+        if "name" in key_lower or key_lower.endswith("industry"):
+            return str(value)
+    return missing
 _LLM_REVISE_PREAMBLE = re.compile(
     r"^(?:好的[，,].*?(?:重写|修订|验证 Agent|意见|根据).*?(?:\n\n|\n---\n|\n(?=#)))|"
     r"^(?:根据验证 Agent[^\n]*(?:\n|$))+",

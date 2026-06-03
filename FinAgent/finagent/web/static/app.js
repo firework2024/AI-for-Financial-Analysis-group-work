@@ -1042,13 +1042,22 @@ function latestMarginSnapshot(dataSummary) {
 
 function industryLabel(industry) {
   if (!industry || typeof industry !== "object") return "数据缺失";
-  for (const [key, value] of Object.entries(industry)) {
-    if (String(key).toLowerCase().includes("industry") && value != null && value !== "") {
-      return String(value);
-    }
-  }
-  for (const value of Object.values(industry)) {
+  const priority = [
+    "first_industry_name",
+    "industry_name",
+    "citics_industry_name",
+    "sec_industry",
+    "industry",
+  ];
+  for (const key of priority) {
+    const value = industry[key];
     if (value != null && value !== "") return String(value);
+  }
+  for (const [key, value] of Object.entries(industry)) {
+    if (value == null || value === "") continue;
+    const kl = String(key).toLowerCase();
+    if (kl.includes("code")) continue;
+    if (kl.includes("name") || kl.endsWith("industry")) return String(value);
   }
   return "数据缺失";
 }

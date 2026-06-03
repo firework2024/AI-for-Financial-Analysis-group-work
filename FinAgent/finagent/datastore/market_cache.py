@@ -183,4 +183,7 @@ def load_executor_payload_from_snapshot(
         if annual and annual.get("sec_name"):
             payload["sec_name"] = str(annual["sec_name"])
 
+    from ..price_technical import ensure_technical_from_price_rows
+
+    ensure_technical_from_price_rows(payload)
     return payload

@@ -37,6 +37,7 @@ from .report_format import (
     disclaimer_lines,
     fmt_num,
     fmt_pct,
+    industry_label,
     format_generated_at,
     format_generated_at_iso,
     markdown_section,
@@ -1722,7 +1723,7 @@ def _core_metric_table_html(data: dict[str, Any]) -> str:
     industry = data.get("industry") if isinstance(data.get("industry"), dict) else {}
     margin = _latest_margin_snapshot(data)
     rows = [
-        ("中信一级行业", _industry_label(industry)),
+        ("中信一级行业", industry_label(industry)),
         ("最新收盘价", fmt_num(technical.get("latest_close"))),
         ("MA20", fmt_num(technical.get("ma20"))),
         ("MA60", fmt_num(technical.get("ma60"))),
@@ -1835,7 +1836,7 @@ def _core_metric_table(data: dict[str, Any]) -> list[str]:
     industry = data.get("industry") if isinstance(data.get("industry"), dict) else {}
     margin = _latest_margin_snapshot(data)
     rows = [
-        ("中信一级行业", _industry_label(industry)),
+        ("中信一级行业", industry_label(industry)),
         ("最新收盘价", fmt_num(technical.get("latest_close"))),
         ("MA20", fmt_num(technical.get("ma20"))),
         ("MA60", fmt_num(technical.get("ma60"))),
@@ -1854,16 +1855,6 @@ def _core_metric_table(data: dict[str, Any]) -> list[str]:
     lines = ["| 指标 | 数值 |", "|---|---:|"]
     lines.extend(f"| {label} | {value} |" for label, value in rows)
     return lines
-
-
-def _industry_label(industry: dict[str, Any]) -> str:
-    for key, value in industry.items():
-        if "industry" in str(key).lower() and value not in (None, ""):
-            return str(value)
-    for value in industry.values():
-        if value not in (None, ""):
-            return str(value)
-    return MISSING_LABEL
 
 
 def _latest_margin_snapshot(data: dict[str, Any]) -> dict[str, Any]:
