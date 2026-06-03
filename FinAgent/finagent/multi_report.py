@@ -1584,6 +1584,11 @@ def _insert_after_first_heading(content: str, block: str) -> str:
 
 
 def build_data_summary(data: dict[str, Any]) -> dict[str, Any]:
+    from .core_metrics import enrich_core_metrics
+
+    working = dict(data)
+    enrich_core_metrics(working)
+    data = working
     summary: dict[str, Any] = {
         "stock_code": str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0]),
         "sec_name": str(data.get("sec_name") or ""),
@@ -1718,9 +1723,13 @@ def _format_chart_section_html(charts: dict[str, str]) -> list[str]:
 
 
 def _core_metric_table_html(data: dict[str, Any]) -> str:
-    technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
-    factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
-    industry = data.get("industry") if isinstance(data.get("industry"), dict) else {}
+    from .core_metrics import enrich_core_metrics
+
+    working = dict(data)
+    enrich_core_metrics(working)
+    technical = working.get("technical") if isinstance(working.get("technical"), dict) else {}
+    factor = working.get("factor") if isinstance(working.get("factor"), dict) else {}
+    industry = working.get("industry") if isinstance(working.get("industry"), dict) else {}
     margin = _latest_margin_snapshot(data)
     rows = [
         ("中信一级行业", industry_label(industry)),
@@ -1831,9 +1840,13 @@ def _summarize_series(value: dict[str, Any], *, tail: int) -> dict[str, Any]:
 
 
 def _core_metric_table(data: dict[str, Any]) -> list[str]:
-    technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
-    factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
-    industry = data.get("industry") if isinstance(data.get("industry"), dict) else {}
+    from .core_metrics import enrich_core_metrics
+
+    working = dict(data)
+    enrich_core_metrics(working)
+    technical = working.get("technical") if isinstance(working.get("technical"), dict) else {}
+    factor = working.get("factor") if isinstance(working.get("factor"), dict) else {}
+    industry = working.get("industry") if isinstance(working.get("industry"), dict) else {}
     margin = _latest_margin_snapshot(data)
     rows = [
         ("中信一级行业", industry_label(industry)),

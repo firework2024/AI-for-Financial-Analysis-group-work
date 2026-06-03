@@ -1044,6 +1044,8 @@ function industryLabel(industry) {
   if (!industry || typeof industry !== "object") return "数据缺失";
   const priority = [
     "first_industry_name",
+    "level1_name",
+    "selected_industry_name",
     "industry_name",
     "citics_industry_name",
     "sec_industry",
@@ -1062,13 +1064,59 @@ function industryLabel(industry) {
   return "数据缺失";
 }
 
+function resolveIndustryFromSummary(dataSummary) {
+  const label = industryLabel(dataSummary?.industry);
+  if (label !== "数据缺失") return label;
+  const block = dataSummary?.industry_comparison?.industry;
+  if (block && typeof block === "object") {
+    for (const key of ["level1_name", "selected_industry_name", "first_industry_name"]) {
+      if (block[key] != null && block[key] !== "") return String(block[key]);
+    }
+  }
+  return label;
+}
+
+function perShareDividend(row) {
+  if (!row || typeof row !== "object") return null;
+  const raw =
+    row.dividend_cash_before_tax ?? row.cash_div ?? row.cash_amount ?? row.amount;
+  if (raw == null) return null;
+  const cash = Number(raw);
+  if (!Number.isFinite(cash)) return null;
+  const lot = Number(row.round_lot);
+  const divisor = Number.isFinite(lot) && lot > 0 ? lot : 1;
+  return cash / divisor;
+}
+
+function resolveDividendYieldTtm(dataSummary) {
+  const factor = dataSummary?.factor || {};
+  if (factor.dividend_yield_ttm != null) return factor.dividend_yield_ttm;
+  const histRows = dataSummary?.inventory?.factor_history?.recent_rows;
+  if (Array.isArray(histRows)) {
+    for (let i = histRows.length - 1; i >= 0; i -= 1) {
+      const value = histRows[i]?.dividend_yield_ttm;
+      if (value != null) return value;
+    }
+  }
+  const close = Number(dataSummary?.technical?.latest_close);
+  const divRows = dataSummary?.inventory?.dividend?.recent_rows;
+  if (!Number.isFinite(close) || close <= 0 || !Array.isArray(divRows)) return null;
+  let total = 0;
+  for (const row of divRows) {
+    const perShare = perShareDividend(row);
+    if (perShare != null && perShare > 0) total += perShare;
+  }
+  if (total <= 0) return null;
+  return total / close;
+}
+
 function renderMultiCoreMetrics(dataSummary) {
   const technical = dataSummary?.technical || {};
   const factor = dataSummary?.factor || {};
-  const industry = dataSummary?.industry || {};
   const margin = latestMarginSnapshot(dataSummary);
+  const dividendYield = resolveDividendYieldTtm(dataSummary);
   const rows = [
-    ["中信一级行业", industryLabel(industry)],
+    ["中信一级行业", resolveIndustryFromSummary(dataSummary)],
     ["最新收盘价", fmtNum(technical.latest_close)],
     ["MA20", fmtNum(technical.ma20)],
     ["MA60", fmtNum(technical.ma60)],
@@ -1079,7 +1127,7 @@ function renderMultiCoreMetrics(dataSummary) {
     ["PE(TTM)", fmtNum(factor.pe_ratio_ttm)],
     ["PB(TTM)", fmtNum(factor.pb_ratio_ttm)],
     ["PS(TTM)", fmtNum(factor.ps_ratio_ttm)],
-    ["股息率(TTM)", fmtPct(factor.dividend_yield_ttm)],
+    ["股息率(TTM)", fmtPct(dividendYield)],
     ["总市值", fmtNum(factor.market_cap)],
     ["融资余额", fmtNum(margin.margin_balance)],
     ["融资买入额", fmtNum(margin.buy_on_margin_value)],

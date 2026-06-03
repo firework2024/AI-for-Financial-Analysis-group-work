@@ -15,6 +15,8 @@ TABLE_EMPTY = "—"
 
 _INDUSTRY_NAME_KEYS = (
     "first_industry_name",
+    "level1_name",
+    "selected_industry_name",
     "industry_name",
     "citics_industry_name",
     "sec_industry",

@@ -952,6 +952,13 @@ def _enrich_multi_factor_payload(payload: dict[str, Any], stock_code: str) -> No
     if factor:
         payload["factor"] = factor
 
+    try:
+        from .core_metrics import enrich_core_metrics
+
+        enrich_core_metrics(payload)
+    except Exception as exc:
+        print(f"[core_metrics] enrichment skipped: {type(exc).__name__}: {exc}")
+
     history = payload.get("factor_history")
     rows = history.get("rows") if isinstance(history, dict) else None
     if isinstance(rows, list) and rows:
