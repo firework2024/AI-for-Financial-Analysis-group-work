@@ -141,3 +141,91 @@ def test_table_data_available_for_new_keys():
         "funding_cost_table",
     ):
         assert table_data_available(key, data), key
+
+
+def _industry_comparison_data():
+    return {
+        "industry_comparison": {
+            "industry": {
+                "selected_level": 3,
+                "selected_industry_name": "住宅物业开发",
+            },
+            "peers": {"effective_count": 68},
+            "metrics": {
+                "pe_ratio_ttm": {
+                    "label": "PE(TTM)",
+                    "target": 7.34,
+                    "median": -3.22,
+                    "mean": 7.77,
+                    "percentile": 0.76,
+                },
+                "pb_ratio_ttm": {
+                    "label": "PB(TTM)",
+                    "target": 0.67,
+                    "median": 0.85,
+                    "mean": 0.91,
+                    "percentile": 0.35,
+                },
+                "gross_profit_margin_ttm": {
+                    "label": "毛利率(TTM)",
+                    "target": 0.2346,
+                    "median": 0.1726,
+                    "mean": 0.1864,
+                    "percentile": 0.67,
+                },
+                "operating_revenue_growth_ratio_ttm": {
+                    "label": "营收增长率(TTM)",
+                    "target": 0.075,
+                    "median": -0.1286,
+                    "mean": -0.0054,
+                    "percentile": 0.70,
+                },
+                "debt_to_asset_ratio": {
+                    "label": "资产负债率",
+                    "target": 46.88,
+                    "median": 65.46,
+                    "mean": 62.06,
+                    "percentile": 0.26,
+                },
+                "current_ratio": {
+                    "label": "流动比率",
+                    "target": 1.12,
+                    "median": 1.81,
+                    "mean": 2.11,
+                    "percentile": 0.14,
+                },
+                "quick_ratio": {
+                    "label": "速动比率",
+                    "target": 0.43,
+                    "median": 0.61,
+                    "mean": 0.86,
+                    "percentile": 0.29,
+                },
+            },
+        }
+    }
+
+
+def test_industry_growth_leverage_compare_table():
+    data = _industry_comparison_data()
+    block = format_table_block("industry_growth_leverage_compare_table", data)
+    assert block is not None
+    assert "行业成长与杠杆对比" in block
+    assert "住宅物业开发" in block
+    assert "有效同行 68 家" in block
+    assert "营收增长率(TTM)" in block
+    assert "速动比率" in block
+    assert "7.50%" in block
+    assert "46.88%" in block
+    assert "0.43x" in block
+    assert "70%" in block
+
+
+def test_industry_peer_compare_table_includes_valuation_and_quality():
+    data = _industry_comparison_data()
+    block = format_table_block("industry_peer_compare_table", data)
+    assert block is not None
+    assert "行业横向坐标" in block
+    assert "PE(TTM)" in block
+    assert "毛利率(TTM)" in block
+    assert "7.34x" in block

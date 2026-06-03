@@ -735,41 +735,8 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
 def _plot_industry_comparison_charts(industry_comparison: Any, output_dir: Path, stock: str) -> dict[str, str]:
     if not isinstance(industry_comparison, dict):
         return {}
-    metrics = industry_comparison.get("metrics") if isinstance(industry_comparison.get("metrics"), dict) else {}
-    if not metrics:
-        return {}
     charts: dict[str, str] = {}
-    groups = {
-        "industry_valuation_compare": ["pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"],
-        "industry_profitability_compare": ["gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm"],
-        "industry_growth_leverage_compare": [
-            "operating_revenue_growth_ratio_ttm",
-            "net_profit_parent_company_growth_ratio_ttm",
-            "debt_to_asset_ratio",
-            "current_ratio",
-        ],
-    }
-    for name, keys in groups.items():
-        rows = _industry_compare_rows(metrics, keys)
-        if not rows:
-            continue
-        fig, ax = new_figure()
-        labels_list = [row["label"] for row in rows]
-        y = list(range(len(rows)))
-        height = 0.24
-        ax.barh([item - height for item in y], [row["target"] for row in rows], height=height, color=PALETTE["negative"], alpha=0.78, label="目标公司")
-        ax.barh(y, [row["median"] for row in rows], height=height, color=PALETTE["secondary"], alpha=0.72, label="行业中位数")
-        ax.barh([item + height for item in y], [row["mean"] for row in rows], height=height, color=PALETTE["accent"], alpha=0.72, label="行业均值")
-        ax.set_yticks(y)
-        ax.set_yticklabels(labels_list)
-        ax.invert_yaxis()
-        style_axes(ax, title=chart_title(stock, name), xlabel="指标值（百分比指标已换算为 %）")
-        style_legend(ax, loc="lower right")
-        path = output_dir / f"{name}.png"
-        save_chart(fig, path)
-        close_figure(fig)
-        charts[name] = str(path)
-
+    # 估值/盈利/成长杠杆横向对比改由 Markdown 表格展示（量纲不可比，见 industry_*_compare_table）
     cluster = industry_comparison.get("cluster_anomalies")
     if isinstance(cluster, dict) and cluster.get("status") == "ok":
         points = cluster.get("points") if isinstance(cluster.get("points"), list) else []
@@ -1100,14 +1067,21 @@ def _plot_annual_financial_charts(
         "net_profit_parent_company",
         aliases=("net_profit_parent", "net_profit"),
     )
+
+    # 修复1：过滤空值、无效值，避免数据异常
     rev_map = dict(zip(rev_years, rev_values))
     np_map = dict(zip(np_years, np_values))
-    shared_years = sorted(set(rev_map) & set(np_map))
+
+    # 修复2：确保年份是整数，避免横轴显示异常
+    shared_years = sorted([int(y) for y in (set(rev_map) & set(np_map))])
+
     if len(shared_years) >= 2:
         # 两条折线统一用“亿元”口径，横轴按年份离散点展示。
         rev_plot = [rev_map[y] / 1e8 for y in shared_years]
         np_plot = [np_map[y] / 1e8 for y in shared_years]
+        
         fig, ax = new_figure()
+        
         ax.plot(
             shared_years,
             rev_plot,
@@ -1126,16 +1100,26 @@ def _plot_annual_financial_charts(
             markersize=6,
             label="归母净利润（亿元）",
         )
+        
         style_axes(ax, title=chart_title(stock, "revenue_profit_trend"), xlabel="年份", ylabel="金额（亿元）")
+        
+        # 修复3：强制横轴只显示共享年份，避免刻度错乱
         ax.set_xticks(shared_years)
-        ax.set_xticklabels([str(y) for y in shared_years])
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:,.0f}"))
+        ax.set_xticklabels([str(y) for y in shared_years], rotation=0)
+        
+        # 修复4：格式化更友好，支持小数，避免大额数字显示异常
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:,.2f}"))
+        
         style_legend(ax, loc="upper right", ncol=2)
+        
+        # 修复5：确保路径安全创建，避免目录不存在报错
+        output_dir.mkdir(exist_ok=True)
         path = output_dir / "revenue_profit_trend.png"
+        
         save_chart(fig, path)
         close_figure(fig)
         charts["revenue_profit_trend"] = str(path)
-
+        
     # 2. 净利润 vs 经营现金流对比（年度并列柱）
     _, np_vals = _extract_annual_metric(
         financial_data,

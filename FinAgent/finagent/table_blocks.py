@@ -6,9 +6,25 @@ from typing import Any
 
 import pandas as pd
 
-from .chart_catalog import TABLE_CAPTIONS, TABLE_SNAPSHOT_SPECS
+from .chart_catalog import INDUSTRY_COMPARE_TABLE_SPECS, TABLE_CAPTIONS, TABLE_SNAPSHOT_SPECS
 from .chart_style import format_factor_display, label, to_percent_points
+from .peer_analysis import FACTOR_LABELS
 from .report_format import fmt_money, fmt_num, fmt_pct
+
+_DECIMAL_PERCENT_METRICS = frozenset(
+    {
+        "gross_profit_margin_ttm",
+        "net_profit_margin_ttm",
+        "roe_ttm",
+        "net_profit_growth_ratio_ttm",
+        "net_profit_parent_company_growth_ratio_ttm",
+        "operating_profit_growth_ratio_ttm",
+        "gross_profit_growth_ratio_ttm",
+        "operating_revenue_growth_ratio_ttm",
+    }
+)
+_POINT_PERCENT_METRICS = frozenset({"debt_to_asset_ratio"})
+_MULTIPLE_METRICS = frozenset({"pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm", "current_ratio", "quick_ratio"})
 
 
 def table_caption(table_key: str) -> str:
@@ -17,6 +33,8 @@ def table_caption(table_key: str) -> str:
 
 def format_table_block(table_key: str, data: dict[str, Any]) -> str | None:
     """渲染单个表格块；无数据时返回 None。"""
+    if table_key in INDUSTRY_COMPARE_TABLE_SPECS:
+        return _format_industry_compare_table(table_key, data)
     if table_key in TABLE_SNAPSHOT_SPECS:
         return _format_factor_snapshot_table(table_key, data)
     builders = {
@@ -56,15 +74,6 @@ def _fmt_rate(value: Any) -> str:
     return f"{pct:.2f}%"
 
 
-def _safe_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _format_factor_snapshot_table(table_key: str, data: dict[str, Any]) -> str | None:
     keys = TABLE_SNAPSHOT_SPECS.get(table_key)
     if not keys:
@@ -83,6 +92,98 @@ def _format_factor_snapshot_table(table_key: str, data: dict[str, Any]) -> str |
     caption = table_caption(table_key)
     lines = [f"#### 表 · {caption}", ""]
     lines.extend(_markdown_table(headers, [("最新", *cells)]))
+    return "\n".join(lines).strip()
+
+
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _industry_metric_label(key: str, item: dict[str, Any] | None = None) -> str:
+    if isinstance(item, dict) and item.get("label"):
+        return str(item["label"])
+    return FACTOR_LABELS.get(key, label(key))
+
+
+def _format_industry_compare_value(key: str, value: Any) -> str:
+    number = _safe_float(value)
+    if number is None:
+        return "—"
+    if key in _DECIMAL_PERCENT_METRICS:
+        return f"{number * 100:.2f}%"
+    if key in _POINT_PERCENT_METRICS:
+        return f"{number:.2f}%"
+    if key in _MULTIPLE_METRICS:
+        return f"{number:.2f}x"
+    return f"{number:.2f}"
+
+
+def _format_industry_percentile(value: Any) -> str:
+    number = _safe_float(value)
+    if number is None:
+        return "—"
+    return f"{number * 100:.0f}%"
+
+
+def _industry_peer_pool_note(comparison: dict[str, Any]) -> str:
+    industry = comparison.get("industry") if isinstance(comparison.get("industry"), dict) else {}
+    peers = comparison.get("peers") if isinstance(comparison.get("peers"), dict) else {}
+    level = industry.get("selected_level")
+    name = (
+        industry.get("selected_industry_name")
+        or (industry.get(f"level{level}_name") if level else None)
+        or industry.get("level3_name")
+        or industry.get("level2_name")
+    )
+    count = peers.get("effective_count")
+    if not name:
+        return ""
+    level_text = f"中信2019 {level}级行业" if level else "中信2019 行业"
+    return f"同行池口径：{level_text}「{name}」，有效同行 {count} 家。"
+
+
+def _format_industry_compare_table(table_key: str, data: dict[str, Any]) -> str | None:
+    keys = INDUSTRY_COMPARE_TABLE_SPECS.get(table_key)
+    if not keys:
+        return None
+    comparison = data.get("industry_comparison")
+    if not isinstance(comparison, dict):
+        return None
+    metrics = comparison.get("metrics") if isinstance(comparison.get("metrics"), dict) else {}
+    rows: list[tuple[str, str, str, str, str]] = []
+    for key in keys:
+        item = metrics.get(key)
+        if not isinstance(item, dict):
+            continue
+        target = item.get("target")
+        median = item.get("median")
+        mean = item.get("mean")
+        if target is None and median is None and mean is None:
+            continue
+        rows.append(
+            (
+                _industry_metric_label(key, item),
+                _format_industry_compare_value(key, target),
+                _format_industry_compare_value(key, median),
+                _format_industry_compare_value(key, mean),
+                _format_industry_percentile(item.get("percentile")),
+            )
+        )
+    if not rows:
+        return None
+    caption = table_caption(table_key)
+    lines = [f"#### 表 · {caption}", ""]
+    pool_note = _industry_peer_pool_note(comparison)
+    if pool_note:
+        lines.append(pool_note)
+        lines.append("")
+    headers = ("指标", "本公司", "行业中位数", "行业均值", "行业分位")
+    lines.extend(_markdown_table(headers, rows))
     return "\n".join(lines).strip()
 
 

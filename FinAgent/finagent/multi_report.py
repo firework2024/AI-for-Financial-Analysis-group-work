@@ -530,9 +530,9 @@ def build_multi_json_payload(
             "sec_name": sec_name,
             "start_date": data.get("start_date"),
             "end_date": data.get("end_date"),
-            "output_markdown": output_markdown,
-            "output_json": output_json,
-            "output_html": output_html,
+            "output_markdown": normalize_output_relative_path(output_markdown),
+            "output_json": normalize_output_relative_path(output_json),
+            "output_html": normalize_output_relative_path(output_html) if output_html else None,
             "generated_at": format_generated_at_iso(),
             **_validation_meta(validation),
         },
@@ -1768,14 +1768,27 @@ def _format_chart_grid(items: list[tuple[str, str]]) -> list[str]:
     return lines
 
 
-def _normalize_chart_path(path: str) -> str:
-    normalized = str(path).replace("\\", "/").lstrip("./")
+def normalize_output_relative_path(path: str | None) -> str:
+    """Turn absolute output paths into `outputs/` 相对路径，供 Web `/files/` 路由使用。"""
+    normalized = str(path or "").replace("\\", "/").strip()
+    if not normalized:
+        return normalized
     if normalized.startswith(("http://", "https://", "data:")):
         return normalized
-    prefix = "FinAgent/outputs/"
-    if normalized.startswith(prefix):
-        normalized = normalized[len(prefix) :]
-    return normalized
+    stripped = normalized.lstrip("./")
+    for prefix in ("FinAgent/outputs/", "outputs/"):
+        if stripped.startswith(prefix):
+            return stripped[len(prefix) :]
+    marker = "outputs/"
+    idx = stripped.lower().rfind(marker)
+    if idx >= 0:
+        return stripped[idx + len(marker) :]
+    name = stripped.rsplit("/", 1)[-1]
+    return name
+
+
+def _normalize_chart_path(path: str) -> str:
+    return normalize_output_relative_path(path)
 
 
 def validation_passed(validation: dict[str, Any] | None) -> bool:

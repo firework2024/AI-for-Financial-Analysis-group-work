@@ -352,9 +352,13 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
     json_path.write_text(json.dumps(_json_ready(payload), ensure_ascii=False, indent=2), encoding="utf-8")
     ok(f"JSON 数据已写入 ({json_path.stat().st_size} 字节)")
 
-    payload["output_markdown"] = str(output_path)
-    payload["output_json"] = str(json_path)
-    payload["output_html"] = payload.get("meta", {}).get("output_html") or str(output_path.with_suffix(".html"))
+    from .multi_report import normalize_output_relative_path
+
+    payload["output_markdown"] = normalize_output_relative_path(str(output_path))
+    payload["output_json"] = normalize_output_relative_path(str(json_path))
+    payload["output_html"] = normalize_output_relative_path(
+        payload.get("meta", {}).get("output_html") or str(output_path.with_suffix(".html"))
+    )
 
     # 检查 HTML 是否存在
     html_path = payload["output_html"]
@@ -2203,8 +2207,9 @@ def _industry_comparison_writer_guidance(
             "1) 在「同行横向坐标」中说明实际采用的同行池层级和有效同行数量；"
             "2) 只使用经营质量指标做横向比较，如毛利率、净利率、ROE、收入/利润增长、资产负债率、流动比率、速动比率；"
             "3) 至少选择 2-3 个经营类关键指标说明目标公司相对行业均值、中位数和分位；"
-            "4) DBSCAN 可用时只解释经营质量相关贡献指标；若主要异常来自估值因子，则说明聚类证据不用于经营质量结论；"
-            "5) 禁止写 PE/PB/PS、股息率、估值分位、估值吸引力或估值匹配判断。"
+            "4) 系统会机械插入「行业盈利能力对比」「行业成长与杠杆对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
+            "5) DBSCAN 可用时只解释经营质量相关贡献指标；若主要异常来自估值因子，则说明聚类证据不用于经营质量结论；"
+            "6) 禁止写 PE/PB/PS、股息率、估值分位、估值吸引力或估值匹配判断。"
             "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
             + (f"同行对比写作简报：{brief}" if brief else "")
         )
@@ -2214,7 +2219,8 @@ def _industry_comparison_writer_guidance(
             "1) 先说明实际采用的同行池层级和有效同行数量；"
             "2) 估值必须说明 PE/PB/PS 至少一个指标相对行业的分位、均值和中位数；"
             "3) 盈利、成长、杠杆/偿债中至少选择 2-3 个关键指标做同行比较；"
-            "4) DBSCAN 可用时说明是否为噪声点和主要贡献指标，不可用时说明样本或特征局限。"
+            "4) 系统会机械插入「行业横向坐标」「行业估值对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
+            "5) DBSCAN 可用时说明是否为噪声点和主要贡献指标，不可用时说明样本或特征局限。"
             "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
             "可以设置「行业横向坐标」这类小标题，但内容必须由你自然写成，不要机械复述字段名。"
             + (f"同行对比写作简报：{brief}" if brief else "")

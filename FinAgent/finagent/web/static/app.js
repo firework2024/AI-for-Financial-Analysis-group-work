@@ -340,11 +340,14 @@ function focusMultiAnalyzePanel() {
 }
 
 function normalizeFilePath(path) {
-  return String(path || "")
-    .replace(/^FinAgent[\\/]outputs[\\/]/i, "")
-    .replace(/^outputs[\\/]/, "")
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "");
+  let normalized = String(path || "").replace(/\\/g, "/").trim();
+  if (!normalized) return "";
+  normalized = normalized.replace(/^FinAgent\/outputs\//i, "").replace(/^outputs\//i, "");
+  if (/^https?:\/\//i.test(normalized) || normalized.startsWith("data:")) return normalized;
+  const marker = "/outputs/";
+  const idx = normalized.toLowerCase().lastIndexOf(marker);
+  if (idx >= 0) normalized = normalized.slice(idx + marker.length);
+  return normalized.replace(/^\/+/, "");
 }
 
 function fileUrl(path) {

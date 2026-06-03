@@ -87,6 +87,37 @@ TABLE_SNAPSHOT_SPECS: dict[str, tuple[str, ...]] = {
 }
 TABLE_SNAPSHOT_KEYS = frozenset(TABLE_SNAPSHOT_SPECS)
 
+# 行业横向对比：量纲不可比，统一以表格展示（本公司 / 行业中位数 / 均值 / 分位）
+INDUSTRY_COMPARE_TABLE_SPECS: dict[str, tuple[str, ...]] = {
+    "industry_valuation_compare_table": ("pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"),
+    "industry_profitability_compare_table": (
+        "gross_profit_margin_ttm",
+        "net_profit_margin_ttm",
+        "roe_ttm",
+    ),
+    "industry_growth_leverage_compare_table": (
+        "operating_revenue_growth_ratio_ttm",
+        "net_profit_parent_company_growth_ratio_ttm",
+        "debt_to_asset_ratio",
+        "current_ratio",
+        "quick_ratio",
+    ),
+    "industry_peer_compare_table": (
+        "pe_ratio_ttm",
+        "pb_ratio_ttm",
+        "ps_ratio_ttm",
+        "gross_profit_margin_ttm",
+        "net_profit_margin_ttm",
+        "roe_ttm",
+        "operating_revenue_growth_ratio_ttm",
+        "net_profit_parent_company_growth_ratio_ttm",
+        "debt_to_asset_ratio",
+        "current_ratio",
+        "quick_ratio",
+    ),
+}
+INDUSTRY_COMPARE_TABLE_KEYS = frozenset(INDUSTRY_COMPARE_TABLE_SPECS)
+
 TABLE_CAPTIONS: dict[str, str] = {
     "latest_quality_snapshot": "最新盈利质量因子",
     "latest_valuation_snapshot": "最新估值因子",
@@ -98,6 +129,10 @@ TABLE_CAPTIONS: dict[str, str] = {
     "trading_activity_table": "成交活跃度",
     "funding_cost_table": "股息与资金成本",
     "dividend_recent_table": "近期分红记录",
+    "industry_valuation_compare_table": "行业估值对比",
+    "industry_profitability_compare_table": "行业盈利能力对比",
+    "industry_growth_leverage_compare_table": "行业成长与杠杆对比",
+    "industry_peer_compare_table": "行业横向坐标",
 }
 
 TABLE_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
@@ -111,17 +146,34 @@ TABLE_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "trading_activity_table": ("成交", "换手", "成交额", "资金流向", "活跃度", "放量"),
     "funding_cost_table": ("分红", "资金成本", "Shibor", "国债", "股息", "无风险"),
     "dividend_recent_table": ("分红", "股息", "派息"),
+    "industry_valuation_compare_table": ("行业", "同行", "横向", "估值", "PE", "PB", "PS", "分位", "中位数"),
+    "industry_profitability_compare_table": ("行业", "同行", "横向", "毛利率", "净利率", "ROE", "盈利", "分位"),
+    "industry_growth_leverage_compare_table": (
+        "行业",
+        "同行",
+        "横向",
+        "成长",
+        "杠杆",
+        "资产负债率",
+        "流动比率",
+        "速动",
+        "分位",
+    ),
+    "industry_peer_compare_table": ("行业", "同行", "横向", "分位", "中位数", "均值", "同业"),
 }
 
 MAX_TABLES_PER_SECTION = 2
 SECTION_TABLE_LIMITS: dict[str, int] = {
     "资金与交易结构": 4,
-    "经营质量分析": 3,
+    "经营质量分析": 4,
+    "基本面与估值": 3,
 }
 
 DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
     MARKET_TECH_SECTION: ("technical_snapshot_table",),
     "经营质量分析": (
+        "industry_profitability_compare_table",
+        "industry_growth_leverage_compare_table",
         "latest_quality_snapshot",
         "latest_liquidity_snapshot",
     ),
@@ -132,6 +184,8 @@ DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
         "share_structure_table",
     ),
     "基本面与估值": (
+        "industry_peer_compare_table",
+        "industry_valuation_compare_table",
         "latest_valuation_snapshot",
         "latest_growth_snapshot",
     ),
@@ -139,6 +193,7 @@ DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
 
 TABLE_ALL_KEYS = frozenset(
     set(TABLE_SNAPSHOT_KEYS)
+    | set(INDUSTRY_COMPARE_TABLE_KEYS)
     | {
         "technical_snapshot_table",
         "margin_snapshot_table",
@@ -193,9 +248,6 @@ CHART_GROUPS: list[tuple[str, tuple[str, ...]]] = [
             "latest_quality_snapshot",
             "latest_liquidity_snapshot",
             "latest_growth_snapshot",
-            "industry_valuation_compare",
-            "industry_profitability_compare",
-            "industry_growth_leverage_compare",
             "industry_dbscan_anomaly",
         ),
     ),
@@ -306,8 +358,6 @@ _MARKET_TECH_CHART_CANDIDATES: tuple[str, ...] = (
 DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
     MARKET_TECH_SECTION: _MARKET_TECH_CHART_CANDIDATES,
     "经营质量分析": (
-        "industry_profitability_compare",
-        "industry_growth_leverage_compare",
         "industry_dbscan_anomaly",
         "revenue_profit_trend",
         "profit_vs_cashflow",

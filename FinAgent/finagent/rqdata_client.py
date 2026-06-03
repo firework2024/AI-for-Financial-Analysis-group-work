@@ -183,7 +183,13 @@ def _factor_date(rqdatac_module: Any, as_of: date) -> date:
         return as_of
 
 
+_RQDATA_INITIALIZED = False
+
+
 def _init_rqdata(rqdatac_module: Any) -> None:
+    global _RQDATA_INITIALIZED
+    if _RQDATA_INITIALIZED:
+        return
     from .progress import info
 
     prepare_rqdata_env()
@@ -200,9 +206,11 @@ def _init_rqdata(rqdatac_module: Any) -> None:
                 host_arg = host
         info(f"使用 RQ_USER/RQ_PASSWORD/RQ_HOST 认证")
         _execute_rqdata_call("初始化米筐连接", rqdatac_module.init, user, password, host_arg)
+        _RQDATA_INITIALIZED = True
         return
     info("使用本机米筐默认配置初始化")
     _execute_rqdata_call("初始化米筐连接", rqdatac_module.init)
+    _RQDATA_INITIALIZED = True
 
 
 def _execute_rqdata_call(label: str, func: Any, *args: Any, **kwargs: Any) -> Any:

@@ -3,6 +3,7 @@
 用法:
   python scripts/repair_snapshot_meta.py 600519
   python scripts/repair_snapshot_meta.py 600519 --industry 食品饮料 --industry-code 36
+  python scripts/repair_snapshot_meta.py 600519 --verbose
 """
 import json
 import os
@@ -123,6 +124,8 @@ def main():
             if rq_ind:
                 payload["industry"] = rq_ind
                 print("  industry from rqdata:", json.dumps(rq_ind, ensure_ascii=False)[:120])
+            else:
+                print("  rqdata industry empty; run: python scripts/probe_rqdata.py {}".format(code))
 
         if force_industry_name:
             manual = {

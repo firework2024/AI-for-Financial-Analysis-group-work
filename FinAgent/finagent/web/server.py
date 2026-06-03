@@ -53,13 +53,11 @@ def _output_dirs() -> list[Path]:
 
 
 def _normalize_output_relative_path(filename: str) -> str | None:
-    normalized = filename.replace("\\", "/").lstrip("/")
+    from ..multi_report import normalize_output_relative_path
+
+    normalized = normalize_output_relative_path(filename)
     if not normalized or ".." in normalized.split("/"):
         return None
-    for prefix in ("FinAgent/outputs/", "outputs/"):
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix) :]
-            break
     return normalized
 
 

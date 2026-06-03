@@ -6,6 +6,10 @@ from finagent.web.server import _find_output_file, _normalize_output_relative_pa
 def test_normalize_output_relative_path_strips_prefix():
     assert _normalize_output_relative_path("outputs/charts/foo/bar.png") == "charts/foo/bar.png"
     assert _normalize_output_relative_path("FinAgent/outputs/charts/foo/bar.png") == "charts/foo/bar.png"
+    assert (
+        _normalize_output_relative_path("/root/FinAgent/outputs/600064_multi_agent_report.html")
+        == "600064_multi_agent_report.html"
+    )
 
 
 def test_find_output_file_supports_nested_chart_paths():

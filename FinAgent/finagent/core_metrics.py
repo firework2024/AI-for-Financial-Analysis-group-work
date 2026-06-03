@@ -55,6 +55,63 @@ def _parse_as_of_date(value: Any) -> date | None:
         return None
 
 
+def _rq_scalar(value: Any) -> Any:
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    return value
+
+
+def _dict_from_rq_industry_df(df: Any) -> dict[str, Any]:
+    try:
+        import pandas as pd
+    except Exception:
+        return {}
+    if df is None or getattr(df, "empty", True):
+        return {}
+    try:
+        frame = df.reset_index()
+        if frame.empty:
+            return {}
+        row = frame.iloc[0]
+        if isinstance(row, pd.Series):
+            return {str(k): _rq_scalar(v) for k, v in row.items() if _rq_scalar(v) is not None}
+        return {str(k): _rq_scalar(v) for k, v in row.to_dict().items() if _rq_scalar(v) is not None}
+    except Exception:
+        return {}
+
+
+def _fetch_rq_industry_frame(rqdatac: Any, order_book_id: str, as_of: date) -> tuple[Any, int | None, date | None]:
+    """依次尝试 level=1/0 与 as_of、前一交易日，兼容不同米筐返回形态。"""
+    dates: list[date] = [as_of]
+    try:
+        prev = rqdatac.get_previous_trading_date(as_of)
+        if prev and prev != as_of:
+            dates.append(prev)
+    except Exception:
+        pass
+    for level in (1, 0):
+        for probe_date in dates:
+            try:
+                df = rqdatac.get_instrument_industry(
+                    order_book_id, source="citics_2019", level=level, date=probe_date
+                )
+            except Exception:
+                continue
+            if df is not None and not getattr(df, "empty", True):
+                return df, level, probe_date
+    return None, None, None
+
+
 def _industry_from_rqdata(stock_code: str, as_of: date | None = None) -> dict[str, Any]:
     """米筐中信一级行业；需本机/环境变量 RQ 凭证。"""
     from .stock_utils import default_as_of, to_order_book_id
@@ -69,29 +126,20 @@ def _industry_from_rqdata(stock_code: str, as_of: date | None = None) -> dict[st
         from .rqdata_client import _init_rqdata
 
         _init_rqdata(rqdatac)
-        df = rqdatac.get_instrument_industry(
-            order_book_id, source="citics_2019", level=1, date=as_of
-        )
+        df, level, used_date = _fetch_rq_industry_frame(rqdatac, order_book_id, as_of)
     except Exception:
         return {}
-    if df is None or getattr(df, "empty", True):
+    if df is None:
         return {}
-    try:
-        import pandas as pd
-
-        row = df.reset_index().iloc[0].to_dict()
-    except Exception:
+    row = _dict_from_rq_industry_df(df)
+    if not row:
         return {}
-    out: dict[str, Any] = {"industry_source": "rqdata_citics_2019_l1"}
-    for key, value in row.items():
-        if pd.isna(value):
-            continue
-        if hasattr(value, "item"):
-            try:
-                value = value.item()
-            except Exception:
-                pass
-        out[str(key)] = value
+    out: dict[str, Any] = {
+        "industry_source": "rqdata_citics_2019_l{}".format(level if level is not None else 1),
+    }
+    if used_date is not None:
+        out["industry_as_of"] = used_date.isoformat()
+    out.update(row)
     if industry_has_display_name(out):
         return out
     coded = _industry_from_citics_code(out)

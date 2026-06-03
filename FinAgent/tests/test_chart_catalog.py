@@ -36,14 +36,20 @@ def test_section_candidates_only_use_known_charts():
             assert name in CHART_CAPTIONS
 
 
-def test_industry_charts_are_prioritized_for_operating_quality_section():
+def test_industry_tables_are_prioritized_for_operating_quality_section():
+    from finagent.chart_catalog import DEFAULT_SECTION_TABLE_CANDIDATES
+
+    tables = DEFAULT_SECTION_TABLE_CANDIDATES["经营质量分析"]
     candidates = DEFAULT_SECTION_CHART_CANDIDATES["经营质量分析"]
 
-    assert candidates[:2] == (
-        "industry_profitability_compare",
-        "industry_growth_leverage_compare",
+    assert tables[:2] == (
+        "industry_profitability_compare_table",
+        "industry_growth_leverage_compare_table",
     )
     assert CHART_CAPTIONS["industry_dbscan_anomaly"] == "DBSCAN 同行异常识别"
+    assert "industry_profitability_compare" not in candidates
+    assert "industry_growth_leverage_compare" not in candidates
+    assert "industry_dbscan_anomaly" in candidates
     assert "industry_valuation_compare" not in candidates
     assert "valuation_percentile" not in candidates
     assert "valuation_factors" not in candidates
