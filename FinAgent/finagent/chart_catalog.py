@@ -9,6 +9,21 @@ MARKET_TECH_SECTION = "量价与技术面"
 SYNTHESIS_SECTION = "综合判断"
 RISK_SECTION = "综合风险"
 DATA_LIMITATIONS_SECTION = "数据覆盖与局限"
+OPERATING_QUALITY_SECTION = "经营质量分析"
+VALUATION_SECTION = "基本面与估值"
+CAPITAL_FLOW_SECTION = "资金与交易结构"
+MACRO_RATE_SECTION = "宏观利率背景"
+RISK_SYNTHESIS_SECTION = "综合风险与数据局限"
+
+# Plan section kind → catalog 标准节名（候选图/表与 inline 上限）
+KIND_CATALOG_SECTION: dict[str, str] = {
+    "operating_quality": OPERATING_QUALITY_SECTION,
+    "market": MARKET_TECH_SECTION,
+    "valuation": VALUATION_SECTION,
+    "capital": CAPITAL_FLOW_SECTION,
+    "macro": MACRO_RATE_SECTION,
+    "risk": RISK_SYNTHESIS_SECTION,
+}
 
 DEFERRED_SECTIONS = frozenset(
     {
@@ -456,6 +471,7 @@ DEFAULT_SECTION_CHART_CANDIDATES: dict[str, tuple[str, ...]] = {
         "margin_activity",
     ),
     "宏观利率背景": ("shibor_rates", "gov_yield_trend", "yield_curve_snapshot"),
+    RISK_SYNTHESIS_SECTION: ("latest_liquidity_snapshot",),
     "基本面与估值": (
         "valuation_factors",
         "valuation_percentile",

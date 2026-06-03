@@ -1230,7 +1230,20 @@ function resolveMultiSecName(report) {
   const data = report.data || {};
   const summary = report.data_summary || {};
   const ui = report._ui || {};
-  return ui.sec_name || meta.sec_name || summary.sec_name || data.sec_name || "";
+  const stockCode = meta.stock_code || ui.stock_code || data.stock_code || "";
+  const generic = new Set(["公司", "本公司", "上市公司", "目标公司", "该司", "该股", "企业", "集团", "标的", "发行人"]);
+  const pick = (value) => {
+    const name = String(value || "").trim();
+    if (!name || generic.has(name) || name === stockCode) return "";
+    return name;
+  };
+  return (
+    pick(ui.sec_name) ||
+    pick(meta.sec_name) ||
+    pick(summary.sec_name) ||
+    pick(data.sec_name) ||
+    ""
+  );
 }
 
 function renderMultiReport(report, anchors = {}) {
@@ -1297,6 +1310,7 @@ function renderReportDetail(report) {
   `;
   els.reportTitle.textContent =
     ui.title ||
+    report.meta?.report_title ||
     (reportType === "multi_analyze"
       ? [report.meta?.stock_code || ui.stock_code, resolveMultiSecName(report), "多智能体报告"].filter(Boolean).join(" ")
       : report.meta?.stock_code) ||

@@ -166,6 +166,17 @@ def test_resolve_multi_sec_name_from_summary():
     assert resolve_multi_sec_name(payload, "600519") == "贵州茅台"
 
 
+def test_resolve_multi_sec_name_rejects_generic_company_placeholder():
+    payload = {
+        "meta": {"stock_code": "600064", "sec_name": "公司"},
+        "summary": "公司（600064.XSHG）当前估值处于历史中位。",
+        "sections": {"量价趋势": "公司（600064）近期震荡。"},
+    }
+    name = resolve_multi_sec_name(payload, "600064")
+    assert name != "公司"
+    assert name not in ("本公司", "上市公司", "目标公司")
+
+
 def test_multi_report_display_title_includes_company_name():
     title = multi_report_display_title(stock_code="600519", sec_name="贵州茅台")
     assert title == "600519 贵州茅台 多智能体报告"

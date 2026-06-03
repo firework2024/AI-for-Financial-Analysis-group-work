@@ -250,11 +250,21 @@ def _report_summary(payload: dict[str, Any], filename: str) -> dict[str, Any]:
             str(meta.get("stock_code") or data_block.get("stock_code") or "").strip()
             or (order_book_id.split(".")[0] if order_book_id else filename.split("_")[0])
         )
-        from ..multi_report import multi_report_display_title, resolve_multi_sec_name
+        plan = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
+        from ..multi_report import resolve_multi_report_title, resolve_multi_sec_name
 
         sec_name = resolve_multi_sec_name(payload, stock_code)
-        title = multi_report_display_title(stock_code=stock_code, sec_name=sec_name)
-        subtitle = meta.get("end_date") or meta.get("generated_at")
+        title = str(meta.get("report_title") or "").strip()
+        if not title:
+            title = resolve_multi_report_title(
+                plan=plan,
+                stock_code=stock_code,
+                sec_name=sec_name,
+                suffix="多智能体报告",
+            )
+        start = meta.get("start_date") or data_block.get("start_date")
+        end = meta.get("end_date") or data_block.get("end_date")
+        subtitle = f"{start} ~ {end}" if start and end else (meta.get("end_date") or meta.get("generated_at"))
     elif report_type == "annual_analyze":
         stock_code = str(meta.get("stock_code") or payload.get("annual_report", {}).get("stock_code") or filename.split("_")[0])
         sec_name = str(meta.get("sec_name") or payload.get("annual_report", {}).get("sec_name") or "")

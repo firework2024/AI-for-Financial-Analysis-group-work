@@ -79,6 +79,22 @@ def test_chart_candidates_for_plan_custom_operating_quality_section():
     assert "margin_roe_trend" in keys
 
 
+def test_chart_candidates_for_plan_risk_section_not_operating_quality():
+    plan = {
+        "sections": [
+            {
+                "name": "数据缺口与综合风险",
+                "kind": "risk",
+                "data": ["all_collected_data"],
+            }
+        ]
+    }
+    keys = chart_candidates_for_plan_section("数据缺口与综合风险", plan)
+    assert "latest_liquidity_snapshot" in keys
+    assert "revenue_profit_trend" not in keys
+    assert "margin_roe_trend" not in keys
+
+
 def test_chart_keys_for_plan_custom_capital_section():
     plan = {
         "sections": [

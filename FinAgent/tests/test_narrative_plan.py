@@ -141,6 +141,15 @@ def test_resolve_multi_report_title_prefers_plan():
     assert title == "600519 茅台：消费韧性观察"
 
 
+def test_resolve_multi_report_title_prefixes_company_when_missing():
+    title = resolve_multi_report_title(
+        plan={"report_title": "成长与估值再平衡"},
+        stock_code="300519",
+        sec_name="新光药业",
+    )
+    assert title == "300519 新光药业：成长与估值再平衡"
+
+
 def test_sanitize_plan_sections_keeps_rationale():
     plan = sanitize_plan_sections(
         {

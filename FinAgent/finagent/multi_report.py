@@ -220,6 +220,61 @@ def section_digest(sections: dict[str, str], plan: dict[str, Any], *, max_chars:
     return digest
 
 
+_GENERIC_SEC_NAMES = frozenset(
+    {
+        "公司",
+        "本公司",
+        "上市公司",
+        "目标公司",
+        "该司",
+        "该股",
+        "企业",
+        "集团",
+        "A股",
+        "H股",
+        "标的",
+        "发行人",
+    }
+)
+
+
+def normalize_sec_name(name: str, stock_code: str = "") -> str:
+    """过滤「公司」等泛化占位，避免被误当作 A 股简称。"""
+    cleaned = str(name or "").strip()
+    if not cleaned:
+        return ""
+    if cleaned in _GENERIC_SEC_NAMES:
+        return ""
+    if stock_code and cleaned == stock_code:
+        return ""
+    if re.fullmatch(r"\d+", cleaned):
+        return ""
+    return cleaned
+
+
+def _lookup_sec_name(stock_code: str) -> str:
+    code = str(stock_code or "").strip()
+    if not code:
+        return ""
+    try:
+        from .chat.data_tools import sec_name_for_code
+
+        name = normalize_sec_name(sec_name_for_code(code) or "", code)
+        if name:
+            return name
+    except Exception:
+        pass
+    try:
+        from .datastore.db import get_annual_report
+
+        annual = get_annual_report(code)
+        if annual and annual.get("sec_name"):
+            return normalize_sec_name(str(annual["sec_name"]).strip(), code)
+    except Exception:
+        pass
+    return ""
+
+
 def _guess_sec_name_from_summary(summary: str, stock_code: str) -> str:
     text = str(summary or "").strip()
     if not text:
@@ -230,53 +285,46 @@ def _guess_sec_name_from_summary(summary: str, stock_code: str) -> str:
     ]
     if stock_code:
         patterns.append(rf"([\u4e00-\u9fff]{{2,12}})（{re.escape(stock_code)}[.)]")
+    best = ""
     for pattern in patterns:
-        match = re.search(pattern, text)
-        if not match:
-            continue
-        name = str(match.group(1)).strip()
-        if name and name != stock_code and not re.fullmatch(r"\d+", name):
-            return name
-    return ""
+        for match in re.finditer(pattern, text):
+            name = normalize_sec_name(str(match.group(1)).strip(), stock_code)
+            if name and len(name) > len(best):
+                best = name
+    return best
 
 
 def _guess_sec_name_from_sections(sections: dict[str, Any], stock_code: str) -> str:
     if not stock_code:
         return ""
     pattern = re.compile(rf"([\u4e00-\u9fff]{{2,12}})（{re.escape(stock_code)}[.)]")
+    best = ""
     for content in sections.values():
-        match = pattern.search(str(content or "")[:3000])
-        if match:
-            return match.group(1).strip()
-    return ""
+        for match in pattern.finditer(str(content or "")[:3000]):
+            name = normalize_sec_name(match.group(1).strip(), stock_code)
+            if name and len(name) > len(best):
+                best = name
+    return best
 
 
 def resolve_multi_sec_name(payload: dict[str, Any], stock_code: str | None = None) -> str:
     """从 meta / data / 摘要 / 正文 / 本地年报缓存推断 A 股简称。"""
     meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
-    for key in ("sec_name", "symbol"):
-        value = str(meta.get(key) or "").strip()
-        if value:
-            return value
-
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    for key in ("sec_name", "symbol"):
-        value = str(data.get(key) or "").strip()
-        if value:
-            return value
-
     data_summary = payload.get("data_summary") if isinstance(payload.get("data_summary"), dict) else {}
-    for key in ("sec_name", "symbol"):
-        value = str(data_summary.get(key) or "").strip()
-        if value:
-            return value
 
     code = str(stock_code or meta.get("stock_code") or data.get("stock_code") or "").strip()
     if not code:
         order_book_id = str(meta.get("order_book_id") or data.get("order_book_id") or "")
         code = order_book_id.split(".")[0] if order_book_id else ""
 
-    guessed = _guess_sec_name_from_summary(str(payload.get("summary") or ""), code)
+    for source in (meta, data, data_summary):
+        for key in ("sec_name", "symbol"):
+            name = normalize_sec_name(str(source.get(key) or "").strip(), code)
+            if name:
+                return name
+
+    guessed = _guess_sec_name_from_summary(str(payload.get("summary") or payload.get("executive_summary") or ""), code)
     if guessed:
         return guessed
 
@@ -285,16 +333,7 @@ def resolve_multi_sec_name(payload: dict[str, Any], stock_code: str | None = Non
     if guessed:
         return guessed
 
-    if code:
-        try:
-            from .datastore.db import get_annual_report
-
-            annual = get_annual_report(code)
-            if annual and annual.get("sec_name"):
-                return str(annual["sec_name"]).strip()
-        except Exception:
-            pass
-    return ""
+    return _lookup_sec_name(code)
 
 
 def multi_report_display_title(*, stock_code: str, sec_name: str = "", suffix: str = "多智能体报告") -> str:
@@ -309,6 +348,41 @@ def multi_report_display_title(*, stock_code: str, sec_name: str = "", suffix: s
     return suffix
 
 
+def _sec_name_for_report_title(stock_code: str, sec_name: str) -> str:
+    sec_name = normalize_sec_name(str(sec_name or "").strip(), stock_code)
+    if sec_name:
+        return sec_name
+    return _lookup_sec_name(stock_code)
+
+
+def _title_includes_company_identity(title: str, *, stock_code: str, sec_name: str) -> bool:
+    text = str(title or "").strip()
+    if not text:
+        return False
+    if stock_code and stock_code in text:
+        return True
+    if sec_name and sec_name in text:
+        return True
+    if sec_name and len(sec_name) >= 2 and sec_name[:2] in text:
+        return True
+    return False
+
+
+def _merge_company_into_report_title(custom: str, *, stock_code: str, sec_name: str) -> str:
+    custom = str(custom or "").strip()
+    stock_code = str(stock_code or "").strip()
+    sec_name = _sec_name_for_report_title(stock_code, sec_name)
+    if not custom or _title_includes_company_identity(custom, stock_code=stock_code, sec_name=sec_name):
+        return custom
+    if stock_code and sec_name:
+        return f"{stock_code} {sec_name}：{custom}"
+    if sec_name:
+        return f"{sec_name}：{custom}"
+    if stock_code:
+        return f"{stock_code}：{custom}"
+    return custom
+
+
 def resolve_multi_report_title(
     *,
     plan: dict[str, Any] | None,
@@ -318,7 +392,7 @@ def resolve_multi_report_title(
 ) -> str:
     custom = str((plan or {}).get("report_title") or "").strip()
     if custom:
-        return custom[:120]
+        return _merge_company_into_report_title(custom, stock_code=stock_code, sec_name=sec_name)[:120]
     return multi_report_display_title(stock_code=stock_code, sec_name=sec_name, suffix=suffix)
 
 
@@ -515,7 +589,7 @@ def build_multi_json_payload(
         include_executive_summary=bool(summary_text),
     )
     stock_code = str(data.get("stock_code") or str(data.get("order_book_id", "")).split(".")[0])
-    sec_name = str(data.get("sec_name") or "")
+    sec_name = normalize_sec_name(str(data.get("sec_name") or ""), stock_code) or _lookup_sec_name(stock_code)
     payload: dict[str, Any] = {
         "meta": {
             "report_type": "multi_analyze",

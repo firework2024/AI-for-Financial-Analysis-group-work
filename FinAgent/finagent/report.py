@@ -55,6 +55,36 @@ _CORE_CONCLUSION = re.compile(
 )
 
 
+def _annual_provenance_lines(report: dict[str, Any]) -> list[str]:
+    """年报「来源」小节：区分新浪财经纯文本与巨潮 PDF 两条入库路径。"""
+    lines: list[str] = []
+    pdf_path = str(report.get("pdf_path") or "").strip()
+    local_text = str(report.get("local_text") or "").strip()
+    pdf_url = str(report.get("pdf_url") or "").strip()
+
+    if pdf_path.lower().endswith(".pdf"):
+        lines.append("- 正文来源：巨潮资讯 CNINFO PDF 本地解析")
+        lines.append(f"- 本地 PDF：`{pdf_path}`")
+    elif local_text:
+        lines.append("- 正文来源：新浪财经公告详情页（HTML 解析纯文本）")
+        lines.append(f"- 本地文本：`{local_text}`")
+    else:
+        lines.append("- 正文来源：新浪财经公告详情页（HTML 解析纯文本）")
+
+    if pdf_url and not pdf_path.lower().endswith(".pdf"):
+        lines.append(f"- 官方 PDF：{pdf_url}")
+    return lines
+
+
+def _annual_source_kind(report: dict[str, Any]) -> str:
+    pdf_path = str(report.get("pdf_path") or "")
+    if pdf_path.lower().endswith(".pdf"):
+        return "cninfo_pdf"
+    if report.get("local_text") or report.get("pdf_url"):
+        return "sina_finance"
+    return "unknown"
+
+
 def render_markdown(result: dict[str, Any], *, order_book_id: str | None = None) -> str:
     report = result["annual_report"]
     analysis = result["financial_analysis"]
@@ -73,8 +103,7 @@ def render_markdown(result: dict[str, Any], *, order_book_id: str | None = None)
         f"- 报告年份：{report.get('report_year', '—')}",
         *( [f"- 米筐代码：{order_book_id}"] if order_book_id else [] ),
         f"- 年报标题：{report['title']}",
-        f"- 来源：新浪财经纯文本",
-        *( [f"- 本地文本：`{report.get('local_text', '')}`"] if report.get("local_text") else [] ),
+        *_annual_provenance_lines(report),
         f"- MD&A 提取置信度：{mda.get('confidence', '—')}",
         f"- 生成时间：{format_generated_at()}",
     ]
@@ -155,7 +184,9 @@ def build_annual_json_payload(
             "output_markdown": output_markdown,
             "output_json": output_json,
             "generated_at": format_generated_at_iso(),
-            "source": "sina_finance",
+            "source": _annual_source_kind(report),
+            "pdf_url": report.get("pdf_url"),
+            "pdf_path": report.get("pdf_path"),
             "local_text": report.get("local_text"),
             "mda_confidence": mda.get("confidence"),
         },

@@ -7,6 +7,7 @@ from typing import Any
 from .chart_catalog import (
     DEFAULT_SECTION_CHART_CANDIDATES,
     DEFAULT_SECTION_TABLE_CANDIDATES,
+    KIND_CATALOG_SECTION,
     MARKET_TECH_SECTION,
     MAX_INLINE_CHARTS_PER_SECTION,
     SECTION_INLINE_CHART_LIMITS,
@@ -117,17 +118,6 @@ _TITLE_TOOL_KEYWORDS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("宏观", "利率", "Shibor", "国债"), ("get_interbank_offered_rate", "get_yield_curve")),
     (("风险", "局限"), ("all_collected_data", "is_suspended", "is_st_stock")),
 )
-
-# Plan section kind → chart_catalog 中的标准节名（用于候选图/表与 inline 上限）
-KIND_CATALOG_SECTION: dict[str, str] = {
-    "operating_quality": "经营质量分析",
-    "market": MARKET_TECH_SECTION,
-    "valuation": "基本面与估值",
-    "capital": "资金与交易结构",
-    "macro": "宏观利率背景",
-    "risk": "经营质量分析",
-}
-
 
 def catalog_key_for_plan_section(section_name: str, plan: dict[str, Any] | None = None) -> str | None:
     """解析 Plan 自定义节名对应的 catalog 标准键（精确名 / kind / 标题关键词）。"""
