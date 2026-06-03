@@ -5,7 +5,15 @@ import re
 from typing import Any
 
 from .env import get_env
-from .llm_settings import has_llm_api_key, llm_api_key, llm_base_url, llm_model
+from .llm_client import (
+    chat_completion_kwargs,
+    clean_model_text,
+    extract_json_object,
+    llm_json,
+    llm_text,
+    openai_client,
+)
+from .llm_settings import has_llm_api_key, llm_model
 from .report_format import normalize_section_text
 from .report_writing import (
     FUNDAMENTAL_NARRATIVE_SECTION,
@@ -39,18 +47,6 @@ _FINANCIAL_SIGNAL_REVIEW_SYSTEM = (
 )
 
 
-def _openai_client(*, timeout: float | None = None):
-    from openai import OpenAI
-
-    kwargs: dict[str, Any] = {
-        "api_key": llm_api_key(),
-        "base_url": llm_base_url() or None,
-    }
-    if timeout is not None:
-        kwargs["timeout"] = timeout
-    return OpenAI(**kwargs)
-
-
 def _financial_llm_completion(
     *,
     agent_name: str,
@@ -62,11 +58,11 @@ def _financial_llm_completion(
     if not has_llm_api_key():
         raise RuntimeError("OPENAI_API_KEY is required for the LLM financial analysis path.")
 
-    client = _openai_client()
+    client = openai_client()
     model = llm_model()
     info(f"调用 LLM ({agent_name}): model={model}, mode={financial_llm_mode()}")
     response = client.chat.completions.create(
-        **_chat_completion_kwargs(
+        **chat_completion_kwargs(
             model=model,
             messages=[
                 {"role": "system", "content": system},
@@ -75,8 +71,8 @@ def _financial_llm_completion(
             response_format={"type": "json_object"},
         )
     )
-    content = _clean_model_text(response.choices[0].message.content or "{}")
-    data = json.loads(_extract_json_object(content))
+    content = clean_model_text(response.choices[0].message.content or "{}")
+    data = json.loads(extract_json_object(content))
     return _normalize_financial_analysis_output(data)
 
 
@@ -137,12 +133,12 @@ def fundamental_narrative_analysis(
         info(f"{section}：未配置 API Key，使用本地规则摘要模式")
         return normalize_section_text(_local_summary(mda_text, financial_analysis, company_context), section)
 
-    client = _openai_client()
+    client = openai_client()
     model = llm_model()
     info(f"调用 LLM (fundamental_narrative_analysis): model={model}")
     prompt = _build_fundamental_narrative_prompt(mda_text, financial_analysis, company_context)
     response = client.chat.completions.create(
-        **_chat_completion_kwargs(
+        **chat_completion_kwargs(
             model=model,
             messages=[
                 {"role": "system", "content": fundamental_narrative_system_prompt()},
@@ -152,7 +148,7 @@ def fundamental_narrative_analysis(
         )
     )
     info(f"{section} LLM 调用完成")
-    return normalize_section_text(_clean_model_text(response.choices[0].message.content or ""), section)
+    return normalize_section_text(clean_model_text(response.choices[0].message.content or ""), section)
 
 
 def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
@@ -177,89 +173,6 @@ def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
         return normalized
     except Exception:
         return normalize_section_text(_local_mda_summary(mda_text), "MD&A 摘要")
-
-
-def llm_text(system: str, user: str) -> str:
-    from .progress import info
-
-    if not has_llm_api_key():
-        raise RuntimeError("OPENAI_API_KEY is required for LLM text generation.")
-    client = _openai_client(timeout=float(get_env("OPENAI_TIMEOUT", "1800")))
-    model = llm_model()
-    info(f"  → LLM 文本生成: model={model}, 系统={len(system)}B, 用户={len(user)}B")
-    response = client.chat.completions.create(
-        **_chat_completion_kwargs(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-    )
-    result = _clean_model_text(response.choices[0].message.content or "")
-    info(f"  ← LLM 返回: {len(result)} 字符")
-    return result
-
-
-def llm_json(system: str, user: str) -> dict[str, Any]:
-    from .progress import info
-
-    if not has_llm_api_key():
-        raise RuntimeError("OPENAI_API_KEY is required for LLM JSON generation.")
-    client = _openai_client(timeout=float(get_env("OPENAI_TIMEOUT", "1800")))
-    model = llm_model()
-    info(f"  → LLM JSON: model={model}, 系统={len(system)}B, 用户={len(user)}B")
-    response = client.chat.completions.create(
-        **_chat_completion_kwargs(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format={"type": "json_object"},
-        )
-    )
-    content = _clean_model_text(response.choices[0].message.content or "{}")
-    info(f"  ← LLM 返回: {len(content)} 字符")
-    return json.loads(_extract_json_object(content))
-
-
-def _chat_completion_kwargs(
-    *,
-    model: str,
-    messages: list[dict[str, str]],
-    response_format: dict[str, str] | None = None,
-    max_tokens: int | None = None,
-) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.2,
-        "max_tokens": max_tokens if max_tokens is not None else int(get_env("OPENAI_MAX_TOKENS", "2600")),
-    }
-    base_url = (llm_base_url() or "").lower()
-    if "moonshot" in base_url or "kimi" in model.lower():
-        kwargs["temperature"] = 1
-    if response_format is not None:
-        kwargs["response_format"] = response_format
-    return kwargs
-
-
-def _clean_model_text(text: str) -> str:
-    cleaned = str(text or "")
-    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
-    cleaned = re.sub(r"^\s*```(?:json|markdown|md)?\s*", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
-    return cleaned.strip()
-
-
-def _extract_json_object(text: str) -> str:
-    cleaned = _clean_model_text(text)
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("LLM did not return a JSON object")
-    return cleaned[start : end + 1]
 
 
 def _build_fundamental_narrative_prompt(

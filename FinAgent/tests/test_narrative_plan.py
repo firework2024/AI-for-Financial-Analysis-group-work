@@ -1,4 +1,5 @@
-from finagent.multiagent import LEGACY_SECTION_TEMPLATES, TOOL_REGISTRY, _sanitize_plan, planner_agent
+from finagent.multiagent_config import LEGACY_SECTION_TEMPLATES, TOOL_REGISTRY
+from finagent.multiagent import _sanitize_plan, planner_agent
 from finagent.narrative_plan import build_planner_fallback_sections
 from finagent.multi_report import resolve_multi_report_title
 from finagent.narrative_plan import (

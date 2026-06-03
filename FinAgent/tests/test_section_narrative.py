@@ -1,5 +1,5 @@
 from finagent.chart_catalog import MARKET_TECH_SECTION
-from finagent.multiagent import _section_narrative_review
+from finagent.section_validation import section_narrative_review
 
 GOOD_TECH = """
 ### 近期价格与量价：震荡下行后放量反弹
@@ -25,11 +25,11 @@ BAD_TECH = """
 
 
 def test_narrative_review_passes_conclusion_first_section():
-    review = _section_narrative_review(sections={MARKET_TECH_SECTION: GOOD_TECH})
+    review = section_narrative_review(sections={MARKET_TECH_SECTION: GOOD_TECH})
     assert review[MARKET_TECH_SECTION]["decision"] == "pass"
 
 
 def test_narrative_review_flags_data_dump_section():
-    review = _section_narrative_review(sections={MARKET_TECH_SECTION: BAD_TECH})
+    review = section_narrative_review(sections={MARKET_TECH_SECTION: BAD_TECH})
     assert review[MARKET_TECH_SECTION]["decision"] == "rewrite"
     assert "结论先行" in review[MARKET_TECH_SECTION]["reason"]

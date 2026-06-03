@@ -1,10 +1,7 @@
-from finagent.multiagent import (
-    LEGACY_SECTION_TEMPLATES,
-    _compact_data_for_prompt,
-    _ensure_technical_from_price_rows,
-    _industry_comparison_prompt_brief,
-    _local_validation,
-)
+from finagent.multiagent_config import LEGACY_SECTION_TEMPLATES
+from finagent.multiagent_data import ensure_technical_from_price_rows
+from finagent.section_prompts import compact_data_for_prompt
+from finagent.section_validation import local_validation
 
 
 def _comparison():
@@ -59,7 +56,7 @@ def test_legacy_section_templates_include_operating_quality():
 
 
 def test_industry_prompt_brief_guides_writer_without_raw_paths():
-    payload = _compact_data_for_prompt(
+    payload = compact_data_for_prompt(
         {"industry_comparison": _comparison()},
         {},
         "经营质量分析",
@@ -76,7 +73,7 @@ def test_industry_prompt_brief_guides_writer_without_raw_paths():
 
 
 def test_operating_quality_brief_omits_metric_bullet_list():
-    payload = _compact_data_for_prompt(
+    payload = compact_data_for_prompt(
         {"industry_comparison": _comparison()},
         {},
         "经营质量分析",
@@ -88,7 +85,7 @@ def test_operating_quality_brief_omits_metric_bullet_list():
 
 
 def test_prompt_compaction_exposes_compact_industry_summary_only():
-    payload = _compact_data_for_prompt(
+    payload = compact_data_for_prompt(
         {
             "industry_comparison": _comparison(),
             "factor": {"pe_ratio_ttm": 28.0, "gross_profit_margin_ttm": 0.25, "dividend_yield_ttm": 0.01},
@@ -122,7 +119,7 @@ def test_prompt_compaction_exposes_compact_industry_summary_only():
 
 
 def test_local_validation_requests_rewrite_when_fundamental_omits_peer_comparison():
-    validation = _local_validation(
+    validation = local_validation(
         data={"industry_comparison": _comparison()},
         charts={"industry_profitability_compare": "charts/industry_profitability_compare.png"},
         sections={"经营质量分析": "盈利能力改善，现金流质量需要结合利润表现观察。"},
@@ -135,7 +132,7 @@ def test_local_validation_requests_rewrite_when_fundamental_omits_peer_compariso
 
 
 def test_local_validation_passes_when_fundamental_uses_peer_comparison():
-    validation = _local_validation(
+    validation = local_validation(
         data={"industry_comparison": _comparison()},
         charts={
             "industry_dbscan_anomaly": "charts/industry_dbscan_anomaly.png",
@@ -154,7 +151,7 @@ def test_local_validation_passes_when_fundamental_uses_peer_comparison():
 
 
 def test_local_validation_flags_prose_peer_metric_list():
-    validation = _local_validation(
+    validation = local_validation(
         data={"industry_comparison": _comparison()},
         charts={"industry_dbscan_anomaly": "charts/industry_dbscan_anomaly.png"},
         sections={
@@ -172,7 +169,7 @@ def test_local_validation_flags_prose_peer_metric_list():
 
 
 def test_local_validation_rejects_valuation_language_in_operating_quality():
-    validation = _local_validation(
+    validation = local_validation(
         data={"industry_comparison": _comparison()},
         charts={"industry_profitability_compare": "charts/industry_profitability_compare.png"},
         sections={
@@ -191,7 +188,7 @@ def test_cached_payload_recomputes_technical_when_price_history_is_sufficient():
         "technical": {"latest_close": 69.0},
     }
 
-    _ensure_technical_from_price_rows(payload)
+    ensure_technical_from_price_rows(payload)
 
     technical = payload.get("technical") or {}
     assert technical.get("latest_close") == 69.0

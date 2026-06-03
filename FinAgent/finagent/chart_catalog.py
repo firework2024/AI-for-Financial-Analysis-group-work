@@ -144,6 +144,53 @@ DISABLED_INDUSTRY_BAR_CHART_KEYS = frozenset(
     }
 )
 
+# 章节写作 prompt 中需屏蔽的图表（与 scope 规则一致）
+MARKET_SECTION_BLOCKED_CHART_KEYS = frozenset(
+    {
+        "valuation_factors",
+        "valuation_percentile",
+        "latest_valuation_snapshot",
+        "profitability_factors",
+        "growth_factors",
+        "liquidity_factors",
+        "debt_ratio_trend",
+        "market_cap_trend",
+        "revenue_profit_trend",
+        "profit_vs_cashflow",
+        "margin_balances",
+        "margin_enhanced",
+        "shibor_rates",
+        "gov_yield_trend",
+    }
+)
+
+OPERATING_QUALITY_BLOCKED_CHART_KEYS = DISABLED_INDUSTRY_BAR_CHART_KEYS | frozenset(
+    {
+        "valuation_percentile",
+        "valuation_factors",
+        "latest_valuation_snapshot",
+        "dividend_spread",
+    }
+)
+
+
+def filter_charts_for_section(charts: dict[str, str], blocked: frozenset[str]) -> dict[str, str]:
+    return {name: path for name, path in charts.items() if name not in blocked}
+
+
+# 批量清理 outputs/charts 时的默认图键（可与 --chart 追加）
+DEFAULT_PURGE_OUTPUT_CHART_KEYS = frozenset(
+    DISABLED_INDUSTRY_BAR_CHART_KEYS
+    | {
+        "latest_quality_snapshot",
+        "latest_liquidity_snapshot",
+        "latest_valuation_snapshot",
+    }
+)
+
+# 批量清理报告正文中的机械表块（可与 --table 追加）
+DEFAULT_PURGE_OUTPUT_TABLE_KEYS = frozenset(DISABLED_PLACEMENT_TABLE_KEYS)
+
 TABLE_CAPTIONS: dict[str, str] = {
     "latest_quality_snapshot": "最新盈利质量因子",
     "latest_valuation_snapshot": "最新估值因子",

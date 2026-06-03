@@ -1,4 +1,4 @@
-from finagent.multiagent import _enrich_multi_factor_payload
+from finagent.multiagent_data import enrich_multi_factor_payload
 
 
 def test_multiagent_factor_enrichment_uses_local_primitives(monkeypatch):
@@ -45,7 +45,7 @@ def test_multiagent_factor_enrichment_uses_local_primitives(monkeypatch):
         "factor_history": {"rows": [{"date": "2026-06-01"}], "columns": ["date"]},
     }
 
-    _enrich_multi_factor_payload(payload, "688041")
+    enrich_multi_factor_payload(payload, "688041")
 
     factor = payload["factor"]
     assert factor["market_cap"] == 2000.0
@@ -74,7 +74,7 @@ def test_multiagent_factor_enrichment_does_not_overwrite_existing_rq_factor(monk
         "factor_history": {"rows": [{"date": "2026-06-01", "pe_ratio_ttm": 33.0}], "columns": ["date", "pe_ratio_ttm"]},
     }
 
-    _enrich_multi_factor_payload(payload, "688041")
+    enrich_multi_factor_payload(payload, "688041")
 
     assert payload["factor"]["pe_ratio_ttm"] == 33.0
     assert payload["factor"]["pb_ratio_ttm"] == 4.0

@@ -7,17 +7,17 @@ from typing import Any
 
 _ANALYTICAL_CORE = (
     "写作范式：章节必须以 **核心结论** 开头，其下单独 1 句（≤80 字）概括本节判断（含具体数字与日期），"
-    "空一行后再写小标题、表格与细节；全报告级执行摘要另由系统生成。"
+    "空一行后再写小标题与细节；全报告级执行摘要另由系统生成。"
     "每个判断必须可追溯至 JSON 字段或由其可推导（同比、CAGR、区间收益、简易估值倍数等须注明口径）；"
     "禁止空泛形容词替代数据；"
-    "涉及两个及以上时点/年份时必须用 Markdown 表格对比；"
-    "同行/行业横向比较（含同行横向坐标、行业估值对比等小标题）的指标对比必须用 Markdown 竖表，禁止正文逐条列举中位数与分位；"
+    "禁止在正文输出 Markdown 表格（| 列 |）；多年/多指标对比用连贯句子或 - 列表，对比表由系统机械插入。"
+    "同行/行业横向比较只引用系统「表·同行横向坐标」等机械表结论，禁止正文逐条列举中位数与分位；"
     "解释「为什么」而不只描述「是什么」；不给买卖建议；"
     "禁止输出思考过程或 <thinking> 标签。"
 )
 
 _LOOSE_FUNDAMENTAL_WRITING = (
-    "基于给定数据写 Markdown 正文：结论先行、数字具体、对比用表格。"
+    "基于给定数据写 Markdown 正文：结论先行、数字具体；禁止输出 Markdown 表格，数值用句子或列表。"
     "小标题与段落顺序按公司实际情况自由组织，聚焦本轮最重要的矛盾（如增收不增利、现金流背离、结构迁移等），"
     "不必套用固定章节模板。"
     "有 MD&A 或 mda_crosswalk 时在叙述中自然对照管理层表述与报表数字，勿单独设「勾稽」章节。"
@@ -25,11 +25,17 @@ _LOOSE_FUNDAMENTAL_WRITING = (
 )
 
 _LOOSE_SECTION_WRITING = (
-    "本节正文：优先用 JSON 中的数字写清判断与因果；多年或多指标对比时优先用 Markdown 表格，数据不足可省略表格。"
+    "本节正文：优先用 JSON 中的数字写清判断与因果；禁止输出 Markdown 表格（| 开头），数据不足用 - 列表说明局限。"
     "可选用 **加粗短语** 作小标题，无合适切块时可连贯段落书写，勿套用固定小节清单。"
     "有 mda_business_brief 或 mda_crosswalk 时，在相关段落自然融入 MD&A 中基本业务、业务发展、行业与战略等管理层表述，"
-    "与量化指标形成「数据事实 + 管理层解释 + 独立判断」三层论述，勿单独设勾稽章节；缺数据用 `-` 列表说明局限。"
+    "与量化指标形成「数据事实 + 管理层解释 + 独立判断」三层论述，勿单独设勾稽章节。"
 )
+
+def llm_no_table_writing_rule() -> str:
+    return (
+        "禁止在正文输出任何 Markdown 表格（不得以 | 分隔行列）；"
+        "指标对比用连贯句子或 - 列表；系统会机械插入「表·xxx」，正文只引用表结论一句，勿复述表内数字。"
+    )
 
 _MDA_KIND_WRITING: dict[str, str] = {
     "market": (
@@ -140,11 +146,11 @@ def mda_business_writing_guide(section_name: str, *, section_kind: str | None = 
 
 def section_writing_guide(section_name: str, *, section_kind: str | None = None) -> str:
     """多智能体各章节写作补充指引（不重复 analytical_writing_core，无固定分节模板）。"""
-    guide = _LOOSE_SECTION_WRITING + mda_business_writing_guide(section_name, section_kind=section_kind)
+    guide = _LOOSE_SECTION_WRITING + llm_no_table_writing_rule() + mda_business_writing_guide(section_name, section_kind=section_kind)
     if any(token in section_name for token in ("量价", "技术", "趋势", "K线", "均线")):
         guide += (
-            "技术指标请自行写一张竖表（指标|数值|解读），每行附一句简短解读；"
-            "禁止再用横表（维度|MA20|MA60…），且同一章节不要重复两张技术指标表。"
+            "技术指标由系统插入「表·技术指标快照」竖表；正文只写解读与因果，勿自画表。"
+            "禁止 PE/PB/PS、股息率、两融、Shibor/国债、营收利润/现金流及估值类图表。"
         )
     if any(token in section_name for token in ("基本面", "估值")):
         guide += peer_compare_table_writing_rule() + (
@@ -152,14 +158,15 @@ def section_writing_guide(section_name: str, *, section_kind: str | None = None)
         )
     if "经营质量" in section_name or "财务" in section_name:
         guide += peer_compare_table_writing_rule() + (
-            "系统会机械插入「表·同行横向坐标」竖表（含同行池口径、本公司/中位数/均值/分位/解读）。"
-            "盈利/现金流/营运效率由作者写多年宽表，禁止「表·最新盈利质量因子」「表·最新偿债与流动性」及 TTM 快照小表。"
+            "系统会机械插入「表·同行横向坐标」「表·三表核心指标对比」等竖表。"
+            "盈利/现金流/营运效率数值由机械表展示，正文只写 MD&A 对照与独立判断。"
         )
     if any(token in section_name for token in ("宏观", "利率", "Shibor", "国债")):
         guide += (
             "无风险利率来自 JSON 的 macro_rate_recent（Shibor + 国债收益率曲线）；"
             "必须引用 macro_rate_brief 中的具体数值，并与目标股股息率/PE/负债率挂钩，"
             "禁止写「JSON 未提供利率」若 brief 中已有数据。"
+            "禁止写融资余额/两融表格与段落，禁止重复营收/利润/现金流多年表。"
         )
     return guide
 
@@ -173,7 +180,7 @@ def section_opening_conclusion_rule() -> str:
     return (
         "章节第一行必须是 **核心结论**，下一行单独 1 句结论（≤80 字，含数字）；"
         "结论句直接写内容，行前不要加冒号（勿写「：2025年…」）；"
-        "然后再空一行写 **趋势概览** 等小标题与表格。"
+        "然后再空一行写 **趋势概览** 等小标题与正文细节。"
     )
 
 
