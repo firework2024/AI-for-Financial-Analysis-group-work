@@ -74,8 +74,23 @@ def fundamental_narrative_writing_guide() -> str:
 
 def section_writing_guide(section_name: str) -> str:
     """多智能体各章节写作补充指引（不重复 analytical_writing_core，无固定分节模板）。"""
-    _ = section_name  # 保留参数以兼容 report_format / multiagent 调用签名
-    return _LOOSE_SECTION_WRITING
+    guide = _LOOSE_SECTION_WRITING
+    if any(token in section_name for token in ("量价", "技术", "趋势", "K线", "均线")):
+        guide += (
+            "技术指标请自行写一张竖表（指标|数值|解读），每行附一句简短解读；"
+            "禁止再用横表（维度|MA20|MA60…），且同一章节不要重复两张技术指标表。"
+        )
+    if any(token in section_name for token in ("基本面", "估值")):
+        guide += (
+            "系统会机械插入估值/行业对比竖表；"
+            "勿在正文重复 PE/PB/同行分位等同指标表格，引用表格结论即可。"
+        )
+    if "经营质量" in section_name or "财务" in section_name:
+        guide += (
+            "系统会机械插入盈利/杠杆等行业对比竖表；"
+            "勿在正文重复毛利率/资产负债率等同指标表格，引用表格结论即可。"
+        )
+    return guide
 
 
 def section_writing_style_hint(section_name: str) -> str:

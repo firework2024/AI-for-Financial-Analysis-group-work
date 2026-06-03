@@ -58,7 +58,7 @@ def format_table_block(table_key: str, data: dict[str, Any]) -> str | None:
     return "\n".join(lines).strip()
 
 
-def _markdown_table(headers: tuple[str, ...], rows: list[tuple[str, str]]) -> list[str]:
+def _markdown_table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
     if not rows:
         return []
     col_count = len(headers)
@@ -79,19 +79,17 @@ def _format_factor_snapshot_table(table_key: str, data: dict[str, Any]) -> str |
     if not keys:
         return None
     factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
-    headers = ("维度",) + tuple(label(key) for key in keys)
-    cells: list[str] = []
-    has_value = False
+    rows: list[tuple[str, str]] = []
     for key in keys:
         display = format_factor_display(key, factor.get(key))
-        if display is not None:
-            has_value = True
-        cells.append(display if display is not None else "—")
-    if not has_value:
+        if display is None:
+            continue
+        rows.append((label(key), display))
+    if not rows:
         return None
     caption = table_caption(table_key)
     lines = [f"#### 表 · {caption}", ""]
-    lines.extend(_markdown_table(headers, [("最新", *cells)]))
+    lines.extend(_markdown_table(("指标", "数值"), rows))
     return "\n".join(lines).strip()
 
 
@@ -172,6 +170,7 @@ def _format_industry_compare_table(table_key: str, data: dict[str, Any]) -> str 
                 _format_industry_compare_value(key, median),
                 _format_industry_compare_value(key, mean),
                 _format_industry_percentile(item.get("percentile")),
+                str(item.get("relative_label") or "—"),
             )
         )
     if not rows:
@@ -182,9 +181,111 @@ def _format_industry_compare_table(table_key: str, data: dict[str, Any]) -> str 
     if pool_note:
         lines.append(pool_note)
         lines.append("")
-    headers = ("指标", "本公司", "行业中位数", "行业均值", "行业分位")
+    headers = ("指标", "本公司", "行业中位数", "行业均值", "行业分位", "解读")
     lines.extend(_markdown_table(headers, rows))
     return "\n".join(lines).strip()
+
+
+def _latest_price_date(data: dict[str, Any]) -> str:
+    end_date = data.get("end_date")
+    if end_date:
+        return str(end_date)[:10]
+    price = data.get("price")
+    if isinstance(price, dict) and isinstance(price.get("rows"), list) and price["rows"]:
+        latest = price["rows"][-1]
+        if isinstance(latest, dict) and latest.get("date"):
+            return str(latest["date"])[:10]
+    return "最新"
+
+
+def _return_note(value: Any, *, window: str) -> str:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return "—"
+    pct = parsed * 100 if abs(parsed) <= 1.5 else parsed
+    if pct >= 5:
+        return f"{window}上涨"
+    if pct <= -5:
+        return f"{window}回调明显"
+    if pct >= 1:
+        return f"{window}小幅上涨"
+    if pct <= -1:
+        return f"{window}小幅走弱"
+    return f"{window}波动不大"
+
+
+def _ma_note(close: float | None, ma: float | None, *, period: int) -> str:
+    if close is None or ma is None or ma == 0:
+        return "—"
+    if close > ma * 1.01:
+        return f"当前价格高于{period}日均线"
+    if close < ma * 0.99:
+        return f"当前价格低于{period}日均线"
+    return f"当前价格贴近{period}日均线"
+
+
+def _rsi_note(value: Any) -> str:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return "—"
+    if parsed >= 70:
+        return "偏强，接近超买"
+    if parsed <= 30:
+        return "偏弱，接近超卖"
+    if parsed >= 55:
+        return "偏强，未超买"
+    if parsed <= 45:
+        return "偏弱，未超卖"
+    return "中性区间"
+
+
+def _macd_note(macd: Any, signal: Any) -> str:
+    m = _safe_float(macd)
+    s = _safe_float(signal)
+    if m is None or s is None:
+        return "—"
+    if m > s:
+        return "MACD 在信号线上方"
+    if m < s:
+        return "MACD 在信号线下方"
+    return "MACD 与信号线接近"
+
+
+def _drawdown_note(value: Any, *, label: str) -> str:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return "—"
+    pct = abs(parsed * 100 if abs(parsed) <= 1.5 else parsed)
+    if pct >= 20:
+        return f"{label}较深"
+    if pct >= 10:
+        return f"{label}中等"
+    if pct >= 3:
+        return f"{label}温和"
+    return f"{label}较小"
+
+
+def _technical_metric_notes(technical: dict[str, Any], data: dict[str, Any]) -> dict[str, str]:
+    as_of = _latest_price_date(data)
+    close = _safe_float(technical.get("latest_close"))
+    ma20 = _safe_float(technical.get("ma20"))
+    ma60 = _safe_float(technical.get("ma60"))
+    macd = _safe_float(technical.get("macd"))
+    signal = _safe_float(technical.get("macd_signal"))
+    return {
+        "最新收盘价": f"截至{as_of}",
+        "MA20": _ma_note(close, ma20, period=20),
+        "MA60": _ma_note(close, ma60, period=60),
+        "20 日收益率": _return_note(technical.get("return_20d"), window="短期"),
+        "60 日收益率": _return_note(technical.get("return_60d"), window="中期"),
+        "RSI14": _rsi_note(technical.get("rsi14")),
+        "MACD": _macd_note(macd, signal),
+        "MACD 信号线": _macd_note(macd, signal),
+        "20 日波动率": _drawdown_note(technical.get("volatility_20d"), label="波动"),
+        "最新回撤": _drawdown_note(technical.get("latest_drawdown"), label="回撤"),
+        "最大回撤": _drawdown_note(technical.get("max_drawdown"), label="区间回撤"),
+        "20 日均量": "近20个交易日均量",
+    }
 
 
 def _format_technical_snapshot_table(data: dict[str, Any]) -> list[str]:
@@ -205,12 +306,15 @@ def _format_technical_snapshot_table(data: dict[str, Any]) -> list[str]:
         ("最大回撤", fmt_pct(technical.get("max_drawdown"))),
         ("20 日均量", fmt_num(technical.get("avg_volume_20d"))),
     ]
-    columns = [(name, value) for name, value in columns if value not in ("—", "-", "N/A", "数据缺失", "")]
-    if len(columns) < 3:
+    notes = _technical_metric_notes(technical, data)
+    rows = [
+        (name, value, notes.get(name, "—"))
+        for name, value in columns
+        if value not in ("—", "-", "N/A", "数据缺失", "")
+    ]
+    if len(rows) < 3:
         return []
-    headers = ("维度",) + tuple(name for name, _ in columns)
-    row = ("最新",) + tuple(value for _, value in columns)
-    return _markdown_table(headers, [row])
+    return _markdown_table(("指标", "数值", "解读"), rows)
 
 
 def _format_margin_snapshot_table(data: dict[str, Any]) -> list[str]:

@@ -90,7 +90,7 @@ def test_funding_cost_table():
     assert "股息率 − 1Y国债" in block
 
 
-def test_technical_snapshot_table_is_wide():
+def test_technical_snapshot_table_is_vertical():
     data = {
         "technical": {
             "latest_close": 1326,
@@ -111,11 +111,12 @@ def test_technical_snapshot_table_is_wide():
     assert block is not None
     assert "技术指标快照" in block
     assert "MACD" in block
-    assert "| 维度 |" in block
-    assert block.count("|") >= 12
+    assert "| 指标 | 数值 | 解读 |" in block
+    assert "截至" in block
+    assert "| 维度 |" not in block
 
 
-def test_valuation_snapshot_table_is_wide():
+def test_valuation_snapshot_table_is_vertical():
     data = {
         "factor": {
             "pe_ratio_ttm": 20.04,
@@ -128,8 +129,8 @@ def test_valuation_snapshot_table_is_wide():
     block = format_table_block("latest_valuation_snapshot", data)
     assert block is not None
     assert "PE(TTM)" in block
-    assert "| 维度 |" in block
-    assert "最新" in block
+    assert "| 指标 | 数值 |" in block
+    assert "| 维度 |" not in block
 
 
 def test_table_data_available_for_new_keys():
@@ -229,3 +230,4 @@ def test_industry_peer_compare_table_includes_valuation_and_quality():
     assert "PE(TTM)" in block
     assert "毛利率(TTM)" in block
     assert "7.34x" in block
+    assert "| 解读 |" in block

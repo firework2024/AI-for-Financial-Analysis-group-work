@@ -170,7 +170,6 @@ SECTION_TABLE_LIMITS: dict[str, int] = {
 }
 
 DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
-    MARKET_TECH_SECTION: ("technical_snapshot_table",),
     "经营质量分析": (
         "industry_profitability_compare_table",
         "industry_growth_leverage_compare_table",

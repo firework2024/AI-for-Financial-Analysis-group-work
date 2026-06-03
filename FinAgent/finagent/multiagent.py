@@ -113,7 +113,13 @@ CHART_QUALITY_REQUIREMENTS = [
     "自由现金流应搭配资本开支共同展示，以判断扩张效率。",
     "ROE 允许用杜邦分解图（净利率×周转率×权益乘数）替代单柱。",
     "两融余额图应同时展示融资余额与融券余额（双轴），突出杠杆结构。",
-    "行业对比图必须同时显示目标股票与行业中位数/均值，不能只画个股绝对值。"
+    "行业对比图必须同时显示目标股票与行业中位数/均值，不能只画个股绝对值。",
+]
+
+TABLE_QUALITY_REQUIREMENTS = [
+    "量价/技术章节的技术指标只允许一张 Markdown 竖表（指标|数值|解读），禁止横表（维度|MA20|MA60…）与同指标第二张表并存。",
+    "若正文已用竖表列出 MA/RSI/收益率等，不要再额外插入「技术指标快照」或同内容重复表。",
+    "表格解读列应简短说明相对位置或趋势含义，数值列与 JSON 中 technical 字段一致。",
 ]
 
 
@@ -1191,6 +1197,9 @@ def validation_agent(
                 "不满足的，在 `chart_quality_review.delete` 或 `chart_quality_review.redraw` 中具体说明原因和修改方向。\n"
                 "对于信息量可显著提升的图（如单指标折线图可改为双轴对比图、缺少历史分位的估值图），应放在 `redraw` 中，并给出具体建议（例如：'将 PE 和利润增速画在双轴图上'）。\n"
                 "如果图表数量不足 8 张或存在大量低质量图，应在 `refinement_requests` 中将 `refresh_charts` 设为 true，并说明原因。\n\n"
+                "## 表格质量标准（必须逐章节核对）\n"
+                + "\n".join(f"{i+1}. {rule}" for i, rule in enumerate(TABLE_QUALITY_REQUIREMENTS))
+                + "\n\n若量价/技术章节出现两张技术指标表、或横表（维度|MA20|…）与竖表并存，必须在 section_feedback 中要求合并为一张竖表（指标|数值|解读）。\n\n"
                 "## 整体报告质量要求\n"
                 "除了逐图审核外，你还需要从整体视角评估报告的可读性和逻辑连贯性：\n"
                 "1. **图文布局**：图表不应全部挤在「可视化」章节，应尽量分散到对应分析段落附近（例如在量价分析段插入价格图，在资金流段插入资金图）。\n"
@@ -1210,6 +1219,8 @@ def validation_agent(
                     },
                     "data_inventory": _data_inventory(data),
                     "chart_quality_requirements": CHART_QUALITY_REQUIREMENTS,
+                    "table_quality_requirements": TABLE_QUALITY_REQUIREMENTS,
+                    "local_table_review": _technical_table_section_review(sections),
                     "local_chart_review": _chart_quality_review(data=data, charts=charts),
                     "local_stock_relevance_review": _stock_relevance_review(data=data, sections=sections),
                     "charts": charts,
@@ -1790,6 +1801,77 @@ def _data_inventory(data: dict[str, Any]) -> dict[str, Any]:
     return inventory
 
 
+def _section_is_market_technical(section_name: str) -> bool:
+    return any(token in section_name for token in ("量价", "技术", "趋势", "K线", "均线"))
+
+
+def _markdown_tables(content: str) -> list[list[list[str]]]:
+    tables: list[list[list[str]]] = []
+    current: list[list[str]] = []
+    for line in str(content or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+            if cells and all(set(cell) <= {"-", ":", " "} for cell in cells):
+                continue
+            current.append(cells)
+            continue
+        if current:
+            tables.append(current)
+            current = []
+    if current:
+        tables.append(current)
+    return tables
+
+
+def _table_text(rows: list[list[str]]) -> str:
+    return " ".join(" ".join(row) for row in rows).lower()
+
+
+def _table_covers_technical_metrics(rows: list[list[str]]) -> bool:
+    text = _table_text(rows)
+    markers = ("ma20", "ma60", "rsi", "20 日", "60 日", "收盘价", "收益率", "macd")
+    return sum(1 for marker in markers if marker in text) >= 3
+
+
+def _is_wide_technical_table(rows: list[list[str]]) -> bool:
+    if len(rows) < 1:
+        return False
+    header = rows[0]
+    if not header:
+        return False
+    if header[0] in {"维度", "统计维度"} and len(header) >= 4:
+        return True
+    if "维度" in header and any("ma" in cell.lower() or "rsi" in cell.lower() for cell in header[1:]):
+        return True
+    return False
+
+
+def _technical_table_section_review(sections: dict[str, str]) -> dict[str, list[str]]:
+    feedback: dict[str, list[str]] = {}
+    for section_name, content in sections.items():
+        if not _section_is_market_technical(section_name):
+            continue
+        text = str(content or "")
+        if "表 · 技术指标快照" in text:
+            feedback.setdefault(section_name, []).append(
+                "存在系统/机械插入的「技术指标快照」表，应删去并改由正文自行维护一张竖表（指标|数值|解读）。"
+            )
+        tables = _markdown_tables(text)
+        technical_tables = [table for table in tables if _table_covers_technical_metrics(table)]
+        if len(technical_tables) >= 2:
+            feedback.setdefault(section_name, []).append(
+                "技术指标重复成多张 Markdown 表（如横表+竖表），应合并为一张竖表（指标|数值|解读）。"
+            )
+        for table in technical_tables:
+            if _is_wide_technical_table(table):
+                feedback.setdefault(section_name, []).append(
+                    "技术指标不要用横表（维度|MA20|MA60…），改用竖表（指标|数值|解读）。"
+                )
+                break
+    return feedback
+
+
 def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections: dict[str, str], draft_markdown: str) -> dict[str, Any]:
     action_items = []
     section_feedback: dict[str, list[str]] = {}
@@ -1814,6 +1896,10 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
     for section_name, notes in industry_feedback.items():
         section_feedback.setdefault(section_name, []).extend(notes)
         action_items.extend(f"章节 {section_name} 缺少同行横向比较：{note}" for note in notes)
+    table_feedback = _technical_table_section_review(sections)
+    for section_name, notes in table_feedback.items():
+        section_feedback.setdefault(section_name, []).extend(notes)
+        action_items.extend(f"章节 {section_name} 表格问题：{note}" for note in notes)
     unsupported = []
     for token in ("Wind", "券商预测", "新闻", "管理层指引"):
         if token in draft_markdown:
@@ -2207,7 +2293,7 @@ def _industry_comparison_writer_guidance(
             "1) 在「同行横向坐标」中说明实际采用的同行池层级和有效同行数量；"
             "2) 只使用经营质量指标做横向比较，如毛利率、净利率、ROE、收入/利润增长、资产负债率、流动比率、速动比率；"
             "3) 至少选择 2-3 个经营类关键指标说明目标公司相对行业均值、中位数和分位；"
-            "4) 系统会机械插入「行业盈利能力对比」「行业成长与杠杆对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
+            "4) 系统会插入「行业盈利能力对比」「行业成长与杠杆对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
             "5) DBSCAN 可用时只解释经营质量相关贡献指标；若主要异常来自估值因子，则说明聚类证据不用于经营质量结论；"
             "6) 禁止写 PE/PB/PS、股息率、估值分位、估值吸引力或估值匹配判断。"
             "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
@@ -2219,7 +2305,7 @@ def _industry_comparison_writer_guidance(
             "1) 先说明实际采用的同行池层级和有效同行数量；"
             "2) 估值必须说明 PE/PB/PS 至少一个指标相对行业的分位、均值和中位数；"
             "3) 盈利、成长、杠杆/偿债中至少选择 2-3 个关键指标做同行比较；"
-            "4) 系统会机械插入「行业横向坐标」「行业估值对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
+            "4) 系统会插入「行业横向坐标」「行业估值对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
             "5) DBSCAN 可用时说明是否为噪声点和主要贡献指标，不可用时说明样本或特征局限。"
             "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
             "可以设置「行业横向坐标」这类小标题，但内容必须由你自然写成，不要机械复述字段名。"
