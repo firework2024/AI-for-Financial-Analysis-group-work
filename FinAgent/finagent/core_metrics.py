@@ -36,6 +36,34 @@ def industry_has_display_name(industry: dict[str, Any] | None) -> bool:
     return False
 
 
+def _industry_from_eastmoney(stock_code: str) -> dict[str, Any]:
+    code = str(stock_code or "").strip().split(".")[0]
+    if not code or len(code) != 6:
+        return {}
+    try:
+        from ..cninfo import classify_stock, normalize_stock_code
+        from ..chat.eastmoney_profile import _fetch_company_survey, _fetch_industry_row
+
+        code = normalize_stock_code(code)
+        _, column, _ = classify_stock(code)
+        em_code = f"{'SH' if column == 'sh' else 'SZ'}{code}"
+        survey = _fetch_company_survey(em_code)
+        company = survey.get("company") if isinstance(survey.get("company"), dict) else {}
+        for key in ("industry_em", "industry_csrc"):
+            name = company.get(key)
+            if name not in (None, ""):
+                return {"first_industry_name": str(name), "industry_source": key}
+        row = _fetch_industry_row(code)
+        if isinstance(row, dict) and row.get("industry_name"):
+            return {
+                "first_industry_name": str(row["industry_name"]),
+                "industry_source": "eastmoney_industry_sta",
+            }
+    except Exception:
+        return {}
+    return {}
+
+
 def resolve_industry_dict(data: dict[str, Any]) -> dict[str, Any]:
     industry = dict(data.get("industry") or {}) if isinstance(data.get("industry"), dict) else {}
     if industry_has_display_name(industry):
@@ -54,6 +82,13 @@ def resolve_industry_dict(data: dict[str, Any]) -> dict[str, Any]:
                 value = block.get(src)
                 if value not in (None, ""):
                     industry.setdefault(dst, value)
+    if industry_has_display_name(industry):
+        return industry
+
+    stock_code = str(data.get("stock_code") or data.get("order_book_id") or "").split(".")[0]
+    fallback = _industry_from_eastmoney(stock_code)
+    if fallback:
+        industry.update(fallback)
     return industry
 
 

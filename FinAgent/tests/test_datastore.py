@@ -242,3 +242,32 @@ def test_relaxed_local_load_ignores_lookback_metadata(temp_db):
     assert payload["source"] == "local_db_relaxed"
     assert payload["price"]["row_count"] == 2
     assert any("回看" in note for note in (payload.get("local_cache_warnings") or []))
+
+
+def test_merge_meta_does_not_wipe_industry_with_empty_dict():
+    from finagent.datastore.meta_utils import merge_snapshot_meta
+
+    old = {
+        "industry": {"first_industry_name": "食品饮料", "first_industry_code": "36"},
+        "technical": {"latest_close": 1326.0, "ma20": 1333.0},
+    }
+    new_data = {
+        "industry": {},
+        "technical": {},
+        "industry_comparison": {
+            "industry": {"source": "citics_2019", "selected_level": None},
+            "peers": {"effective_count": 0},
+            "metrics": {},
+        },
+    }
+    merged = merge_snapshot_meta(old, new_data)
+    assert merged["industry"]["first_industry_name"] == "食品饮料"
+    assert merged["technical"]["latest_close"] == 1326.0
+    assert "industry_comparison" not in merged or merged.get("industry_comparison") != new_data["industry_comparison"]
+
+
+def test_merge_meta_skips_empty_series_on_upsert_logic():
+    from finagent.datastore.meta_utils import series_payload_is_empty
+
+    assert series_payload_is_empty({"rows": [], "row_count": 0})
+    assert not series_payload_is_empty({"rows": [{"date": "2026-01-01", "close": 1.0}], "row_count": 1})

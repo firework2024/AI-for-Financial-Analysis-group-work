@@ -6,7 +6,8 @@ import json
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from .db import META_KEYS, SERIES_KEYS, _json_default, _locked_connect, get_latest_snapshot, load_series
+from .db import SERIES_KEYS, _json_default, _locked_connect, get_latest_snapshot, load_series
+from .meta_utils import merge_snapshot_meta, series_payload_is_empty
 
 _DATE_KEYS = ("date", "datetime", "trading_date", "tradedate")
 
@@ -69,12 +70,8 @@ def merge_series_payload(
 
 
 def merge_meta(old_meta: dict[str, Any], new_data: dict[str, Any]) -> dict[str, Any]:
-    meta = dict(old_meta or {})
-    for key in META_KEYS:
-        value = new_data.get(key)
-        if value is not None:
-            meta[key] = value
-    return meta
+    """兼容旧名；逻辑见 merge_snapshot_meta。"""
+    return merge_snapshot_meta(old_meta, new_data)
 
 
 def incremental_fetch_start(
@@ -145,6 +142,9 @@ def upsert_market_snapshot(
         old_payload = existing_series.get(key)
         new_payload = data.get(key) if isinstance(data.get(key), dict) else None
         if old_payload is None and new_payload is None:
+            continue
+        if series_payload_is_empty(new_payload) and not series_payload_is_empty(old_payload):
+            merged_series[key] = old_payload
             continue
         cap = 20 if key in {"dividend", "suspended", "st_stock"} else 120 if key in {"interbank_rate", "yield_curve"} else tail_cap
         merged_series[key] = merge_series_payload(old_payload, new_payload, tail=cap)

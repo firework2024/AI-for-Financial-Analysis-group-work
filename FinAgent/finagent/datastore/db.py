@@ -140,10 +140,12 @@ def save_data_snapshot(
     as_of = end_date or datetime.now().date().isoformat()
     created_at = datetime.now().isoformat(timespec="seconds")
 
+    from .meta_utils import meta_value_is_usable
+
     meta: dict[str, Any] = {}
     for key in META_KEYS:
         value = data.get(key)
-        if value is not None:
+        if meta_value_is_usable(key, value):
             meta[key] = value
 
     with _locked_connect() as conn:
