@@ -1,6 +1,7 @@
 .env
 __pycache__/
-data_store/
+data_store/*
+!data_store/finagent.db
 chat_data/
 *.py[cod]
 .pytest_cache/
