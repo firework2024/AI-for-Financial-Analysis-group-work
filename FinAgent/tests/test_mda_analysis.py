@@ -1,6 +1,7 @@
 from finagent.mda_analysis import (
     build_articulation_checks,
     build_annual_context_from_store,
+    build_mda_business_brief,
     build_mda_financial_crosswalk,
     enrich_financial_analysis_with_mda,
     format_crosswalk_markdown,
@@ -106,3 +107,18 @@ def test_annual_context_without_narrative_still_returns_structured_financial_ana
     assert "_financial_analysis_raw" in context
     assert "fundamental_narrative" not in context
     assert "financial_years" in context
+
+
+def test_build_mda_business_brief_filters_by_section_kind():
+    mda = (
+        "公司主营业务为中药制剂生产销售，核心产品包括黄芪生脉饮等。"
+        "报告期内行业需求稳步增长，公司加大渠道建设，营业收入同比提升。"
+        "未来将继续推进研发创新与产能升级。"
+    )
+    market_brief = build_mda_business_brief(mda, section_kind="market", mda_summary="中药主业稳增")
+    assert "基本业务" in market_brief or "行业" in market_brief
+    assert "中药" in market_brief or "主营业务" in market_brief
+
+    macro_brief = build_mda_business_brief(mda, section_kind="macro")
+    assert macro_brief
+    assert market_brief != macro_brief or "战略" in macro_brief

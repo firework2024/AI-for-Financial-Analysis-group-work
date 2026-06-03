@@ -42,10 +42,10 @@ def test_industry_tables_are_prioritized_for_operating_quality_section():
     tables = DEFAULT_SECTION_TABLE_CANDIDATES["经营质量分析"]
     candidates = DEFAULT_SECTION_CHART_CANDIDATES["经营质量分析"]
 
-    assert tables[:2] == (
-        "industry_profitability_compare_table",
-        "industry_growth_leverage_compare_table",
-    )
+    assert tables[0] == "industry_operating_peer_compare_table"
+    assert "latest_quality_snapshot" in tables
+    assert "industry_profitability_compare_table" not in tables
+    assert "industry_growth_leverage_compare_table" not in tables
     assert CHART_CAPTIONS["industry_dbscan_anomaly"] == "DBSCAN 同行异常识别"
     assert "industry_profitability_compare" not in candidates
     assert "industry_growth_leverage_compare" not in candidates

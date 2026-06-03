@@ -73,6 +73,55 @@ def is_operating_quality_section(section_name: str, plan: dict[str, Any] | None 
     return OPERATING_QUALITY_SECTION in name or "经营质量" in name
 
 
+def is_macro_section(section_name: str, plan: dict[str, Any] | None = None) -> bool:
+    kind = section_kind_for_name(section_name, plan)
+    if kind == "macro":
+        return True
+    if kind:
+        return False
+    name = str(section_name or "")
+    return any(token in name for token in ("宏观", "利率", "Shibor", "国债", "收益率曲线"))
+
+
+def macro_data_available(data: dict[str, Any] | None) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return _row_count(data.get("interbank_rate")) > 0 or _row_count(data.get("yield_curve")) > 0
+
+
+def plan_has_macro_section(sections: list[dict[str, Any]]) -> bool:
+    for spec in sections:
+        if not isinstance(spec, dict):
+            continue
+        name = str(spec.get("name") or "")
+        kind = str(spec.get("kind") or "").strip().lower()
+        if kind == "macro" or is_macro_section(name, {"sections": sections}):
+            return True
+    return False
+
+
+def ensure_macro_section_in_plan(
+    sections: list[dict[str, Any]],
+    data: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """米筐已采到 Shibor/国债曲线但 planner 未规划宏观节时，在风险节前补一节。"""
+    if not sections or not macro_data_available(data) or plan_has_macro_section(sections):
+        return sections
+    macro_spec: dict[str, Any] = {
+        "name": MACRO_SECTION,
+        "agent": "macro_rate_writer",
+        "data": ["get_interbank_offered_rate", "get_yield_curve"],
+        "kind": "macro",
+    }
+    out = [dict(item) for item in sections if isinstance(item, dict)]
+    risk_idx = next(
+        (i for i, spec in enumerate(out) if infer_section_kind(str(spec.get("name") or "")) == "risk"),
+        len(out),
+    )
+    out.insert(risk_idx, macro_spec)
+    return out
+
+
 def _row_count(block: Any) -> int:
     if isinstance(block, dict):
         if isinstance(block.get("row_count"), int):
@@ -95,6 +144,8 @@ def build_plan_data_briefing(data: dict[str, Any]) -> dict[str, Any]:
         "price": _row_count(data.get("price")),
         "margin": _row_count(data.get("securities_margin")),
         "capital_flow": _row_count(data.get("capital_flow")),
+        "interbank_rate": _row_count(data.get("interbank_rate")),
+        "yield_curve": _row_count(data.get("yield_curve")),
         "factor_snapshot": bool(factor),
         "pit_rows": len(pit_rows),
         "annual_report": bool(annual_ctx),

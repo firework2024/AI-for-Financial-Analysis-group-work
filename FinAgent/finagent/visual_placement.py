@@ -12,6 +12,7 @@ from .chart_catalog import (
     MARKET_TECH_SECTION,
     TABLE_ALL_KEYS,
     chart_caption,
+    chart_key_allowed_for_placement,
     table_key_allowed_for_placement,
 )
 from .chart_dynamic import _pick_anchor, _text_matches_hints
@@ -146,6 +147,9 @@ def local_visual_need(
 
         for chart_key in chart_candidates_for_plan_section(section_name, plan):
             if chart_picked >= chart_limit or chart_key in used_charts or chart_key in blocked:
+                continue
+            if not chart_key_allowed_for_placement(chart_key):
+                skip.append({"visual_key": chart_key, "kind": "chart", "reason": "已停用条形图，改由表格展示"})
                 continue
             if chart_key not in charts:
                 if not data_available_for_chart(chart_key, data):
@@ -352,7 +356,7 @@ def _all_table_keys() -> set[str]:
 
 
 # re-export for local_visual_need table hints
-from .chart_catalog import DISABLED_PLACEMENT_TABLE_KEYS, TABLE_SUBHEADING_HINTS  # noqa: E402
+from .chart_catalog import DISABLED_PLACEMENT_TABLE_KEYS, TABLE_SUBHEADING_HINTS, chart_key_allowed_for_placement  # noqa: E402
 
 
 def _sanitize_visual_need(
@@ -376,6 +380,8 @@ def _sanitize_visual_need(
         if visual_key in DISABLED_PLACEMENT_TABLE_KEYS:
             continue
         kind = str(item.get("kind") or ("table" if visual_key in TABLE_ALL_KEYS else "chart")).strip()
+        if kind == "chart" and not chart_key_allowed_for_placement(visual_key):
+            continue
         if kind == "chart" and visual_key not in charts:
             continue
         if kind == "table" and visual_key not in TABLE_ALL_KEYS:

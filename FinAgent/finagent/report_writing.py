@@ -11,6 +11,7 @@ _ANALYTICAL_CORE = (
     "每个判断必须可追溯至 JSON 字段或由其可推导（同比、CAGR、区间收益、简易估值倍数等须注明口径）；"
     "禁止空泛形容词替代数据；"
     "涉及两个及以上时点/年份时必须用 Markdown 表格对比；"
+    "同行/行业横向比较（含同行横向坐标、行业估值对比等小标题）的指标对比必须用 Markdown 竖表，禁止正文逐条列举中位数与分位；"
     "解释「为什么」而不只描述「是什么」；不给买卖建议；"
     "禁止输出思考过程或 <thinking> 标签。"
 )
@@ -26,8 +27,52 @@ _LOOSE_FUNDAMENTAL_WRITING = (
 _LOOSE_SECTION_WRITING = (
     "本节正文：优先用 JSON 中的数字写清判断与因果；多年或多指标对比时优先用 Markdown 表格，数据不足可省略表格。"
     "可选用 **加粗短语** 作小标题，无合适切块时可连贯段落书写，勿套用固定小节清单。"
-    "有 mda_crosswalk 时在相关段落自然对照 MD&A 与报表，勿单独设勾稽章节；缺数据用 `-` 列表说明局限。"
+    "有 mda_business_brief 或 mda_crosswalk 时，在相关段落自然融入 MD&A 中基本业务、业务发展、行业与战略等管理层表述，"
+    "与量化指标形成「数据事实 + 管理层解释 + 独立判断」三层论述，勿单独设勾稽章节；缺数据用 `-` 列表说明局限。"
 )
+
+_MDA_KIND_WRITING: dict[str, str] = {
+    "market": (
+        "结合 mda_business_brief 中行业需求、产品结构或渠道变化，解释量价/均线/波动背后的业务动因；"
+        "勿大段复述 MD&A，1–2 处点到即可。"
+    ),
+    "valuation": (
+        "结合基本业务与盈利驱动（产品、区域、定价等 MD&A 表述），解释估值倍数高低的业务合理性；"
+        "同行对比数值仍只引用机械表。"
+    ),
+    "capital": (
+        "结合业务发展或市场关注度（MD&A），解释两融/成交/资金结构变化是否与经营叙事一致。"
+    ),
+    "macro": (
+        "结合 MD&A 中资本开支、负债或融资安排，说明无风险利率/短端资金成本对该公司业务与财务的传导；"
+        "勿重复其他章已写的盈利/两融段落。"
+    ),
+    "operating_quality": (
+        "经营质量章须深度使用 mda_crosswalk 与 mda_business_brief："
+        "在盈利、现金流、营运效率段落对照管理层解释与报表勾稽项，给出独立判断。"
+    ),
+    "risk": (
+        "将 MD&A 风险披露与 reviewed_signals、articulation_checks 对照，说明哪些风险已被管理层承认、哪些仍存数据缺口。"
+    ),
+}
+
+PEER_COMPARE_TABLE_HEADINGS = (
+    "同行横向坐标",
+    "行业横向坐标",
+    "行业估值对比",
+    "行业盈利能力对比",
+    "行业成长与杠杆对比",
+)
+
+
+def peer_compare_table_writing_rule() -> str:
+    """同行/行业横向对比：数值进机械表，正文只写定性一句。"""
+    return (
+        "凡 **同行横向坐标**、**行业横向坐标**、**行业估值对比** 等横向比较小标题下，"
+        "本公司/行业中位数/均值/分位等对比数据只放在系统机械插入的 Markdown 竖表，"
+        "正文该小标题下至多一句定性判断（如「经营质量全面占优」），"
+        "禁止逐条写「毛利率 x%，行业中位数 y%，分位 z%」式列举。"
+    )
 
 FUNDAMENTAL_NARRATIVE_SECTION = "经营与财务分析"
 
@@ -72,23 +117,48 @@ def fundamental_narrative_writing_guide() -> str:
     return _LOOSE_FUNDAMENTAL_WRITING
 
 
-def section_writing_guide(section_name: str) -> str:
+def mda_business_writing_guide(section_name: str, *, section_kind: str | None = None) -> str:
+    """各章节如何引用 MD&A 基本业务/业务发展表述（与章节 kind 对齐）。"""
+    kind = str(section_kind or "").strip().lower()
+    if not kind:
+        from .narrative_plan import infer_section_kind
+
+        kind = infer_section_kind(section_name) or ""
+    hint = _MDA_KIND_WRITING.get(kind)
+    if not hint:
+        if any(token in section_name for token in ("基本面", "财务", "经营")):
+            hint = _MDA_KIND_WRITING["operating_quality"]
+        elif any(token in section_name for token in ("风险", "局限")):
+            hint = _MDA_KIND_WRITING["risk"]
+        else:
+            hint = (
+                "若 JSON 含 mda_business_brief，在论述中至少 1 处引用管理层对基本业务或业务发展的表述，"
+                "支撑本节量化结论；无 MD&A 则说明数据局限。"
+            )
+    return f"MD&A 论述要求：{hint}"
+
+
+def section_writing_guide(section_name: str, *, section_kind: str | None = None) -> str:
     """多智能体各章节写作补充指引（不重复 analytical_writing_core，无固定分节模板）。"""
-    guide = _LOOSE_SECTION_WRITING
+    guide = _LOOSE_SECTION_WRITING + mda_business_writing_guide(section_name, section_kind=section_kind)
     if any(token in section_name for token in ("量价", "技术", "趋势", "K线", "均线")):
         guide += (
             "技术指标请自行写一张竖表（指标|数值|解读），每行附一句简短解读；"
             "禁止再用横表（维度|MA20|MA60…），且同一章节不要重复两张技术指标表。"
         )
     if any(token in section_name for token in ("基本面", "估值")):
-        guide += (
-            "系统会机械插入估值/行业对比竖表；"
-            "勿在正文重复 PE/PB/同行分位等同指标表格，引用表格结论即可。"
+        guide += peer_compare_table_writing_rule() + (
+            "系统会机械插入「表·行业横向坐标」「表·行业估值对比」等竖表；引用表格结论即可。"
         )
     if "经营质量" in section_name or "财务" in section_name:
+        guide += peer_compare_table_writing_rule() + (
+            "系统会机械插入「表·同行横向坐标」竖表（含同行池口径、本公司/中位数/均值/分位/解读）。"
+        )
+    if any(token in section_name for token in ("宏观", "利率", "Shibor", "国债")):
         guide += (
-            "系统会机械插入盈利/杠杆等行业对比竖表；"
-            "勿在正文重复毛利率/资产负债率等同指标表格，引用表格结论即可。"
+            "无风险利率来自 JSON 的 macro_rate_recent（Shibor + 国债收益率曲线）；"
+            "必须引用 macro_rate_brief 中的具体数值，并与目标股股息率/PE/负债率挂钩，"
+            "禁止写「JSON 未提供利率」若 brief 中已有数据。"
         )
     return guide
 

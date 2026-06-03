@@ -53,9 +53,6 @@ CHART_CAPTIONS: dict[str, str] = {
     "latest_growth_snapshot": "最新成长因子快照",
     "margin_enhanced": "融资余额与买卖额",
     "valuation_percentile": "PE/PB 历史分位",
-    "industry_valuation_compare": "行业估值对比",
-    "industry_profitability_compare": "行业盈利能力对比",
-    "industry_growth_leverage_compare": "行业成长与杠杆对比",
     "industry_dbscan_anomaly": "DBSCAN 同行异常识别",
     "share_structure_pie": "股本结构",
     "dividend_spread": "股息率与无风险利率利差",
@@ -102,6 +99,17 @@ INDUSTRY_COMPARE_TABLE_SPECS: dict[str, tuple[str, ...]] = {
         "current_ratio",
         "quick_ratio",
     ),
+    # 经营质量章节：全量经营类指标一张表（不含 PE/PB/PS）
+    "industry_operating_peer_compare_table": (
+        "gross_profit_margin_ttm",
+        "net_profit_margin_ttm",
+        "roe_ttm",
+        "operating_revenue_growth_ratio_ttm",
+        "net_profit_parent_company_growth_ratio_ttm",
+        "debt_to_asset_ratio",
+        "current_ratio",
+        "quick_ratio",
+    ),
     "industry_peer_compare_table": (
         "pe_ratio_ttm",
         "pb_ratio_ttm",
@@ -120,6 +128,15 @@ INDUSTRY_COMPARE_TABLE_KEYS = frozenset(INDUSTRY_COMPARE_TABLE_SPECS)
 
 DISABLED_PLACEMENT_TABLE_KEYS = frozenset({"technical_snapshot_table"})
 
+# 量纲不可比的同行横截面条形图已停用，改由 industry_*_compare_table 展示
+DISABLED_INDUSTRY_BAR_CHART_KEYS = frozenset(
+    {
+        "industry_valuation_compare",
+        "industry_profitability_compare",
+        "industry_growth_leverage_compare",
+    }
+)
+
 TABLE_CAPTIONS: dict[str, str] = {
     "latest_quality_snapshot": "最新盈利质量因子",
     "latest_valuation_snapshot": "最新估值因子",
@@ -133,6 +150,7 @@ TABLE_CAPTIONS: dict[str, str] = {
     "industry_valuation_compare_table": "行业估值对比",
     "industry_profitability_compare_table": "行业盈利能力对比",
     "industry_growth_leverage_compare_table": "行业成长与杠杆对比",
+    "industry_operating_peer_compare_table": "同行横向坐标",
     "industry_peer_compare_table": "行业横向坐标",
 }
 
@@ -159,6 +177,20 @@ TABLE_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
         "速动",
         "分位",
     ),
+    "industry_operating_peer_compare_table": (
+        "行业",
+        "同行",
+        "横向",
+        "同业",
+        "经营质量",
+        "毛利率",
+        "净利率",
+        "ROE",
+        "成长",
+        "杠杆",
+        "分位",
+        "中位数",
+    ),
     "industry_peer_compare_table": ("行业", "同行", "横向", "分位", "中位数", "均值", "同业"),
 }
 
@@ -171,8 +203,7 @@ SECTION_TABLE_LIMITS: dict[str, int] = {
 
 DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
     "经营质量分析": (
-        "industry_profitability_compare_table",
-        "industry_growth_leverage_compare_table",
+        "industry_operating_peer_compare_table",
         "latest_quality_snapshot",
         "latest_liquidity_snapshot",
     ),
@@ -286,9 +317,6 @@ CHART_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "latest_quality_snapshot": ("质量因子", "偿债", "盈利能力"),
     "latest_growth_snapshot": ("成长因子", "增长", "增速"),
     "valuation_percentile": ("估值", "PE", "PB", "分位"),
-    "industry_valuation_compare": ("行业", "同行", "中位数", "均值", "PE", "PB", "PS", "估值", "横向对比"),
-    "industry_profitability_compare": ("行业", "同行", "中位数", "均值", "毛利率", "净利率", "ROE", "盈利", "横向对比"),
-    "industry_growth_leverage_compare": ("行业", "同行", "成长", "杠杆", "资产负债率", "流动比率", "中位数", "横向对比"),
     "industry_dbscan_anomaly": ("DBSCAN", "聚类", "异常", "噪声点", "同行", "横向对比"),
     "share_structure_pie": ("股本", "流通", "结构"),
     "dividend_spread": ("股息", "分红", "利差"),
@@ -318,9 +346,6 @@ CHART_BRIEF_NOTES: dict[str, str] = {
     "debt_ratio_trend": "资产负债率时间序列（米筐返回百分数点）。",
     "latest_liquidity_snapshot": "偿债与流动性因子快照。",
     "latest_growth_snapshot": "成长类因子快照，可与正文增长表述对照。",
-    "industry_valuation_compare": "目标公司 PE/PB/PS 与同行均值、中位数对比，用于判断估值相对位置。",
-    "industry_profitability_compare": "目标公司盈利能力与同行均值、中位数对比，用于观察盈利质量相对强弱。",
-    "industry_growth_leverage_compare": "目标公司成长和杠杆指标与同行均值、中位数对比，用于识别扩张质量和偿债压力。",
     "industry_dbscan_anomaly": "基于同行横截面因子的 DBSCAN 异常识别，显示目标公司、同行样本和噪声点。",
     "shibor_rates": "利率环境变化会影响权益资产折现率与相对吸引力。",
     "gov_yield_trend": "长端国债收益率下行往往压低 DCF 折现率并抬升高股息资产相对吸引力。",
@@ -413,6 +438,10 @@ SECTION_INLINE_CHART_LIMITS: dict[str, int] = {
 
 def table_key_allowed_for_placement(table_key: str) -> bool:
     return table_key in TABLE_ALL_KEYS and table_key not in DISABLED_PLACEMENT_TABLE_KEYS
+
+
+def chart_key_allowed_for_placement(chart_key: str) -> bool:
+    return chart_key not in DISABLED_INDUSTRY_BAR_CHART_KEYS
 
 
 def chart_caption(name: str) -> str:

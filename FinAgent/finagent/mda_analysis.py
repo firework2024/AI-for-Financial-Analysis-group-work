@@ -265,6 +265,81 @@ def build_annual_context_from_store(
     return context
 
 
+_MDA_BUSINESS_QUERY_GROUPS: dict[str, str] = {
+    "basic_business": "主营业务 主要产品 经营模式 业务范围 核心竞争力",
+    "business_development": "业务发展 经营情况 报告期 业绩变动 产销量",
+    "industry_outlook": "行业 市场需求 竞争格局 机遇 挑战",
+    "strategy": "发展战略 经营计划 未来展望 投入 研发",
+    "risk_disclosure": "风险因素 经营风险 面临的主要风险 不确定性",
+}
+
+_SECTION_KIND_MDA_GROUPS: dict[str, tuple[str, ...]] = {
+    "market": ("basic_business", "industry_outlook", "business_development"),
+    "valuation": ("basic_business", "business_development", "strategy"),
+    "capital": ("business_development", "industry_outlook"),
+    "macro": ("business_development", "strategy", "risk_disclosure"),
+    "operating_quality": ("basic_business", "business_development", "industry_outlook", "strategy"),
+    "risk": ("risk_disclosure", "business_development", "industry_outlook"),
+}
+
+
+def build_mda_business_brief(
+    mda_text: str,
+    *,
+    section_kind: str | None = None,
+    mda_summary: str | None = None,
+    crosswalk: list[dict[str, Any]] | None = None,
+    max_excerpt_len: int = 200,
+    hits_per_group: int = 1,
+) -> str:
+    """按章节类型从 MD&A 抽取基本业务/业务发展等管理层表述，供各章写作引用。"""
+    from .datastore.annual_text import search_mda_hits
+
+    lines: list[str] = []
+    summary = str(mda_summary or "").strip()
+    if summary:
+        lines.append(f"MD&A 摘要：{summary[:400]}")
+
+    groups = _SECTION_KIND_MDA_GROUPS.get(str(section_kind or "").strip().lower())
+    if not groups:
+        groups = ("basic_business", "business_development", "industry_outlook")
+
+    text = str(mda_text or "").strip()
+    if text:
+        for group_key in groups:
+            query = _MDA_BUSINESS_QUERY_GROUPS.get(group_key, group_key)
+            hits = search_mda_hits(text, query, top_k=hits_per_group)
+            for hit in hits:
+                excerpt = str(hit.get("text") or "").strip().replace("\n", " ")
+                if len(excerpt) > max_excerpt_len:
+                    excerpt = excerpt[:max_excerpt_len].rstrip() + "…"
+                if excerpt:
+                    label = {
+                        "basic_business": "基本业务",
+                        "business_development": "业务发展",
+                        "industry_outlook": "行业与需求",
+                        "strategy": "战略与展望",
+                        "risk_disclosure": "风险披露",
+                    }.get(group_key, group_key)
+                    lines.append(f"{label}：{excerpt}")
+
+    if isinstance(crosswalk, list) and crosswalk:
+        for item in crosswalk[:3]:
+            hits = item.get("mda_hits") or []
+            if not hits:
+                continue
+            theme = str(item.get("theme") or "勾稽项").strip()
+            excerpt = str(hits[0].get("text") or "").strip().replace("\n", " ")
+            if len(excerpt) > max_excerpt_len:
+                excerpt = excerpt[:max_excerpt_len].rstrip() + "…"
+            if excerpt:
+                lines.append(f"与「{theme}」相关的 MD&A：{excerpt}")
+
+    if not lines:
+        return "年报 MD&A 已采集但未检索到与本节相关的业务表述；本节只基于量化数据写作并说明局限。"
+    return " ".join(lines[:8])
+
+
 def format_crosswalk_markdown(crosswalk: list[dict[str, Any]], *, limit: int = 10) -> str:
     """渲染 MD&A 与报表勾稽对照（Markdown）。"""
     if not crosswalk:

@@ -724,6 +724,9 @@ def chart_agent(*, data: dict[str, Any], output_dir: Path, only_keys: set[str] |
         charts.update(_plot_annual_financial_charts(pit_fin, output_dir, stock))
 
     # ── 图表元数据（供 placement 智能体使用） ──
+    from .chart_catalog import DISABLED_INDUSTRY_BAR_CHART_KEYS
+
+    charts = {name: path for name, path in charts.items() if name not in DISABLED_INDUSTRY_BAR_CHART_KEYS}
     data["_chart_metadata"] = _build_chart_metadata(data, charts)
 
     if only_keys:
@@ -764,36 +767,6 @@ def _plot_industry_comparison_charts(industry_comparison: Any, output_dir: Path,
             close_figure(fig)
             charts["industry_dbscan_anomaly"] = str(path)
     return charts
-
-
-def _industry_compare_rows(metrics: dict[str, Any], keys: list[str]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for key in keys:
-        item = metrics.get(key)
-        if not isinstance(item, dict):
-            continue
-        target = _scaled_metric_value(key, item.get("target"))
-        median = _scaled_metric_value(key, item.get("median"))
-        mean = _scaled_metric_value(key, item.get("mean"))
-        if target is None or median is None or mean is None:
-            continue
-        rows.append(
-            {
-                "label": str(item.get("label") or FACTOR_LABELS.get(key, key)),
-                "target": target,
-                "median": median,
-                "mean": mean,
-            }
-        )
-    return rows
-
-
-def _scaled_metric_value(key: str, value: Any) -> float | None:
-    parsed = safe_float(value)
-    if parsed is None:
-        return None
-    scaled = snapshot_bar_value(key, parsed)
-    return None if scaled is None else float(scaled)
 
 
 def _resolve_factor_series_columns(
@@ -894,30 +867,8 @@ def _chart_metadata_summary(
             return "; ".join(parts)
 
     # ── 行业对比图 ──
-    ic_charts = {
-        "industry_profitability_compare": ("gross_profit_margin_ttm", "net_profit_margin_ttm", "roe_ttm"),
-        "industry_growth_leverage_compare": (
-            "operating_revenue_growth_ratio_ttm", "net_profit_parent_company_growth_ratio_ttm",
-            "debt_to_asset_ratio", "current_ratio",
-        ),
-        "industry_valuation_compare": ("pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"),
-        "industry_dbscan_anomaly": None,
-    }
-    if chart_name in ic_charts and ic_metrics:
-        if chart_name == "industry_dbscan_anomaly":
-            return "DBSCAN 聚类散点图: 目标公司相对同行在横截面因子上的异常位置识别"
-        keys = ic_charts[chart_name]
-        parts = []
-        for key in keys:
-            item = ic_metrics.get(key)
-            if isinstance(item, dict):
-                t = safe_float(item.get("target"))
-                m = safe_float(item.get("median"))
-                label = item.get("label", key)
-                if t is not None and m is not None:
-                    parts.append(f"{label}: 目标{t:.2f}, 行业中位数{m:.2f}")
-        if parts:
-            return "; ".join(parts)
+    if chart_name == "industry_dbscan_anomaly" and ic_metrics:
+        return "DBSCAN 聚类散点图: 目标公司相对同行在横截面因子上的异常位置识别"
 
     # ── 年报财务图 ──
     annual_charts = {

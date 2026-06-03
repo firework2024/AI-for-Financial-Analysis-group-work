@@ -212,6 +212,31 @@ def test_industry_growth_leverage_compare_table():
     assert "70%" in block
 
 
+def test_industry_operating_peer_compare_table():
+    data = _industry_comparison_data()
+    data["industry_comparison"]["metrics"]["net_profit_margin_ttm"] = {
+        "label": "净利率(TTM)",
+        "target": 0.1809,
+        "median": 0.0317,
+        "mean": 0.05,
+        "percentile": 0.97,
+        "relative_label": "处于行业高位，相对占优",
+    }
+    block = format_table_block("industry_operating_peer_compare_table", data)
+    assert block is not None
+    assert "同行横向坐标" in block
+    assert "住宅物业开发" in block
+    assert "有效同行 68 家" in block
+    assert "毛利率(TTM)" in block
+    assert "净利率(TTM)" in block
+    assert "速动比率" in block
+    assert "23.46%" in block
+    assert "18.09%" in block
+    assert "97%" in block
+    assert "| 解读 |" in block
+    assert "PE(TTM)" not in block
+
+
 def test_industry_peer_compare_table_includes_valuation_and_quality():
     data = _industry_comparison_data()
     block = format_table_block("industry_peer_compare_table", data)

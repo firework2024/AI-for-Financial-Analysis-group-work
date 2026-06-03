@@ -3,10 +3,63 @@ from finagent.narrative_plan import build_planner_fallback_sections
 from finagent.multi_report import resolve_multi_report_title
 from finagent.narrative_plan import (
     build_plan_data_briefing,
+    ensure_macro_section_in_plan,
     infer_section_kind,
     is_operating_quality_section,
+    macro_data_available,
 )
 from finagent.plan_execution import sanitize_plan_sections
+
+
+def test_build_plan_data_briefing_includes_macro_coverage():
+    data = {
+        "interbank_rate": {"row_count": 60, "rows": [{"date": "2026-05-29", "ON": 1.32}]},
+        "yield_curve": {"row_count": 60, "rows": [{"date": "2026-05-29", "10Y": 1.74}]},
+    }
+    briefing = build_plan_data_briefing(data)
+    assert briefing["data_coverage"]["interbank_rate"] == 60
+    assert briefing["data_coverage"]["yield_curve"] == 60
+
+
+def test_ensure_macro_section_in_plan_when_data_available():
+    data = {
+        "interbank_rate": {"rows": [{"date": "2026-05-29", "ON": 1.32}], "row_count": 1},
+        "yield_curve": {"rows": [{"date": "2026-05-29", "10Y": 1.74}], "row_count": 1},
+    }
+    sections = [
+        {"name": "量价与技术面", "agent": "market_tech_writer", "data": ["get_price"], "kind": "market"},
+        {"name": "综合风险与数据局限", "agent": "risk_synthesis_writer", "data": ["all_collected_data"], "kind": "risk"},
+    ]
+    out = ensure_macro_section_in_plan(sections, data)
+    names = [item["name"] for item in out]
+    assert "宏观利率背景" in names
+    assert names.index("宏观利率背景") < names.index("综合风险与数据局限")
+
+
+def test_ensure_macro_section_skipped_without_data():
+    sections = [{"name": "量价与技术面", "agent": "market_tech_writer", "data": ["get_price"], "kind": "market"}]
+    out = ensure_macro_section_in_plan(sections, {"interbank_rate": {"rows": [], "row_count": 0}})
+    assert [item["name"] for item in out] == ["量价与技术面"]
+
+
+def test_sanitize_plan_injects_macro_when_llm_omits_it():
+    llm_plan = {
+        "report_title": "测试",
+        "objective": "x",
+        "tools": list(TOOL_REGISTRY),
+        "sections": [
+            {"name": "量价与技术面", "agent": "market_tech_writer", "data": ["get_price"], "kind": "market"},
+            {"name": "综合风险与数据局限", "agent": "risk_synthesis_writer", "data": ["all_collected_data"], "kind": "risk"},
+        ],
+        "risk_controls": [],
+    }
+    fallback = {"objective": "x", "tools": list(TOOL_REGISTRY), "sections": [], "risk_controls": []}
+    data = {
+        "interbank_rate": {"rows": [{"date": "2026-05-29", "ON": 1.32}], "row_count": 1},
+        "yield_curve": {"rows": [{"date": "2026-05-29", "10Y": 1.74}], "row_count": 1},
+    }
+    plan = _sanitize_plan(llm_plan, fallback, data=data)
+    assert any(item["name"] == "宏观利率背景" for item in plan["sections"])
 
 
 def test_build_plan_data_briefing_includes_technical_and_pit():

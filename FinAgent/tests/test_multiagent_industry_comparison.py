@@ -68,12 +68,23 @@ def test_industry_prompt_brief_guides_writer_without_raw_paths():
 
     assert "工程服务" in brief
     assert "有效同行 6 家" in brief
-    assert "毛利率(TTM)" in brief
-    assert "行业中位数" in brief
-    assert "行业分位" in brief
+    assert "表·同行横向坐标" in brief
+    assert "毛利率(TTM)" not in brief
     assert "PE(TTM)" not in brief
     assert "factor_trend" not in brief
     assert "data." not in brief
+
+
+def test_operating_quality_brief_omits_metric_bullet_list():
+    payload = _compact_data_for_prompt(
+        {"industry_comparison": _comparison()},
+        {},
+        "经营质量分析",
+    )
+    brief = payload["industry_comparison_brief"]
+
+    assert "表·同行横向坐标" in brief
+    assert "毛利率(TTM)：目标公司" not in brief
 
 
 def test_prompt_compaction_exposes_compact_industry_summary_only():
@@ -106,7 +117,8 @@ def test_prompt_compaction_exposes_compact_industry_summary_only():
     assert "fundamental_narrative_analysis" not in payload
     assert "industry_valuation_compare" not in payload["charts"]
     assert "valuation_factors" not in payload["charts"]
-    assert "industry_profitability_compare" in payload["charts"]
+    assert "industry_profitability_compare" not in payload["charts"]
+    assert "industry_growth_leverage_compare" not in payload["charts"]
 
 
 def test_local_validation_requests_rewrite_when_fundamental_omits_peer_comparison():
@@ -126,21 +138,37 @@ def test_local_validation_passes_when_fundamental_uses_peer_comparison():
     validation = _local_validation(
         data={"industry_comparison": _comparison()},
         charts={
-            "industry_profitability_compare": "charts/industry_profitability_compare.png",
-            "industry_growth_leverage_compare": "charts/industry_growth_leverage_compare.png",
             "industry_dbscan_anomaly": "charts/industry_dbscan_anomaly.png",
             "price_volume": "charts/price_volume.png",
-            "moving_averages": "charts/moving_averages.png",
-            "profitability_factors": "charts/profitability_factors.png",
-            "growth_factors": "charts/growth_factors.png",
         },
         sections={
-            "经营质量分析": "同行池采用中信三级行业工程服务，有效同行6家；毛利率处于行业分位91%，高于行业中位数。DBSCAN因样本不足跳过。"
+            "经营质量分析": (
+                "**核心结论**\n\n同行池工程服务有效6家，经营质量全面占优。\n\n"
+                "**同行横向坐标**\n\n毛利率与偿债指标整体处于行业高位；DBSCAN因样本不足跳过。"
+            )
         },
-        draft_markdown="同行池采用中信三级行业工程服务，有效同行6家；毛利率处于行业分位91%，高于行业中位数。DBSCAN因样本不足跳过。",
+        draft_markdown="同行横向坐标 经营质量全面占优",
     )
 
     assert "经营质量分析" not in validation["section_feedback"]
+
+
+def test_local_validation_flags_prose_peer_metric_list():
+    validation = _local_validation(
+        data={"industry_comparison": _comparison()},
+        charts={"industry_dbscan_anomaly": "charts/industry_dbscan_anomaly.png"},
+        sections={
+            "经营质量分析": (
+                "**同行横向坐标**\n\n"
+                "毛利率(TTM)：26.21%，行业中位数15.99%，行业分位91%。\n"
+                "净利率(TTM)：18.09%，行业中位数3.17%，行业分位97%。"
+            )
+        },
+        draft_markdown="",
+    )
+
+    notes = validation["section_feedback"].get("经营质量分析", [])
+    assert any("机械表" in note or "逐条" in note for note in notes)
 
 
 def test_local_validation_rejects_valuation_language_in_operating_quality():

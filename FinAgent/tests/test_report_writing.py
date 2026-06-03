@@ -68,7 +68,24 @@ def test_section_writing_guide_is_loose_without_fixed_subheadings():
     guide = section_writing_guide("经营质量分析")
     assert "可选用" in guide
     assert "勿套用固定小节清单" in guide
-    assert guide == section_writing_guide("宏观利率背景")
+    assert "同行横向坐标" in guide
+    assert "MD&A" in guide
+    assert "mda_crosswalk" in guide
+    macro_guide = section_writing_guide("宏观利率背景")
+    assert "macro_rate_brief" in macro_guide
+    assert "MD&A" in macro_guide
+    market_guide = section_writing_guide("量价与技术面", section_kind="market")
+    assert "行业需求" in market_guide or "业务" in market_guide
+    assert guide != macro_guide
+
+
+def test_mda_business_writing_guide_by_kind():
+    from finagent.report_writing import mda_business_writing_guide
+
+    oq = mda_business_writing_guide("自定义经营节", section_kind="operating_quality")
+    assert "mda_crosswalk" in oq
+    val = mda_business_writing_guide("估值分析", section_kind="valuation")
+    assert "基本业务" in val or "盈利驱动" in val
 
 
 def test_normalize_section_text_strips_thinking_blocks():

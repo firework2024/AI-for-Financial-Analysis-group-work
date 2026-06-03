@@ -26,14 +26,19 @@ from .narrative_plan import (
     build_plan_data_briefing,
     build_planner_fallback_sections,
     data_briefing_planner_preamble,
+    ensure_macro_section_in_plan,
+    is_macro_section,
     is_operating_quality_section,
+    section_kind_for_name,
 )
+from .plan_execution import filter_prompt_payload, section_tools_from_plan
 from .visual_placement import resolve_section_visuals
 from .report_format import normalize_section_text, normalize_sections, section_writing_style_hint
 from .report_writing import (
     analytical_writing_core,
     build_analytical_evidence,
     fundamental_narrative_system_prompt,
+    peer_compare_table_writing_rule,
     section_opening_conclusion_rule,
     summarize_annual_financial_data,
 )
@@ -120,6 +125,23 @@ TABLE_QUALITY_REQUIREMENTS = [
     "量价/技术章节的技术指标只允许一张 Markdown 竖表（指标|数值|解读），禁止横表（维度|MA20|MA60…）与同指标第二张表并存。",
     "禁止机械插入或保留「表 · 技术指标快照」块；technical_snapshot_table 已停用，由 section_writer 自行写表。",
     "表格解读列应简短说明相对位置或趋势含义，数值列与 JSON 中 technical 字段一致。",
+    peer_compare_table_writing_rule(),
+    "系统机械插入的「表·同行横向坐标」「表·行业横向坐标」「表·行业估值对比」等不得再在正文逐条重复数值；正文只保留一句定性判断。",
+]
+
+SECTION_DEDUP_REQUIREMENTS = [
+    "每一类分析只在一个主章节展开：宏观利率→宏观利率背景；两融/资金流→资金与交易结构；估值倍数→基本面与估值；盈利/同行→经营质量；量价→量价与技术面；风险汇总→综合风险与数据局限。",
+    "「宏观利率背景」只写 Shibor/国债/无风险利率及其与目标股股息率、PE 或负债率的逻辑联系，禁止重复两融余额、营收利润、同行对比表格等已在其他章节展开的内容。",
+    "若两章出现相同数据点或高度相似段落，必须在 structural_feedback 标明 keep_in（保留章节）与 rewrite_sections（需删重复并重写的章节），并在 section_feedback 给出具体删改方向。",
+    "「综合风险与数据局限」只做风险与数据缺口汇总，不得大段复述前面章节的分析段落。",
+    "MD&A 基本业务/业务发展：经营质量章可展开管理层解释与勾稽；其他章只引用 1–2 句支撑本节量化结论，禁止各章大段复制相同 MD&A 原文。",
+]
+
+MDA_INTEGRATION_REQUIREMENTS = [
+    "若 data_inventory 或 JSON 含 annual_report_context / mda_business_brief，相关章节须引用管理层对基本业务、业务发展、行业或风险的表述，与量化指标形成论述支撑。",
+    "经营质量章（kind=operating_quality）须使用 mda_crosswalk 做报表事实与 MD&A 对照，并给出独立判断；不得只罗列数字。",
+    "量价/估值/资金/宏观/风险章至少 1 处将 MD&A 业务表述与本节数据挂钩；无 MD&A 时须说明局限，不得编造管理层口径。",
+    "MD&A 引用用于解释与论证，不得替代系统机械表中的同行对比数值；勿设独立「MD&A 勾稽」章节。",
 ]
 
 
@@ -452,6 +474,8 @@ def planner_agent(
             "保证标题本身先给判断，再在正文展开证据；这只是写作建议，不是硬性格式约束。"
             "\nkind 枚举: operating_quality|market|valuation|capital|macro|risk。"
             "\n需要 MD&A 深度经营分析时 kind=operating_quality（节名可自定义，不必叫「经营质量分析」）。"
+            "\n若 briefing 含 annual_report_context 或 MD&A，各 kind 章节均应在正文中引用基本业务/业务发展等管理层表述支撑论述"
+            "（经营质量章深度勾稽，其他章 1–2 处点到，勿各章大段复制相同 MD&A）。"
             "\ndata 仅填可用米筐函数名；sections 须按本轮数据覆盖与研究重点自由规划（数量、名称、顺序均可变，勿默认五段式）。"
             "\n禁止规划宏观、行业、新闻、Wind、券商预测等未在可用函数中的数据。"
             + briefing_block,
@@ -470,11 +494,14 @@ def _sanitize_plan(
     result = dict(plan) if isinstance(plan, dict) else {}
     allowed_tools = set(TOOL_REGISTRY)
     result["tools"] = [name for name in result.get("tools", []) if name in allowed_tools] or list(TOOL_REGISTRY)
-    result["sections"] = sanitize_plan_sections(
-        result,
-        legacy_templates=LEGACY_SECTION_TEMPLATES,
-        fallback_sections=build_planner_fallback_sections(data),
-        allowed_tools=allowed_tools,
+    result["sections"] = ensure_macro_section_in_plan(
+        sanitize_plan_sections(
+            result,
+            legacy_templates=LEGACY_SECTION_TEMPLATES,
+            fallback_sections=build_planner_fallback_sections(data),
+            allowed_tools=allowed_tools,
+        ),
+        data,
     )
     controls = result.get("risk_controls") if isinstance(result.get("risk_controls"), list) else []
     result["risk_controls"] = [
@@ -1155,6 +1182,8 @@ def section_writer_agents(*, plan: dict[str, Any], data: dict[str, Any], charts:
         name = str(spec.get("name") or "分析章节")
         agent = str(spec.get("agent") or "section_writer")
         prompt_data = _compact_data_for_prompt(data, charts, name, plan=plan)
+        section_tools = section_tools_from_plan(plan, name)
+        prompt_data = filter_prompt_payload(prompt_data, section_tools)
         return name, _write_section(agent=agent, section_name=name, data=prompt_data, plan=plan)
 
     parallel = bool(get_env("OPENAI_API_KEY")) and env_flag("FINAGENT_SECTION_PARALLEL", default=True)
@@ -1181,7 +1210,7 @@ def validation_agent(
     sections: dict[str, str],
     draft_markdown: str,
 ) -> dict[str, Any]:
-    fallback = _local_validation(data=data, charts=charts, sections=sections, draft_markdown=draft_markdown)
+    fallback = _local_validation(data=data, charts=charts, sections=sections, draft_markdown=draft_markdown, plan=plan)
     if not get_env("OPENAI_API_KEY"):
         return fallback
     try:
@@ -1199,8 +1228,18 @@ def validation_agent(
                 "如果图表数量不足 8 张或存在大量低质量图，应在 `refinement_requests` 中将 `refresh_charts` 设为 true，并说明原因。\n\n"
                 "## 表格质量标准（必须逐章节核对）\n"
                 + "\n".join(f"{i+1}. {rule}" for i, rule in enumerate(TABLE_QUALITY_REQUIREMENTS))
-                + "\n\n若量价/技术章节出现两张技术指标表、或横表（维度|MA20|…）与竖表并存，必须在 section_feedback 中要求合并为一张竖表（指标|数值|解读）。\n\n"
-                "## 整体报告质量要求\n"
+                + "\n\n若量价/技术章节出现两张技术指标表、或横表（维度|MA20|…）与竖表并存，必须在 section_feedback 中要求合并为一张竖表（指标|数值|解读）。"
+                + "\n若经营质量/估值章节在「同行横向坐标」等小标题下逐条写行业中位数/分位，必须要求删 prose 数值、改由系统机械表展示。"
+                + "\n\n## 章节去重与分工（重点）\n"
+                + "\n".join(f"{i+1}. {rule}" for i, rule in enumerate(SECTION_DEDUP_REQUIREMENTS))
+                + "\n\n必须逐对检查「宏观利率背景」与基本面/估值/资金/经营质量/风险章是否重复。"
+                "重复时：在 structural_feedback 输出 keep_in、rewrite_sections、suggestion；"
+                "并在 rewrite_sections 各章的 section_feedback 中要求删除重复段、只保留该章独有点。"
+                + "\n\n## MD&A 与业务论述（重点）\n"
+                + "\n".join(f"{i+1}. {rule}" for i, rule in enumerate(MDA_INTEGRATION_REQUIREMENTS))
+                + "\n\n经营质量章缺 MD&A/管理层对照、或其他有 mda_business_brief 的章完全未引用业务表述时，"
+                "须在 section_feedback 要求补充论述支撑。"
+                + "\n\n## 整体报告质量要求\n"
                 "除了逐图审核外，你还需要从整体视角评估报告的可读性和逻辑连贯性：\n"
                 "1. **图文布局**：图表不应全部挤在「可视化」章节，应尽量分散到对应分析段落附近（例如在量价分析段插入价格图，在资金流段插入资金图）。\n"
                 "2. **章节衔接**：相邻章节之间是否有过渡句或逻辑联系？例如「经营质量分析」之后是否自然引出「资金与交易结构」。\n"
@@ -1220,8 +1259,15 @@ def validation_agent(
                     "data_inventory": _data_inventory(data),
                     "chart_quality_requirements": CHART_QUALITY_REQUIREMENTS,
                     "table_quality_requirements": TABLE_QUALITY_REQUIREMENTS,
-                    "local_table_review": _technical_table_section_review(sections),
+                    "local_table_review": _merge_section_feedback(
+                        _technical_table_section_review(sections),
+                        _peer_compare_table_section_review(sections),
+                        _mda_integration_section_review(data=data, sections=sections, plan=plan),
+                    ),
                     "local_chart_review": _chart_quality_review(data=data, charts=charts),
+                    "section_dedup_requirements": SECTION_DEDUP_REQUIREMENTS,
+                    "mda_integration_requirements": MDA_INTEGRATION_REQUIREMENTS,
+                    "local_overlap_review": _section_overlap_review(sections, plan=plan),
                     "local_stock_relevance_review": _stock_relevance_review(data=data, sections=sections),
                     "charts": charts,
                     "sections": sections,
@@ -1252,28 +1298,36 @@ def revise_sections_with_validation(
 ) -> dict[str, str]:
     feedback = validation.get("section_feedback") if isinstance(validation.get("section_feedback"), dict) else {}
     action_items = validation.get("action_items") if isinstance(validation.get("action_items"), list) else []
+    structural = validation.get("structural_feedback") if isinstance(validation.get("structural_feedback"), list) else []
     relevance = validation.get("stock_relevance_review") if isinstance(validation.get("stock_relevance_review"), dict) else {}
     has_relevance_rewrite = any(isinstance(item, dict) and item.get("decision") == "rewrite" for item in relevance.values())
-    if not get_env("OPENAI_API_KEY") or not (feedback or action_items or has_relevance_rewrite):
+    if not get_env("OPENAI_API_KEY") or not (feedback or action_items or has_relevance_rewrite or structural):
         return sections
     revised = dict(sections)
     rewrite_jobs: dict[str, Callable[[], tuple[str, str]]] = {}
 
     def _revise_one(name: str, content: str) -> tuple[str, str]:
         section_notes = _string_list(feedback.get(name))
+        section_notes.extend(_structural_notes_for_section(structural, name))
         section_relevance = relevance.get(name) if isinstance(relevance.get(name), dict) else {}
         if section_relevance.get("decision") == "rewrite":
             section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
         prompt_data = _compact_data_for_prompt(data, charts, name, plan=plan)
+        section_tools = section_tools_from_plan(plan, name)
+        prompt_data = filter_prompt_payload(prompt_data, section_tools)
         revise_director_guidance = ""
         if is_operating_quality_section(name, plan):
             revise_director_guidance = _operating_quality_writer_guidance()
         revise_industry_guidance = _industry_comparison_writer_guidance(name, prompt_data, plan=plan)
+        revise_macro_guidance = _macro_rate_writer_guidance(name, prompt_data, plan=plan)
+        revise_mda_guidance = _mda_business_writer_guidance(name, prompt_data, plan=plan)
         try:
             text = normalize_section_text(
                 llm_text(
                     f"你是 revise_agent。请根据验证 Agent 的意见，重写《{name}》章节。"
                     "只能使用 JSON 中已有数据；不要新增未采集来源；不要给买卖建议。"
+                    "若验证意见要求删去与其他章节重复的内容，必须删除重复段，只保留本章独有点；"
+                    "不要把其他章节已写过的两融/估值/盈利/量价段落复制到本章。"
                     "需要补充图表解读、数据局限和更可追溯的数字表述。"
                     "正文和表格展示层不要输出 raw JSON 字段路径或嵌套键名，例如 factor_trend.latest.xxx、data.xxx、margin_trajectory.xxx；"
                     "需要说明来源时用自然语言口径描述，例如“最新估值因子”“两融轨迹”“同比增长因子”。"
@@ -1282,8 +1336,11 @@ def revise_sections_with_validation(
                     f"{section_writing_style_hint(name)} "
                     f"{revise_director_guidance}"
                     f"{revise_industry_guidance}"
+                    f"{revise_macro_guidance}"
+                    f"{revise_mda_guidance}"
                     "优先引用 data.analytical_evidence；多年数据须用 Markdown 表格（表头清晰、多指标对比优先宽表≥3列，禁止两行两列敷衍）；"
-                    "若有 mda_crosswalk，融入盈利/现金流段落对照 MD&A，勿设独立勾稽章节。"
+                    "若有 mda_business_brief 或 mda_crosswalk，在相关段落融入基本业务/业务发展等 MD&A 表述作论述支撑，"
+                    "形成「报表或行情数据 + 管理层解释 + 独立判断」，勿设独立勾稽章节。"
                     "每一段都必须回到目标股票本身：引用目标股票代码、具体指标、目标股票图表或目标股票对应行业归属。"
                     "如果原文有泛泛讲宏观、行业、市场或方法论但没有连接目标股票的句子，请删除或改写。"
                     "直接输出 Markdown 正文，不要写「好的」「根据您的反馈」「遵照您的指示」等开场白，不要重复章节标题。",
@@ -1307,6 +1364,7 @@ def revise_sections_with_validation(
 
     for name, content in sections.items():
         section_notes = _string_list(feedback.get(name))
+        section_notes.extend(_structural_notes_for_section(structural, name))
         section_relevance = relevance.get(name) if isinstance(relevance.get(name), dict) else {}
         if section_relevance.get("decision") == "rewrite":
             section_notes.append(str(section_relevance.get("reason") or "本节需要改写为紧扣目标股票的数据、图表和结论。"))
@@ -1623,8 +1681,6 @@ def layout_optimizer(markdown_text: str, charts: dict[str, str]) -> str:
         "技术因素": ["technical_indicators"],
         "资金与交易结构": ["capital_flow", "cumulative_capital_flow", "buy_sell_value", "margin_enhanced"],
         OPERATING_QUALITY_SECTION: [
-            "industry_profitability_compare",
-            "industry_growth_leverage_compare",
             "industry_dbscan_anomaly",
             "latest_quality_snapshot",
             "profitability_factors",
@@ -1683,6 +1739,8 @@ def _write_section(*, agent: str, section_name: str, data: dict[str, Any], plan:
 
     director_guidance = _operating_quality_writer_guidance() if is_operating_quality_section(section_name, plan) else ""
     industry_guidance = _industry_comparison_writer_guidance(section_name, data, plan=plan)
+    macro_guidance = _macro_rate_writer_guidance(section_name, data, plan=plan)
+    mda_guidance = _mda_business_writer_guidance(section_name, data, plan=plan)
 
     try:
         role_prompt = (
@@ -1704,10 +1762,12 @@ def _write_section(*, agent: str, section_name: str, data: dict[str, Any], plan:
                 f"{style_hint} "
                 f"{director_guidance}"
                 f"{industry_guidance}"
+                f"{macro_guidance}"
+                f"{mda_guidance}"
                 "优先使用 annual_financial_analysis 中的完整财务画像（全部 reviewed_signals、metrics、articulation_checks），"
                 "以及 analytical_evidence 中的日期、窗口统计与多年表；"
-                "若有 mda_crosswalk 或 mda_full_text，在盈利/现金流/风险相关段落中做「报表数据 + MD&A 管理层解释 + 独立判断」三者对照，"
-                "勿设独立勾稽章节；数值结论必须可从 JSON 追溯；"
+                "若有 mda_business_brief、mda_crosswalk 或 mda_full_text，在相关段落做「量化数据 + MD&A 基本业务/业务发展/风险披露 + 独立判断」三者对照，"
+                "作为本节论述支撑，勿设独立勾稽章节；数值结论必须可从 JSON 追溯；"
                 "有 pit_financials_table / financial_years 时必须输出 Markdown 对比表。"
                 "直接输出 Markdown 正文，不要写「好的」「根据您提供的」等开场白，不要重复章节标题。",
                 json.dumps(data, ensure_ascii=False)[:max_chars],
@@ -1872,7 +1932,327 @@ def _technical_table_section_review(sections: dict[str, str]) -> dict[str, list[
     return feedback
 
 
-def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections: dict[str, str], draft_markdown: str) -> dict[str, Any]:
+_PROSE_PEER_METRIC_LINE = re.compile(
+    r"(毛利率|净利率|ROE|营收|利润|资产负债率|流动比率|速动比率|PE\s*\(|PB\s*\(|PS\s*\(|PE\(TTM\)|PB\(TTM\)|PS\(TTM\))"
+    r".{0,24}[：:].{0,40}(行业中位数|行业均值|行业分位|P25|P75|四分位)"
+)
+
+
+def _section_is_peer_compare_section(section_name: str, plan: dict[str, Any] | None = None) -> bool:
+    if is_operating_quality_section(section_name, plan):
+        return True
+    if any(token in section_name for token in ("基本面", "估值")):
+        return True
+    return False
+
+
+def _section_has_prose_peer_metric_list(content: str) -> bool:
+    text = str(content or "")
+    if not text.strip():
+        return False
+    prose_stat_lines = [
+        line
+        for line in text.splitlines()
+        if line.strip()
+        and ("行业中位数" in line or "行业分位" in line or "行业均值" in line)
+        and not line.strip().startswith("|")
+    ]
+    if len(prose_stat_lines) >= 2:
+        return True
+    if len(_PROSE_PEER_METRIC_LINE.findall(text)) >= 2:
+        return True
+    if any(heading in text for heading in ("同行横向坐标", "行业横向坐标", "行业估值对比")):
+        numbered = sum(1 for line in prose_stat_lines if re.search(r"[：:]\s*\d", line))
+        if numbered >= 2:
+            return True
+    return False
+
+
+def _peer_compare_table_section_review(sections: dict[str, str], *, plan: dict[str, Any] | None = None) -> dict[str, list[str]]:
+    feedback: dict[str, list[str]] = {}
+    for section_name, content in sections.items():
+        if not _section_is_peer_compare_section(section_name, plan):
+            continue
+        text = str(content or "")
+        if _section_has_prose_peer_metric_list(text):
+            feedback.setdefault(section_name, []).append(
+                "同行/行业横向对比不应在正文逐条写「指标：本公司 x，行业中位数 y，分位 z」；"
+                "请删去 prose 数值列举，只保留小标题下一句定性判断，具体对比交给系统机械表（表·同行横向坐标等）。"
+            )
+    return feedback
+
+
+_TOPIC_MARKERS: dict[str, tuple[str, ...]] = {
+    "macro": ("Shibor", "国债", "收益率曲线", "无风险利率", "折现率", "DCF", "期限利差", "同业拆借"),
+    "capital": ("融资余额", "融券余额", "两融", "融资买入", "杠杆资金", "融资融券", "融券余量"),
+    "valuation": ("PE(TTM)", "PB(TTM)", "PS(TTM)", "市盈率", "市净率", "市销率", "估值分位", "股息率(TTM)"),
+    "operating": ("毛利率", "净利率", "ROE", "经营现金流", "归母净利润", "同行横向", "行业中位数", "营收同比"),
+    "market": ("MA20", "MA60", "RSI", "换手率", "累计收益", "回撤", "收盘价", "成交量"),
+    "risk": ("数据局限", "风险提示", "样本不足"),
+}
+
+_TOPIC_LABELS: dict[str, str] = {
+    "macro": "宏观利率",
+    "capital": "资金与两融",
+    "valuation": "估值",
+    "operating": "经营质量",
+    "market": "量价与技术",
+    "risk": "风险汇总",
+}
+
+_TOPIC_KIND_MAP = {
+    "macro": "macro",
+    "capital": "capital",
+    "valuation": "valuation",
+    "operating_quality": "operating",
+    "market": "market",
+    "risk": "risk",
+}
+
+
+def _section_topic_key(section_name: str, plan: dict[str, Any] | None = None) -> str | None:
+    kind = section_kind_for_name(section_name, plan)
+    if kind in _TOPIC_KIND_MAP:
+        return _TOPIC_KIND_MAP[kind]
+    name = str(section_name or "")
+    if is_macro_section(name, plan):
+        return "macro"
+    if any(token in name for token in ("资金", "两融", "融资", "融券")):
+        return "capital"
+    if any(token in name for token in ("估值", "基本面")) and not is_operating_quality_section(name, plan):
+        return "valuation"
+    if is_operating_quality_section(name, plan):
+        return "operating"
+    if any(token in name for token in ("量价", "技术", "趋势", "K线", "均线")):
+        return "market"
+    if any(token in name for token in ("风险", "局限")):
+        return "risk"
+    return None
+
+
+def _find_owner_section(topic: str, sections: dict[str, str], plan: dict[str, Any] | None = None) -> str | None:
+    for name in sections:
+        if _section_topic_key(name, plan) == topic:
+            return name
+    return None
+
+
+def _strip_section_prose(content: str) -> str:
+    text = str(content or "")
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", text)
+    text = re.sub(r"^\s*\|.*\|\s*$", " ", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*#{1,6}\s+.*$", " ", text, flags=re.MULTILINE)
+    text = re.sub(r"\*\*[^*]+\*\*", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _section_sentences(content: str) -> list[str]:
+    prose = _strip_section_prose(content)
+    if not prose:
+        return []
+    parts = re.split(r"(?<=[。；;！!？?])\s+", prose)
+    return [part.strip() for part in parts if len(part.strip()) >= 18]
+
+
+def _sentence_similarity(left: str, right: str) -> float:
+    from difflib import SequenceMatcher
+
+    a = re.sub(r"\s+", "", left)
+    b = re.sub(r"\s+", "", right)
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _count_topic_markers(content: str, topic: str) -> int:
+    text = _strip_section_prose(content)
+    return sum(text.count(marker) for marker in _TOPIC_MARKERS.get(topic, ()))
+
+
+def _section_overlap_review(
+    sections: dict[str, str],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    section_feedback: dict[str, list[str]] = {}
+    structural_feedback: list[dict[str, Any]] = []
+    names = list(sections.keys())
+    macro_name = _find_owner_section("macro", sections, plan)
+
+    for section_name, content in sections.items():
+        topic = _section_topic_key(section_name, plan)
+        text = str(content or "")
+        if topic == "macro":
+            for foreign in ("capital", "valuation", "operating", "market"):
+                hits = _count_topic_markers(text, foreign)
+                if hits < 1:
+                    continue
+                owner = _find_owner_section(foreign, sections, plan) or _TOPIC_LABELS[foreign]
+                note = (
+                    f"「{section_name}」重复了{_TOPIC_LABELS[foreign]}内容（命中 {hits} 处关键词），"
+                    f"应删去；该类分析保留在《{owner}》。"
+                    "宏观章只保留 Shibor/国债/无风险利率及与目标股股息率、PE 或负债率的联系。"
+                )
+                section_feedback.setdefault(section_name, []).append(note)
+                structural_feedback.append(
+                    {
+                        "section": section_name,
+                        "issue": "duplication",
+                        "keep_in": owner,
+                        "rewrite_sections": [section_name],
+                        "suggestion": note,
+                    }
+                )
+        elif topic == "risk":
+            for foreign in ("macro", "capital", "valuation", "operating", "market"):
+                hits = _count_topic_markers(text, foreign)
+                if hits < 4:
+                    continue
+                owner = _find_owner_section(foreign, sections, plan) or _TOPIC_LABELS[foreign]
+                note = f"风险章大段复述{_TOPIC_LABELS[foreign]}分析（命中 {hits} 处），应精简为风险要点，细节保留在《{owner}》。"
+                section_feedback.setdefault(section_name, []).append(note)
+                structural_feedback.append(
+                    {
+                        "section": section_name,
+                        "issue": "duplication",
+                        "keep_in": owner,
+                        "rewrite_sections": [section_name],
+                        "suggestion": note,
+                    }
+                )
+        elif macro_name and section_name != macro_name:
+            hits = _count_topic_markers(text, "macro")
+            if hits >= 2:
+                note = (
+                    f"删去 Shibor/国债/无风险利率等宏观复述（命中 {hits} 处）；"
+                    f"宏观利率分析只保留在《{macro_name}》。"
+                )
+                section_feedback.setdefault(section_name, []).append(note)
+                structural_feedback.append(
+                    {
+                        "section": section_name,
+                        "issue": "duplication",
+                        "keep_in": macro_name,
+                        "rewrite_sections": [section_name],
+                        "suggestion": note,
+                    }
+                )
+
+    for i, left_name in enumerate(names):
+        left_sentences = _section_sentences(sections.get(left_name, ""))
+        if not left_sentences:
+            continue
+        left_topic = _section_topic_key(left_name, plan)
+        for right_name in names[i + 1 :]:
+            right_sentences = _section_sentences(sections.get(right_name, ""))
+            if not right_sentences:
+                continue
+            right_topic = _section_topic_key(right_name, plan)
+            duplicates = 0
+            for left in left_sentences[:12]:
+                for right in right_sentences[:12]:
+                    if _sentence_similarity(left, right) >= 0.78:
+                        duplicates += 1
+                        break
+            if duplicates < 2:
+                continue
+            keep_name = _pick_keep_section(left_name, right_name, left_topic, right_topic, macro_name)
+            rewrite_name = right_name if keep_name == left_name else left_name
+            note = (
+                f"「{left_name}」与「{right_name}」存在 {duplicates} 处高度相似段落；"
+                f"保留详细分析在《{keep_name}》，请重写《{rewrite_name}》删重复并补该章独有点。"
+            )
+            section_feedback.setdefault(rewrite_name, []).append(note)
+            structural_feedback.append(
+                {
+                    "section": rewrite_name,
+                    "issue": "duplication",
+                    "keep_in": keep_name,
+                    "rewrite_sections": [rewrite_name],
+                    "related_section": left_name if rewrite_name == right_name else right_name,
+                    "suggestion": note,
+                }
+            )
+
+    return {
+        "section_feedback": section_feedback,
+        "structural_feedback": structural_feedback,
+    }
+
+
+def _pick_keep_section(
+    left_name: str,
+    right_name: str,
+    left_topic: str | None,
+    right_topic: str | None,
+    macro_name: str | None,
+) -> str:
+    priority = {"market": 1, "operating": 2, "valuation": 3, "capital": 4, "macro": 5, "risk": 6}
+    left_rank = priority.get(left_topic or "", 99)
+    right_rank = priority.get(right_topic or "", 99)
+    if left_topic == "macro" and right_topic != "macro" and right_topic is not None:
+        return right_name
+    if right_topic == "macro" and left_topic != "macro" and left_topic is not None:
+        return left_name
+    if left_rank <= right_rank:
+        return left_name
+    return right_name
+
+
+def _structural_notes_for_section(structural_feedback: list[Any], section_name: str) -> list[str]:
+    notes: list[str] = []
+    for item in structural_feedback:
+        if not isinstance(item, dict):
+            continue
+        rewrite_sections = [str(name) for name in (item.get("rewrite_sections") or []) if str(name).strip()]
+        if section_name not in rewrite_sections and str(item.get("section") or "") != section_name:
+            continue
+        suggestion = str(item.get("suggestion") or "").strip()
+        keep_in = str(item.get("keep_in") or "").strip()
+        if suggestion:
+            notes.append(suggestion if not keep_in else f"{suggestion}（保留在《{keep_in}》）")
+    return notes
+
+
+def _merge_structural_feedback(*items: list[Any]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for batch in items:
+        for item in batch or []:
+            if not isinstance(item, dict):
+                continue
+            key = "|".join(
+                [
+                    str(item.get("section") or ""),
+                    str(item.get("issue") or ""),
+                    str(item.get("keep_in") or ""),
+                    str(item.get("suggestion") or "")[:120],
+                ]
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged
+
+
+def _merge_section_feedback(*feedbacks: dict[str, list[str]]) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {}
+    for feedback in feedbacks:
+        for section_name, notes in feedback.items():
+            merged.setdefault(section_name, [])
+            merged[section_name] = _dedupe([*merged[section_name], *notes])
+    return merged
+
+
+def _local_validation(
+    *,
+    data: dict[str, Any],
+    charts: dict[str, str],
+    sections: dict[str, str],
+    draft_markdown: str,
+    plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     action_items = []
     section_feedback: dict[str, list[str]] = {}
     chart_review = _chart_quality_review(data=data, charts=charts)
@@ -1893,27 +2273,42 @@ def _local_validation(*, data: dict[str, Any], charts: dict[str, str], sections:
         if isinstance(value, dict) and int(value.get("row_count") or 0) == 0:
             action_items.append(f"{key} 没有返回可用行，需要在报告中说明数据局限。")
     industry_feedback = _industry_comparison_section_feedback(data, sections)
+    table_feedback = _merge_section_feedback(
+        _technical_table_section_review(sections),
+        _peer_compare_table_section_review(sections),
+    )
+    overlap_review = _section_overlap_review(sections, plan=plan)
+    section_feedback = _merge_section_feedback(
+        section_feedback,
+        industry_feedback,
+        table_feedback,
+        overlap_review.get("section_feedback") if isinstance(overlap_review.get("section_feedback"), dict) else {},
+    )
+    structural_feedback = overlap_review.get("structural_feedback") if isinstance(overlap_review.get("structural_feedback"), list) else []
     for section_name, notes in industry_feedback.items():
-        section_feedback.setdefault(section_name, []).extend(notes)
         action_items.extend(f"章节 {section_name} 缺少同行横向比较：{note}" for note in notes)
-    table_feedback = _technical_table_section_review(sections)
     for section_name, notes in table_feedback.items():
-        section_feedback.setdefault(section_name, []).extend(notes)
         action_items.extend(f"章节 {section_name} 表格问题：{note}" for note in notes)
+    for item in structural_feedback:
+        if isinstance(item, dict):
+            suggestion = str(item.get("suggestion") or "").strip()
+            if suggestion:
+                action_items.append(f"章节去重：{suggestion}")
     unsupported = []
     for token in ("Wind", "券商预测", "新闻", "管理层指引"):
         if token in draft_markdown:
             unsupported.append(token)
     return {
-        "score": 80 if not unsupported and len(charts) >= 8 else 65,
+        "score": 80 if not unsupported and len(charts) >= 8 and not structural_feedback else 65,
         "action_items": action_items,
         "section_feedback": section_feedback,
+        "structural_feedback": structural_feedback,
         "unsupported_claims": unsupported,
         "missing_data_notes": action_items,
         "chart_quality_review": chart_review,
         "stock_relevance_review": relevance_review,
         "section_narrative_review": narrative_review,
-        "final_decision": "revise" if action_items or unsupported else "pass",
+        "final_decision": "revise" if action_items or unsupported or structural_feedback else "pass",
         "refinement_requests": {
             "refresh_data": False,
             "refresh_charts": len(charts) < 8 or bool(chart_review.get("redraw")),
@@ -1945,7 +2340,12 @@ def _sanitize_validation(validation: dict[str, Any], fallback: dict[str, Any]) -
     requests = result.get("refinement_requests")
     result["refinement_requests"] = requests if isinstance(requests, dict) else fallback.get("refinement_requests", {})
     structural = result.get("structural_feedback")
-    result["structural_feedback"] = structural if isinstance(structural, list) else []
+    result["structural_feedback"] = _merge_structural_feedback(
+        fallback.get("structural_feedback") if isinstance(fallback.get("structural_feedback"), list) else [],
+        structural if isinstance(structural, list) else [],
+    )
+    if result["structural_feedback"]:
+        result["final_decision"] = "revise"
     return result
 
 
@@ -1979,6 +2379,11 @@ def _chart_quality_review(*, data: dict[str, Any], charts: dict[str, str]) -> di
     dividend = pd.DataFrame(data.get("dividend", {}).get("rows", []))
     if "dividend_history" in charts and len(dividend) < 3:
         delete["dividend_history"] = "分红样本点过少，图形解释力不足。"
+    from .chart_catalog import DISABLED_INDUSTRY_BAR_CHART_KEYS
+
+    for chart_key in DISABLED_INDUSTRY_BAR_CHART_KEYS:
+        if chart_key in charts:
+            delete[chart_key] = "同行横截面条形图量纲不可比，改由 Markdown 表格展示。"
     if "price_volume" in charts and "moving_averages" in charts:
         keep["price_volume"] = "量价结合展示交易活跃度。"
         keep["moving_averages"] = "均线图用于趋势判断，和量价图用途不同。"
@@ -2220,7 +2625,7 @@ def _operating_quality_industry_summary(industry_comparison: Any) -> dict[str, A
     return summary
 
 
-def _industry_comparison_prompt_brief(industry_comparison: Any) -> str:
+def _industry_comparison_prompt_brief(industry_comparison: Any, *, include_metric_rows: bool = True) -> str:
     summary = _industry_comparison_prompt_summary(industry_comparison) if not _is_industry_summary(industry_comparison) else industry_comparison
     if not isinstance(summary, dict):
         return ""
@@ -2240,17 +2645,23 @@ def _industry_comparison_prompt_brief(industry_comparison: Any) -> str:
     heading = selected_name or "所选同行池"
     lines = [
         f"同行池口径：{level_text}「{heading}」，有效同行 {peer_count} 家。",
-        "可直接用于写作的横向对比要点：",
     ]
-    for row in metric_rows[:8]:
-        key = str(row.get("metric") or "")
-        percentile = _float(row.get("percentile"))
+    if include_metric_rows:
+        lines.append("可直接用于写作的横向对比要点：")
+        for row in metric_rows[:8]:
+            key = str(row.get("metric") or "")
+            percentile = _float(row.get("percentile"))
+            lines.append(
+                "- "
+                f"{_industry_metric_label(key, row)}：目标公司 {_format_industry_metric_value(key, row.get('target'))}，"
+                f"行业中位数 {_format_industry_metric_value(key, row.get('median'))}，"
+                f"行业均值 {_format_industry_metric_value(key, row.get('mean'))}，"
+                f"行业分位 {_format_percentile(percentile)}，{row.get('relative_label') or '接近行业中位区间'}。"
+            )
+    else:
         lines.append(
-            "- "
-            f"{_industry_metric_label(key, row)}：目标公司 {_format_industry_metric_value(key, row.get('target'))}，"
-            f"行业中位数 {_format_industry_metric_value(key, row.get('median'))}，"
-            f"行业均值 {_format_industry_metric_value(key, row.get('mean'))}，"
-            f"行业分位 {_format_percentile(percentile)}，{row.get('relative_label') or '接近行业中位区间'}。"
+            "横向对比数值由系统机械插入 Markdown 竖表（如「表·同行横向坐标」「表·行业横向坐标」「表·行业估值对比」）；"
+            "正文在对应小标题下只写一句定性判断，禁止逐条写本公司/行业中位数/分位。"
         )
 
     cluster = summary.get("cluster_anomalies") if isinstance(summary.get("cluster_anomalies"), dict) else {}
@@ -2289,25 +2700,21 @@ def _industry_comparison_writer_guidance(
     brief = str(data.get("industry_comparison_brief") or "").strip()
     if is_operating_quality_section(section_name, plan):
         return (
-            "本章节必须把同行对比作为经营质量分析坐标，而不是附录。写作时按以下要求处理："
-            "1) 在「同行横向坐标」中说明实际采用的同行池层级和有效同行数量；"
-            "2) 只使用经营质量指标做横向比较，如毛利率、净利率、ROE、收入/利润增长、资产负债率、流动比率、速动比率；"
-            "3) 至少选择 2-3 个经营类关键指标说明目标公司相对行业均值、中位数和分位；"
-            "4) 系统会插入「行业盈利能力对比」「行业成长与杠杆对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
-            "5) DBSCAN 可用时只解释经营质量相关贡献指标；若主要异常来自估值因子，则说明聚类证据不用于经营质量结论；"
-            "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
+            peer_compare_table_writing_rule()
+            + "本章节必须把同行对比作为经营质量分析坐标。写作要求："
+            "1) 小标题「**同行横向坐标**」下只写一句定性判断；"
+            "2) 指标对比由系统插入「表·同行横向坐标」，正文不得逐条列举数值；"
+            "3) DBSCAN 可用时只解释经营质量相关贡献指标；"
+            "行业口径以 industry_comparison_summary 为准。"
             + (f"同行对比写作简报：{brief}" if brief else "")
         )
     if "基本面" in section_name or "估值" in section_name:
         return (
-            "本章节必须把同行对比作为分析坐标，而不是附录。写作时按以下顺序组织判断："
-            "1) 先说明实际采用的同行池层级和有效同行数量；"
-            "2) 估值必须说明 PE/PB/PS 至少一个指标相对行业的分位、均值和中位数；"
-            "3) 盈利、成长、杠杆/偿债中至少选择 2-3 个关键指标做同行比较；"
-            "4) 系统会插入「行业横向坐标」「行业估值对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
-            "5) DBSCAN 可用时说明是否为噪声点和主要贡献指标，不可用时说明样本或特征局限。"
-            "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
-            "可以设置「行业横向坐标」这类小标题，但内容必须由你自然写成，不要机械复述字段名。"
+            peer_compare_table_writing_rule()
+            + "本章节同行对比写作要求："
+            "1) 「**行业横向坐标**」「**行业估值对比**」等小标题下只写一句定性判断；"
+            "2) PE/PB/PS 及盈利/杠杆对比数值由系统机械表展示，正文引用表格结论，禁止逐条写分位/中位数；"
+            "3) DBSCAN 可用时说明噪声点与贡献指标，不可用时说明样本局限。"
             + (f"同行对比写作简报：{brief}" if brief else "")
         )
     return (
@@ -2317,10 +2724,78 @@ def _industry_comparison_writer_guidance(
     )
 
 
+def _macro_rate_writer_guidance(
+    section_name: str,
+    data: dict[str, Any],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> str:
+    if not is_macro_section(section_name, plan):
+        return ""
+    brief = str(data.get("macro_rate_brief") or "").strip()
+    return (
+        "本章节分析无风险利率（国债收益率曲线）与短端 Shibor，并必须与目标股的估值/股息率/负债率建立逻辑联系；"
+        "禁止重复资金与交易结构中的两融余额、基本面/估值章中的 PE/PB/盈利表格、经营质量章中的同行对比段落。"
+        "数值必须来自 JSON 的 macro_rate_recent 或 macro_rate_brief，禁止写「JSON 未提供」若 brief 中已有数据。"
+        "系统会插入 Shibor/国债图，正文引用图表并说明对 DCF 折现率或股息率利差的影响。"
+        + (f"宏观利率写作简报：{brief}" if brief else "")
+    )
+
+
+def _macro_rate_prompt_brief(data: dict[str, Any]) -> str:
+    macro = data.get("macro_rate_recent") if isinstance(data.get("macro_rate_recent"), dict) else {}
+    ir_rows = macro.get("interbank_rate") if isinstance(macro.get("interbank_rate"), list) else []
+    yc_rows = macro.get("yield_curve") if isinstance(macro.get("yield_curve"), list) else []
+    if not ir_rows and not yc_rows:
+        ir_block = data.get("interbank_rate") if isinstance(data.get("interbank_rate"), dict) else {}
+        yc_block = data.get("yield_curve") if isinstance(data.get("yield_curve"), dict) else {}
+        ir_rows = ir_block.get("rows") if isinstance(ir_block.get("rows"), list) else []
+        yc_rows = yc_block.get("rows") if isinstance(yc_block.get("rows"), list) else []
+    if not ir_rows and not yc_rows:
+        return "宏观利率数据缺失：本节只说明局限，不得编造 Shibor 或国债收益率。"
+
+    lines = ["可直接引用的无风险利率与短端资金成本："]
+    if ir_rows:
+        latest = ir_rows[-1] if isinstance(ir_rows[-1], dict) else {}
+        prev = ir_rows[max(0, len(ir_rows) - 21)] if isinstance(ir_rows[max(0, len(ir_rows) - 21)], dict) else {}
+        date_label = latest.get("date") or "最新"
+        lines.append(f"Shibor（{date_label}）：")
+        for key, label in (("ON", "隔夜"), ("1W", "1周"), ("1M", "1月"), ("3M", "3月"), ("1Y", "1年")):
+            if latest.get(key) is not None:
+                change = ""
+                if prev.get(key) is not None:
+                    delta = _float(latest.get(key)) - _float(prev.get(key))
+                    if delta is not None:
+                        change = f"，较约20交易日前 {_format_rate_delta(delta)}"
+                lines.append(f"- {label} {_format_industry_metric_value(key, latest.get(key))}{change}")
+    if yc_rows:
+        latest = yc_rows[-1] if isinstance(yc_rows[-1], dict) else {}
+        date_label = latest.get("date") or "最新"
+        lines.append(f"国债收益率曲线（{date_label}，作无风险利率参考）：")
+        for key, label in (("1Y", "1年期"), ("5Y", "5年期"), ("10Y", "10年期"), ("30Y", "30年期")):
+            if latest.get(key) is not None:
+                lines.append(f"- {label} {_format_industry_metric_value(key, latest.get(key))}")
+        y1, y10 = _float(latest.get("1Y")), _float(latest.get("10Y"))
+        if y1 is not None and y10 is not None:
+            spread = (y10 - y1) * 100 if abs(y10) <= 1 else y10 - y1
+            lines.append(f"- 10Y-1Y 期限利差 {spread:.2f} pct")
+    factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
+    dividend = factor.get("dividend_yield_ttm")
+    if dividend is not None:
+        lines.append(f"目标股股息率(TTM) {_format_industry_metric_value('dividend_yield_ttm', dividend)}，可与 10Y 国债比较利差。")
+    return "\n".join(lines)
+
+
+def _format_rate_delta(delta: float) -> str:
+    points = delta * 100 if abs(delta) <= 1 else delta
+    sign = "+" if points >= 0 else ""
+    return f"{sign}{points:.2f} pct"
+
+
 def _operating_quality_writer_guidance() -> str:
     return (
-        "本章节写经营与基本面：优先 annual_financial_analysis、pit、MD&A 与同行经营类对比；"
-        "正文结构自由，不必固定八段模板；多年数据须用表格。"
+        "本章节写经营与基本面：优先 annual_financial_analysis、pit、MD&A（基本业务、业务发展、行业与勾稽 crosswalk）"
+        "与同行经营类对比；正文结构自由，不必固定八段模板；多年数据须用表格。"
         "禁止写 PE/PB/PS、股息率、估值分位或估值匹配判断。"
     )
 
@@ -2397,20 +2872,23 @@ def _industry_comparison_section_feedback(data: dict[str, Any], sections: dict[s
         text = str(content or "")
         if is_operating and _section_mentions_valuation(text):
             feedback.setdefault(section_name, []).append("经营质量分析不应出现 PE/PB/PS、股息率、估值分位或估值吸引力判断。")
-        if not _section_mentions_peer_comparison(text):
+        if not _section_mentions_peer_comparison(text, table_first=True):
             feedback[section_name] = [
                 *feedback.get(section_name, []),
-                "已有经营类 industry_comparison 数据，但正文没有明确使用同行池、经营类指标的行业均值/中位数、行业分位或 DBSCAN/样本局限；请重写为主动横向比较。",
+                "已有 industry_comparison 数据：请设置「同行横向坐标」/「行业横向坐标」小标题并引用系统机械对比表；"
+                "勿在正文逐条写行业中位数/分位，数值由表格展示。",
             ]
     return feedback
 
 
-def _section_mentions_peer_comparison(content: str) -> bool:
+def _section_mentions_peer_comparison(content: str, *, table_first: bool = False, operating_quality: bool = False) -> bool:
     text = str(content or "")
-    peer_terms = ("同行", "横向", "同业")
+    peer_terms = ("同行", "横向", "同业", "同行横向坐标", "行业横向坐标")
     statistic_terms = ("分位", "中位数", "均值", "P25", "P75", "四分位")
-    anomaly_terms = ("DBSCAN", "聚类", "噪声点", "样本不足", "有效同行")
+    anomaly_terms = ("DBSCAN", "聚类", "噪声点", "样本不足", "有效同行", "中信")
     has_peer = any(term in text for term in peer_terms)
+    if table_first or operating_quality:
+        return has_peer or any(term in text for term in anomaly_terms)
     has_statistic = any(term in text for term in statistic_terms)
     has_anomaly_or_count = any(term in text for term in anomaly_terms)
     return has_peer and has_statistic and has_anomaly_or_count
@@ -2437,7 +2915,15 @@ def _is_valuation_key(key: Any) -> bool:
 
 
 def _filter_operating_quality_charts(charts: dict[str, str]) -> dict[str, str]:
-    blocked = {"industry_valuation_compare", "valuation_percentile", "valuation_factors", "latest_valuation_snapshot", "dividend_spread"}
+    from .chart_catalog import DISABLED_INDUSTRY_BAR_CHART_KEYS
+
+    blocked = {
+        *DISABLED_INDUSTRY_BAR_CHART_KEYS,
+        "valuation_percentile",
+        "valuation_factors",
+        "latest_valuation_snapshot",
+        "dividend_spread",
+    }
     return {name: path for name, path in charts.items() if name not in blocked}
 
 
@@ -2485,7 +2971,10 @@ def _compact_data_for_prompt(
         )
         payload["industry_comparison_summary"] = industry_summary
         payload["industry_comparison"] = industry_summary
-        payload["industry_comparison_brief"] = _industry_comparison_prompt_brief(industry_summary)
+        payload["industry_comparison_brief"] = _industry_comparison_prompt_brief(
+            industry_summary,
+            include_metric_rows=False,
+        )
     if is_operating_quality_section(section_name, plan):
         payload["factor"] = _strip_valuation_fields(payload.get("factor"))
         payload["factor_history_recent"] = _strip_valuation_fields(payload.get("factor_history_recent"))
@@ -2502,7 +2991,133 @@ def _compact_data_for_prompt(
         annual = data.get("annual_analysis") if isinstance(data.get("annual_analysis"), dict) else {}
         if annual.get("financial_analysis") and isinstance(annual["financial_analysis"], dict):
             payload["annual_financial_analysis"] = annual["financial_analysis"]
+    if is_macro_section(section_name, plan):
+        payload["macro_rate_brief"] = _macro_rate_prompt_brief({**data, **payload})
+        payload["factor"] = {
+            key: data.get("factor", {}).get(key)
+            for key in ("dividend_yield_ttm", "pe_ratio_ttm", "pb_ratio_ttm", "debt_to_asset_ratio")
+            if isinstance(data.get("factor"), dict) and data.get("factor", {}).get(key) is not None
+        }
+    _attach_mda_business_payload(payload, data, section_name, plan=plan)
     return payload
+
+
+def _attach_mda_business_payload(
+    payload: dict[str, Any],
+    data: dict[str, Any],
+    section_name: str,
+    *,
+    plan: dict[str, Any] | None = None,
+) -> None:
+    """各章节 prompt 注入与 kind 对齐的 MD&A 业务论述简报。"""
+    if not _mda_context_available(data):
+        return
+    from .mda_analysis import build_mda_business_brief
+
+    ctx = data.get("annual_report_context") if isinstance(data.get("annual_report_context"), dict) else {}
+    annual = data.get("annual_analysis") if isinstance(data.get("annual_analysis"), dict) else {}
+    mda_text = _resolve_mda_text(data)
+    kind = section_kind_for_name(section_name, plan)
+    crosswalk = ctx.get("mda_crosswalk") if isinstance(ctx.get("mda_crosswalk"), list) else None
+    if not crosswalk and isinstance(annual.get("financial_analysis"), dict):
+        crosswalk = annual["financial_analysis"].get("mda_crosswalk")
+    payload["mda_business_brief"] = build_mda_business_brief(
+        mda_text,
+        section_kind=kind,
+        mda_summary=ctx.get("mda_summary") or (ctx.get("mda_meta") or {}).get("summary"),
+        crosswalk=crosswalk if isinstance(crosswalk, list) else None,
+    )
+    if ctx:
+        payload.setdefault("annual_report_context", ctx)
+    summary = ctx.get("mda_summary") or (ctx.get("mda_meta") or {}).get("summary")
+    if summary:
+        payload["mda_summary"] = summary
+    if isinstance(crosswalk, list) and crosswalk:
+        preview_limit = 8 if is_operating_quality_section(section_name, plan) else 4
+        payload["mda_crosswalk_preview"] = crosswalk[:preview_limit]
+        if is_operating_quality_section(section_name, plan) or "风险" in section_name:
+            payload["mda_crosswalk"] = crosswalk
+
+
+def _mda_context_available(data: dict[str, Any] | None) -> bool:
+    if not isinstance(data, dict):
+        return False
+    ctx = data.get("annual_report_context")
+    annual = data.get("annual_analysis")
+    if isinstance(ctx, dict) and (ctx.get("mda_excerpt") or ctx.get("mda_crosswalk") or ctx.get("mda_summary")):
+        return True
+    if isinstance(annual, dict) and (annual.get("mda_excerpt") or annual.get("mda_full_text")):
+        return True
+    return bool(_resolve_mda_text(data))
+
+
+def _resolve_mda_text(data: dict[str, Any]) -> str:
+    ctx = data.get("annual_report_context") if isinstance(data.get("annual_report_context"), dict) else {}
+    annual = data.get("annual_analysis") if isinstance(data.get("annual_analysis"), dict) else {}
+    for source in (ctx, annual, data):
+        if not isinstance(source, dict):
+            continue
+        for key in ("mda_excerpt", "mda_full_text", "mda_text"):
+            text = str(source.get(key) or "").strip()
+            if text:
+                return text[:12000]
+    return ""
+
+
+def _mda_business_writer_guidance(
+    section_name: str,
+    data: dict[str, Any],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> str:
+    from .report_writing import mda_business_writing_guide
+
+    kind = section_kind_for_name(section_name, plan)
+    guide = mda_business_writing_guide(section_name, section_kind=kind)
+    if not _mda_context_available(data):
+        return guide + " 若 JSON 无 mda_business_brief，只基于量化数据写作并说明 MD&A 未采集。"
+    brief = str(data.get("mda_business_brief") or "").strip()
+    if brief:
+        guide += f" MD&A 业务论述简报（须引用）：{brief}"
+    return guide
+
+
+_MDA_NARRATIVE_MARKERS = re.compile(
+    r"(MD&A|管理层|年报披露|公司经营|主营业务|业务发展|经营情况|报告期内|公司表示|"
+    r"发展战略|行业需求|竞争格局|风险因素|勾稽|mda_crosswalk|mda_business_brief)",
+    re.IGNORECASE,
+)
+
+
+def _section_uses_mda_narrative(content: str) -> bool:
+    return bool(_MDA_NARRATIVE_MARKERS.search(str(content or "")))
+
+
+def _mda_integration_section_review(
+    *,
+    data: dict[str, Any],
+    sections: dict[str, str],
+    plan: dict[str, Any] | None = None,
+) -> dict[str, list[str]]:
+    if not _mda_context_available(data):
+        return {}
+    feedback: dict[str, list[str]] = {}
+    note = (
+        "请结合 JSON 中 mda_business_brief 或 mda_crosswalk 的管理层表述（基本业务、业务发展、行业或风险），"
+        "为本节量化结论提供 1–2 处论述支撑；经营质量章须做报表与 MD&A 对照并给出独立判断。"
+    )
+    for section_name, content in sections.items():
+        kind = section_kind_for_name(section_name, plan)
+        if kind not in {"operating_quality", "market", "valuation", "capital", "macro", "risk"}:
+            if not any(token in section_name for token in ("基本面", "财务", "风险", "经营")):
+                continue
+        if _section_uses_mda_narrative(content):
+            continue
+        if kind == "operating_quality" or "经营质量" in section_name or "基本面" in section_name:
+            feedback.setdefault(section_name, []).append(note)
+        elif kind in {"market", "valuation", "capital", "macro", "risk"}:
+            feedback.setdefault(section_name, []).append(note)
+    return feedback
 
 
 def _section_uses_industry_comparison(section_name: str, plan: dict[str, Any] | None = None) -> bool:

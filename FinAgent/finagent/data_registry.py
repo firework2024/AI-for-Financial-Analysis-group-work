@@ -99,9 +99,6 @@ CHART_DATA_SOURCE: dict[str, str] = {
     "valuation_percentile": "factor_history",
     "share_structure_pie": "shares",
     "dividend_spread": "yield_curve",
-    "industry_valuation_compare": "industry_comparison",
-    "industry_profitability_compare": "industry_comparison",
-    "industry_growth_leverage_compare": "industry_comparison",
     "industry_dbscan_anomaly": "industry_comparison",
 }
 

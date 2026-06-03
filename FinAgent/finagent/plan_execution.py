@@ -47,8 +47,8 @@ TOOL_PROMPT_FIELDS: dict[str, tuple[str, ...] | None] = {
     "get_instrument_industry": ("industry",),
     "is_suspended": ("status_checks",),
     "is_st_stock": ("status_checks",),
-    "get_interbank_offered_rate": ("macro_rate_recent",),
-    "get_yield_curve": ("macro_rate_recent",),
+    "get_interbank_offered_rate": ("macro_rate_recent", "macro_rate_brief", "factor", "analytical_evidence"),
+    "get_yield_curve": ("macro_rate_recent", "macro_rate_brief", "factor", "analytical_evidence"),
     "get_pit_financials_ex": ("pit_financials", "annual_report_context", "mda_crosswalk", "articulation_checks"),
     "all_collected_data": None,
 }
@@ -61,6 +61,7 @@ PROMPT_ALWAYS_FIELDS = frozenset(
         "date_range",
         "charts",
         "analytical_evidence",
+        "macro_rate_brief",
     }
 )
 
