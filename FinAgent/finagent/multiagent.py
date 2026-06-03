@@ -123,10 +123,12 @@ CHART_QUALITY_REQUIREMENTS = [
 
 TABLE_QUALITY_REQUIREMENTS = [
     "量价/技术章节的技术指标只允许一张 Markdown 竖表（指标|数值|解读），禁止横表（维度|MA20|MA60…）与同指标第二张表并存。",
-    "禁止机械插入或保留「表 · 技术指标快照」块；technical_snapshot_table 已停用，由 section_writer 自行写表。",
+    "禁止机械插入或保留「表 · 技术指标快照」「表 · 最新盈利质量因子」「表 · 最新偿债与流动性」；"
+    "经营质量章的盈利/现金流/营运效率由 section_writer 写多年宽表（pit_financials_table / financial_years）。",
     "表格解读列应简短说明相对位置或趋势含义，数值列与 JSON 中 technical 字段一致。",
     peer_compare_table_writing_rule(),
     "系统机械插入的「表·同行横向坐标」「表·行业横向坐标」「表·行业估值对比」等不得再在正文逐条重复数值；正文只保留一句定性判断。",
+    "同一小标题下禁止并存「TTM 快照小表」与「多年对比宽表」；现金流与营运效率指标应合并进一张多年表，勿拆成重复两张。",
 ]
 
 SECTION_DEDUP_REQUIREMENTS = [
@@ -1262,6 +1264,7 @@ def validation_agent(
                     "local_table_review": _merge_section_feedback(
                         _technical_table_section_review(sections),
                         _peer_compare_table_section_review(sections),
+                        _factor_snapshot_table_section_review(sections, plan=plan),
                         _mda_integration_section_review(data=data, sections=sections, plan=plan),
                     ),
                     "local_chart_review": _chart_quality_review(data=data, charts=charts),
@@ -1682,11 +1685,12 @@ def layout_optimizer(markdown_text: str, charts: dict[str, str]) -> str:
         "资金与交易结构": ["capital_flow", "cumulative_capital_flow", "buy_sell_value", "margin_enhanced"],
         OPERATING_QUALITY_SECTION: [
             "industry_dbscan_anomaly",
-            "latest_quality_snapshot",
             "profitability_factors",
             "growth_factors",
             "liquidity_factors",
             "debt_ratio_trend",
+            "revenue_profit_trend",
+            "profit_vs_cashflow",
         ],
         "宏观利率背景": ["shibor_rates", "gov_yield_trend", "yield_curve_snapshot"],
     }
@@ -1979,6 +1983,38 @@ def _peer_compare_table_section_review(sections: dict[str, str], *, plan: dict[s
                 "同行/行业横向对比不应在正文逐条写「指标：本公司 x，行业中位数 y，分位 z」；"
                 "请删去 prose 数值列举，只保留小标题下一句定性判断，具体对比交给系统机械表（表·同行横向坐标等）。"
             )
+    return feedback
+
+
+_DISABLED_FACTOR_SNAPSHOT_HEADINGS = (
+    "表 · 最新盈利质量因子",
+    "表·最新盈利质量因子",
+    "表 · 最新偿债与流动性",
+    "表·最新偿债与流动性",
+)
+
+
+def _factor_snapshot_table_section_review(
+    sections: dict[str, str],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> dict[str, list[str]]:
+    feedback: dict[str, list[str]] = {}
+    note = (
+        "请删去「表·最新盈利质量因子」「表·最新偿债与流动性」及 TTM 快照小表；"
+        "盈利/现金流/营运效率合并为一张多年宽表（pit_financials_table / financial_years），勿在同一主题下重复两张表。"
+    )
+    for section_name, content in sections.items():
+        if not is_operating_quality_section(section_name, plan) and not any(
+            token in section_name for token in ("经营质量", "基本面", "财务")
+        ):
+            continue
+        text = str(content or "")
+        if any(heading in text for heading in _DISABLED_FACTOR_SNAPSHOT_HEADINGS):
+            feedback.setdefault(section_name, []).append(note)
+            continue
+        if re.search(r"\|\s*维度\s*\|\s*毛利率\(TTM\)", text):
+            feedback.setdefault(section_name, []).append(note)
     return feedback
 
 
@@ -2275,7 +2311,8 @@ def _local_validation(
     industry_feedback = _industry_comparison_section_feedback(data, sections)
     table_feedback = _merge_section_feedback(
         _technical_table_section_review(sections),
-        _peer_compare_table_section_review(sections),
+        _peer_compare_table_section_review(sections, plan=plan),
+        _factor_snapshot_table_section_review(sections, plan=plan),
     )
     overlap_review = _section_overlap_review(sections, plan=plan)
     section_feedback = _merge_section_feedback(
@@ -2795,7 +2832,10 @@ def _format_rate_delta(delta: float) -> str:
 def _operating_quality_writer_guidance() -> str:
     return (
         "本章节写经营与基本面：优先 annual_financial_analysis、pit、MD&A（基本业务、业务发展、行业与勾稽 crosswalk）"
-        "与同行经营类对比；正文结构自由，不必固定八段模板；多年数据须用表格。"
+        "与同行经营类对比；正文结构自由，不必固定八段模板。"
+        "盈利、现金流、营运效率须各用一张多年 Markdown 宽表（≥3 年、≥3 指标，来自 pit_financials_table / financial_years），"
+        "小标题可按主题组织（如利润表、现金流与营运效率），但禁止再写 TTM 快照小表或与机械表重复的「表·最新盈利质量因子」。"
+        "同行横向对比数值只引用系统「表·同行横向坐标」，正文一句定性即可。"
         "禁止写 PE/PB/PS、股息率、估值分位或估值匹配判断。"
     )
 

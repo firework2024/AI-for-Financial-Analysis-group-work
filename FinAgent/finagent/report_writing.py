@@ -153,6 +153,7 @@ def section_writing_guide(section_name: str, *, section_kind: str | None = None)
     if "经营质量" in section_name or "财务" in section_name:
         guide += peer_compare_table_writing_rule() + (
             "系统会机械插入「表·同行横向坐标」竖表（含同行池口径、本公司/中位数/均值/分位/解读）。"
+            "盈利/现金流/营运效率由作者写多年宽表，禁止「表·最新盈利质量因子」「表·最新偿债与流动性」及 TTM 快照小表。"
         )
     if any(token in section_name for token in ("宏观", "利率", "Shibor", "国债")):
         guide += (

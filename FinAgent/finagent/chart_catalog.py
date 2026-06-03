@@ -126,7 +126,14 @@ INDUSTRY_COMPARE_TABLE_SPECS: dict[str, tuple[str, ...]] = {
 }
 INDUSTRY_COMPARE_TABLE_KEYS = frozenset(INDUSTRY_COMPARE_TABLE_SPECS)
 
-DISABLED_PLACEMENT_TABLE_KEYS = frozenset({"technical_snapshot_table"})
+DISABLED_PLACEMENT_TABLE_KEYS = frozenset(
+    {
+        "technical_snapshot_table",
+        # TTM 因子快照与经营质量章 LLM 多年宽表（pit/三表）重复，改由作者自写
+        "latest_quality_snapshot",
+        "latest_liquidity_snapshot",
+    }
+)
 
 # 量纲不可比的同行横截面条形图已停用，改由 industry_*_compare_table 展示
 DISABLED_INDUSTRY_BAR_CHART_KEYS = frozenset(
@@ -202,11 +209,7 @@ SECTION_TABLE_LIMITS: dict[str, int] = {
 }
 
 DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
-    "经营质量分析": (
-        "industry_operating_peer_compare_table",
-        "latest_quality_snapshot",
-        "latest_liquidity_snapshot",
-    ),
+    "经营质量分析": ("industry_operating_peer_compare_table",),
     "资金与交易结构": (
         "margin_snapshot_table",
         "margin_period_table",

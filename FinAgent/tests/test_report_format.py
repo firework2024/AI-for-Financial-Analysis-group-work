@@ -202,7 +202,15 @@ def test_apply_chart_placements_inserts_inline_images():
     assert "price_volume.png" in result["量价与趋势"]
 
 
-def test_apply_chart_placements_inserts_quality_snapshot_table():
+def test_disabled_factor_snapshot_tables_are_not_placed():
+    from finagent.chart_catalog import table_key_allowed_for_placement
+
+    assert not table_key_allowed_for_placement("latest_quality_snapshot")
+    assert not table_key_allowed_for_placement("latest_liquidity_snapshot")
+    assert table_key_allowed_for_placement("industry_operating_peer_compare_table")
+
+
+def test_apply_chart_placements_skips_disabled_quality_snapshot_table():
     from finagent.multi_report import apply_chart_placements
 
     sections = {"基本面与估值": "### 盈利\n\n正文。"}
@@ -220,12 +228,8 @@ def test_apply_chart_placements_inserts_quality_snapshot_table():
     }
     result, _ = apply_chart_placements(sections, charts, placement, data=data)
     body = result["基本面与估值"]
-    assert "#### 表 · 最新盈利质量因子" in body
-    assert "| 维度 | 毛利率(TTM) | 净利率(TTM) | ROE(TTM) |" in body
-    assert "| 最新 | 26.21% | 18.09% | 15.00% |" in body
-    assert "| 毛利率(TTM) | 26.21% |" not in body  # 不用 feat 两列「指标|数值」单列表
-    assert "latest_quality_snapshot.png" not in body
-    assert "**图注**" not in body
+    assert "#### 表 · 最新盈利质量因子" not in body
+    assert "| 维度 | 毛利率(TTM) | 净利率(TTM) | ROE(TTM) |" not in body
 
 
 def test_apply_chart_placements_inserts_after_bold_subheading():
