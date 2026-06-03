@@ -274,13 +274,16 @@ def plan_needs_pit_financials(plan: dict[str, Any] | None, *, allowed_tools: set
 def sanitize_plan_sections(
     plan: dict[str, Any],
     *,
-    default_sections: list[dict[str, Any]],
+    legacy_templates: list[dict[str, Any]] | None = None,
+    fallback_sections: list[dict[str, Any]] | None = None,
     allowed_tools: set[str],
+    default_sections: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """保留 LLM 规划的章节数与顺序；仅校验工具白名单，不强制补默认五节。"""
+    """保留 LLM 规划的章节数与顺序；仅校验工具白名单，不强制补固定五节。"""
+    templates = legacy_templates if legacy_templates is not None else (default_sections or [])
     allowed = set(allowed_tools) | {"all_collected_data"}
-    default_by_name = {str(item["name"]): item for item in default_sections}
-    default_agents = {str(item["name"]): str(item.get("agent") or "section_writer") for item in default_sections}
+    default_by_name = {str(item["name"]): item for item in templates}
+    default_agents = {str(item["name"]): str(item.get("agent") or "section_writer") for item in templates}
 
     raw = plan.get("sections") if isinstance(plan.get("sections"), list) else []
     sanitized: list[dict[str, Any]] = []
@@ -311,7 +314,11 @@ def sanitize_plan_sections(
         sanitized.append(item)
         seen.add(name)
 
-    return sanitized or [dict(item) for item in default_sections]
+    if sanitized:
+        return sanitized
+    if fallback_sections:
+        return [dict(item) for item in fallback_sections]
+    return []
 
 
 def filter_prompt_payload(payload: dict[str, Any], section_tools: list[str] | None) -> dict[str, Any]:

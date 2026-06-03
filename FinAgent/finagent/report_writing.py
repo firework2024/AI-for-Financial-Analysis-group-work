@@ -23,6 +23,12 @@ _LOOSE_FUNDAMENTAL_WRITING = (
     "缺数据说明局限；勿输出字段来源概览、免责声明等附录（系统自动追加）。"
 )
 
+_LOOSE_SECTION_WRITING = (
+    "本节正文：优先用 JSON 中的数字写清判断与因果；多年或多指标对比时优先用 Markdown 表格，数据不足可省略表格。"
+    "可选用 **加粗短语** 作小标题，无合适切块时可连贯段落书写，勿套用固定小节清单。"
+    "有 mda_crosswalk 时在相关段落自然对照 MD&A 与报表，勿单独设勾稽章节；缺数据用 `-` 列表说明局限。"
+)
+
 FUNDAMENTAL_NARRATIVE_SECTION = "经营与财务分析"
 
 _SECTION_LEAD_SKIP = (
@@ -67,37 +73,9 @@ def fundamental_narrative_writing_guide() -> str:
 
 
 def section_writing_guide(section_name: str) -> str:
-    """多智能体各章节写作指引（对齐年报深度分析范式）。"""
-    common = _ANALYTICAL_CORE + " 用 **加粗短语** 作小标题；数据局限用 `-` 列表。"
-    hints: dict[str, str] = {
-        "量价与技术面": (
-            "**趋势概览**（MA20/MA60、20/60 日收益、RSI，附具体日期与价位）；"
-            "**近期异动**（列明具体交易日、涨跌幅、成交量/换手率 vs 均量）；"
-            "**量价关系**（放量/缩量与价格方向的对应）；"
-            "至少 1 个 Markdown 小表对比近 5–10 个关键交易日。"
-        ),
-        "经营质量分析": (
-            "写经营与基本面：优先 pit、annual_report 中的 metrics / interpretation、MD&A；"
-            "从原始数字归纳，勿逐条罗列规则信号标题；结构自由，多年数据用表格；"
-            "避免写 PE/PB/PS、股息率和估值判断。"
-        ),
-        "资金与交易结构": (
-            "**成交与活跃度**；**融资融券**（余额起止、峰值买入日、融券变化，附日期）；"
-            "**股东与股本**；**分红与资金成本**；"
-            "两融/成交须给出区间起止日期与具体金额。"
-        ),
-        "宏观利率背景": (
-            "先 1 句结论；**短端利率**（Shibor 最新 vs 20 日前）；"
-            "**收益率曲线**（1Y/10Y/30Y 最新值及期限利差）；"
-            "须说明与目标股估值/股息率的逻辑联系，无联系则写数据局限。"
-        ),
-        "综合风险与数据局限": (
-            "分块：**价格与波动**、**经营质量**、**杠杆与流动性**、**宏观与利率**、**数据局限**；"
-            "每块 2–4 句带数字；只做汇总，禁止复制前文整段；数据局限用 bullet。"
-        ),
-    }
-    extra = next((value for key, value in hints.items() if key in section_name), "")
-    return f"{common} {extra}".strip()
+    """多智能体各章节写作补充指引（不重复 analytical_writing_core，无固定分节模板）。"""
+    _ = section_name  # 保留参数以兼容 report_format / multiagent 调用签名
+    return _LOOSE_SECTION_WRITING
 
 
 def section_writing_style_hint(section_name: str) -> str:

@@ -24,6 +24,7 @@ from .multi_report import (
 )
 from .narrative_plan import (
     build_plan_data_briefing,
+    build_planner_fallback_sections,
     data_briefing_planner_preamble,
     is_operating_quality_section,
 )
@@ -67,13 +68,15 @@ TOOL_REGISTRY = {
     "get_pit_financials_ex": "年报口径三表财务字段，复用 FinAgent 原有财务数据模块",
 }
 
-DEFAULT_SECTIONS = [
+# 仅用于节名命中时的 agent/data 补全，不再作为整份报告的默认章节列表。
+LEGACY_SECTION_TEMPLATES = [
     {"name": MARKET_TECH_SECTION, "agent": "market_tech_writer", "data": ["get_price", "get_price_change_rate", "get_turnover_rate"]},
     {"name": OPERATING_QUALITY_SECTION, "agent": "fundamental_writer", "data": ["get_factor", "get_pit_financials_ex", "get_dividend", "get_shares"]},
     {"name": "资金与交易结构", "agent": "capital_flow_writer", "data": ["get_capital_flow", "get_securities_margin"]},
     {"name": "宏观利率背景", "agent": "macro_rate_writer", "data": ["get_interbank_offered_rate", "get_yield_curve"]},
     {"name": "综合风险与数据局限", "agent": "risk_synthesis_writer", "data": ["all_collected_data", "is_suspended", "is_st_stock"]},
 ]
+DEFAULT_SECTIONS = LEGACY_SECTION_TEMPLATES  # 兼容旧测试/导入；勿再当作默认报告结构
 
 
 FACTOR_CANDIDATES = [
@@ -405,16 +408,17 @@ def planner_agent(
     lookback_days: int,
     data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    fallback_sections = build_planner_fallback_sections(data)
     fallback = {
         "report_title": "",
         "narrative_thesis": "",
-        "objective": "生成覆盖量价、基本面、资金流、技术因素的 A 股多智能体研究报告",
+        "objective": "基于已采集数据撰写定制化 A 股研究报告（章节由规划 Agent 据数据覆盖拟定，非固定模板）",
         "tools": list(TOOL_REGISTRY),
-        "sections": DEFAULT_SECTIONS,
+        "sections": fallback_sections,
         "risk_controls": ["仅基于可取得数据写结论", "不输出买卖建议", "说明缺失数据"],
     }
     if not get_env("OPENAI_API_KEY"):
-        return _sanitize_plan(fallback, fallback)
+        return _sanitize_plan(fallback, fallback, data=data)
     briefing_block = ""
     if data:
         briefing = build_plan_data_briefing(data)
@@ -438,22 +442,28 @@ def planner_agent(
             "保证标题本身先给判断，再在正文展开证据；这只是写作建议，不是硬性格式约束。"
             "\nkind 枚举: operating_quality|market|valuation|capital|macro|risk。"
             "\n需要 MD&A 深度经营分析时 kind=operating_quality（节名可自定义，不必叫「经营质量分析」）。"
-            "\ndata 仅填可用米筐函数名；sections 可按研究重点自由规划章节名称与顺序。"
+            "\ndata 仅填可用米筐函数名；sections 须按本轮数据覆盖与研究重点自由规划（数量、名称、顺序均可变，勿默认五段式）。"
             "\n禁止规划宏观、行业、新闻、Wind、券商预测等未在可用函数中的数据。"
             + briefing_block,
         )
-        return _sanitize_plan(plan, fallback)
+        return _sanitize_plan(plan, fallback, data=data)
     except Exception:
-        return _sanitize_plan(fallback, fallback)
+        return _sanitize_plan(fallback, fallback, data=data)
 
 
-def _sanitize_plan(plan: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+def _sanitize_plan(
+    plan: dict[str, Any],
+    fallback: dict[str, Any],
+    *,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     result = dict(plan) if isinstance(plan, dict) else {}
     allowed_tools = set(TOOL_REGISTRY)
     result["tools"] = [name for name in result.get("tools", []) if name in allowed_tools] or list(TOOL_REGISTRY)
     result["sections"] = sanitize_plan_sections(
         result,
-        default_sections=DEFAULT_SECTIONS,
+        legacy_templates=LEGACY_SECTION_TEMPLATES,
+        fallback_sections=build_planner_fallback_sections(data),
         allowed_tools=allowed_tools,
     )
     controls = result.get("risk_controls") if isinstance(result.get("risk_controls"), list) else []

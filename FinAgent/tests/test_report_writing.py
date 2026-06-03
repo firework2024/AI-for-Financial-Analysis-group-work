@@ -64,10 +64,11 @@ def test_summarize_pit_and_annual_rows():
     assert annual[0]["revenue"] == 179.49
 
 
-def test_section_writing_guide_requires_tables_for_operating_quality():
+def test_section_writing_guide_is_loose_without_fixed_subheadings():
     guide = section_writing_guide("经营质量分析")
-    assert "结构自由" in guide
-    assert "PE/PB/PS" in guide
+    assert "可选用" in guide
+    assert "勿套用固定小节清单" in guide
+    assert guide == section_writing_guide("宏观利率背景")
 
 
 def test_normalize_section_text_strips_thinking_blocks():

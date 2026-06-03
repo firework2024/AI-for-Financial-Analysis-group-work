@@ -1,4 +1,5 @@
-from finagent.multiagent import DEFAULT_SECTIONS, TOOL_REGISTRY, _sanitize_plan, planner_agent
+from finagent.multiagent import LEGACY_SECTION_TEMPLATES, TOOL_REGISTRY, _sanitize_plan, planner_agent
+from finagent.narrative_plan import build_planner_fallback_sections
 from finagent.multi_report import resolve_multi_report_title
 from finagent.narrative_plan import (
     build_plan_data_briefing,
@@ -65,7 +66,12 @@ def test_sanitize_plan_preserves_report_title_and_kind():
         ],
         "risk_controls": [],
     }
-    fallback = {"objective": "x", "tools": list(TOOL_REGISTRY), "sections": DEFAULT_SECTIONS, "risk_controls": []}
+    fallback = {
+        "objective": "x",
+        "tools": list(TOOL_REGISTRY),
+        "sections": build_planner_fallback_sections(None),
+        "risk_controls": [],
+    }
     plan = _sanitize_plan(llm_plan, fallback)
     assert plan["report_title"] == "300750 宁德时代：成长与估值再平衡"
     assert plan["narrative_thesis"] == "高景气赛道中的估值消化"
@@ -94,7 +100,8 @@ def test_sanitize_plan_sections_keeps_rationale():
                 }
             ]
         },
-        default_sections=DEFAULT_SECTIONS,
+        legacy_templates=LEGACY_SECTION_TEMPLATES,
+        fallback_sections=[],
         allowed_tools=set(TOOL_REGISTRY),
     )
     assert plan[0]["kind"] == "operating_quality"

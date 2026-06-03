@@ -1,5 +1,5 @@
 from finagent.multiagent import (
-    DEFAULT_SECTIONS,
+    LEGACY_SECTION_TEMPLATES,
     _compact_data_for_prompt,
     _ensure_technical_from_price_rows,
     _industry_comparison_prompt_brief,
@@ -51,8 +51,8 @@ def _comparison():
     }
 
 
-def test_default_sections_use_operating_quality_instead_of_legacy_fundamental_name():
-    names = [item["name"] for item in DEFAULT_SECTIONS]
+def test_legacy_section_templates_include_operating_quality():
+    names = [item["name"] for item in LEGACY_SECTION_TEMPLATES]
 
     assert "经营质量分析" in names
     assert "基本面与估值" not in names

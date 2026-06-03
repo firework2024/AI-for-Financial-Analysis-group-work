@@ -1,4 +1,5 @@
-from finagent.multiagent import DEFAULT_SECTIONS, TOOL_REGISTRY, _sanitize_plan
+from finagent.multiagent import LEGACY_SECTION_TEMPLATES, TOOL_REGISTRY, _sanitize_plan
+from finagent.narrative_plan import build_planner_fallback_sections
 from finagent.plan_execution import (
     chart_candidates_for_plan_section,
     chart_candidates_for_section,
@@ -32,8 +33,13 @@ def test_sanitize_plan_preserves_custom_section_order_without_default_fill():
         ],
         "risk_controls": ["不写买卖建议"],
     }
-    fallback = {"objective": "x", "tools": list(TOOL_REGISTRY), "sections": DEFAULT_SECTIONS, "risk_controls": []}
-    plan = _sanitize_plan(llm_plan, fallback)
+    fallback = {
+        "objective": "x",
+        "tools": list(TOOL_REGISTRY),
+        "sections": build_planner_fallback_sections({"price": {"rows": [{}] * 3}}),
+        "risk_controls": [],
+    }
+    plan = _sanitize_plan(llm_plan, fallback, data={"price": {"rows": [{}] * 3}})
     names = [item["name"] for item in plan["sections"]]
     assert names == ["资金与交易结构", "量价与技术面"]
     assert "基本面与估值" not in names
@@ -42,7 +48,8 @@ def test_sanitize_plan_preserves_custom_section_order_without_default_fill():
 def test_sanitize_plan_infers_tools_for_custom_title():
     plan = sanitize_plan_sections(
         {"sections": [{"name": "产业链与竞争格局", "agent": "writer", "data": []}]},
-        default_sections=DEFAULT_SECTIONS,
+        legacy_templates=LEGACY_SECTION_TEMPLATES,
+        fallback_sections=[],
         allowed_tools=ALLOWED,
     )
     custom = plan[0]
@@ -154,8 +161,26 @@ def test_plan_needs_pit_only_when_requested():
 def test_sanitize_plan_strips_unknown_tools_from_section_data():
     plan = sanitize_plan_sections(
         {"sections": [{"name": "测试节", "agent": "writer", "data": ["get_price", "wind_news"]}]},
-        default_sections=DEFAULT_SECTIONS,
+        legacy_templates=LEGACY_SECTION_TEMPLATES,
+        fallback_sections=[],
         allowed_tools=ALLOWED,
     )
     custom = next(item for item in plan if item["name"] == "测试节")
     assert custom["data"] == ["get_price"]
+
+
+def test_sanitize_plan_empty_sections_uses_data_fallback_not_fixed_five():
+    data = {"stock_code": "600519", "technical": {"return_20d": 0.05}}
+    fb = build_planner_fallback_sections(data)
+    plan = sanitize_plan_sections(
+        {"sections": []},
+        legacy_templates=LEGACY_SECTION_TEMPLATES,
+        fallback_sections=fb,
+        allowed_tools=ALLOWED,
+    )
+    names = [item["name"] for item in plan]
+    assert "量价与技术面" in names
+    assert "综合风险与数据局限" in names
+    assert "宏观利率背景" not in names
+    assert "资金与交易结构" not in names
+    assert len(names) == 2

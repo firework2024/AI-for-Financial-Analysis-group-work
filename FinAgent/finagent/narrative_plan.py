@@ -7,7 +7,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from .chart_catalog import MARKET_TECH_SECTION
 from .report_writing import summarize_pit_rows
+
+CAPITAL_SECTION = "资金与交易结构"
+MACRO_SECTION = "宏观利率背景"
+RISK_SECTION = "综合风险与数据局限"
 
 PLANNING_GUIDANCE_NOTE = (
     "optional_narrative_angles（及兼容字段 narrative_signals）仅为采数后的可选叙事角度，"
@@ -158,3 +163,70 @@ def build_plan_data_briefing(data: dict[str, Any]) -> dict[str, Any]:
             k for k, v in coverage.items() if v in (0, False) and k in ("pit_rows", "annual_report", "factor_snapshot")
         ],
     }
+
+
+def build_planner_fallback_sections(data: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """按已采集数据覆盖生成章节计划；非固定五节模板。"""
+    if not isinstance(data, dict) or not data:
+        return [
+            {
+                "name": "综合分析与数据局限",
+                "agent": "risk_synthesis_writer",
+                "data": ["all_collected_data"],
+                "kind": "risk",
+            }
+        ]
+
+    sections: list[dict[str, Any]] = []
+    technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
+    factor = data.get("factor") if isinstance(data.get("factor"), dict) else {}
+    pit = data.get("pit_financials") if isinstance(data.get("pit_financials"), dict) else {}
+    pit_rows = pit.get("rows") if isinstance(pit.get("rows"), list) else []
+    annual_ctx = data.get("annual_report_context") if isinstance(data.get("annual_report_context"), dict) else {}
+
+    if _row_count(data.get("price")) > 0 or any(technical.get(k) is not None for k in ("latest_close", "return_20d", "ma20")):
+        sections.append(
+            {
+                "name": MARKET_TECH_SECTION,
+                "agent": "market_tech_writer",
+                "data": ["get_price", "get_price_change_rate", "get_turnover_rate"],
+                "kind": "market",
+            }
+        )
+    if pit_rows or annual_ctx or factor:
+        sections.append(
+            {
+                "name": OPERATING_QUALITY_SECTION,
+                "agent": "fundamental_writer",
+                "data": ["get_factor", "get_pit_financials_ex", "get_dividend", "get_shares"],
+                "kind": "operating_quality",
+            }
+        )
+    if _row_count(data.get("securities_margin")) > 0 or _row_count(data.get("capital_flow")) > 0:
+        sections.append(
+            {
+                "name": CAPITAL_SECTION,
+                "agent": "capital_flow_writer",
+                "data": ["get_capital_flow", "get_securities_margin"],
+                "kind": "capital",
+            }
+        )
+    if _row_count(data.get("interbank_rate")) > 0 or _row_count(data.get("yield_curve")) > 0:
+        sections.append(
+            {
+                "name": MACRO_SECTION,
+                "agent": "macro_rate_writer",
+                "data": ["get_interbank_offered_rate", "get_yield_curve"],
+                "kind": "macro",
+            }
+        )
+
+    sections.append(
+        {
+            "name": RISK_SECTION,
+            "agent": "risk_synthesis_writer",
+            "data": ["all_collected_data", "is_suspended", "is_st_stock"],
+            "kind": "risk",
+        }
+    )
+    return sections

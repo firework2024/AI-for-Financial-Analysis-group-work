@@ -296,8 +296,9 @@ def test_section_writing_style_hint_for_risk_section():
     from finagent.report_format import section_writing_style_hint
 
     hint = section_writing_style_hint("综合风险与数据局限")
-    assert "核心结论" in hint
-    assert "数据局限" in hint
+    assert "可选用" in hint
+    assert "局限" in hint
+    assert "价格与波动" not in hint
 
 
 def test_normalize_core_conclusion_removes_orphan_colon():
