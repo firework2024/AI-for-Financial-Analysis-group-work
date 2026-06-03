@@ -216,6 +216,18 @@ def resolve_industry_dict(data: dict[str, Any]) -> dict[str, Any]:
         return industry
 
     stock_code = str(data.get("stock_code") or data.get("order_book_id") or "").split(".")[0]
+    if stock_code:
+        try:
+            from .datastore.db import _locked_connect
+
+            with _locked_connect() as conn:
+                restored = restore_industry_from_snapshot_history(conn, stock_code)
+            if restored:
+                industry.update(restored)
+                if industry_has_display_name(industry):
+                    return industry
+        except Exception:
+            pass
     as_of = _parse_as_of_date(data.get("end_date"))
     rq_fallback = _industry_from_rqdata(stock_code, as_of)
     if rq_fallback:
@@ -348,6 +360,8 @@ def enrich_core_metrics(data: dict[str, Any]) -> None:
     industry = resolve_industry_dict(data)
     if industry_has_display_name(industry):
         data["industry"] = industry
+    elif isinstance(data.get("industry"), dict) and not industry:
+        data.pop("industry", None)
 
     factor = dict(data.get("factor") or {}) if isinstance(data.get("factor"), dict) else {}
     derived_yield = derive_dividend_yield_ttm(data)
@@ -355,3 +369,51 @@ def enrich_core_metrics(data: dict[str, Any]) -> None:
         factor["dividend_yield_ttm"] = derived_yield
         factor["dividend_yield_ttm_source"] = factor.get("dividend_yield_ttm_source") or "derived_dividend_ttm"
         data["factor"] = factor
+
+
+def payload_for_core_metrics_enrichment(
+    data_summary: dict[str, Any],
+    *,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """从已存报告的 data_summary（及可选完整 data）拼出 enrich 所需字段。"""
+    summary = dict(data_summary or {})
+    full = dict(data or {})
+    order_book = str(full.get("order_book_id") or summary.get("order_book_id") or "")
+    code = str(summary.get("stock_code") or full.get("stock_code") or order_book.split(".")[0] or "")
+    payload: dict[str, Any] = {
+        "stock_code": code,
+        "order_book_id": order_book or None,
+        "end_date": full.get("end_date"),
+        "industry": summary.get("industry") if isinstance(summary.get("industry"), dict) else full.get("industry"),
+        "industry_comparison": summary.get("industry_comparison") or full.get("industry_comparison"),
+        "factor": summary.get("factor") if isinstance(summary.get("factor"), dict) else full.get("factor"),
+        "technical": summary.get("technical") if isinstance(summary.get("technical"), dict) else full.get("technical"),
+    }
+    inventory = summary.get("inventory") if isinstance(summary.get("inventory"), dict) else {}
+    for key in ("dividend", "factor_history"):
+        inv_block = inventory.get(key)
+        if isinstance(inv_block, dict):
+            payload[key] = inv_block
+        elif isinstance(full.get(key), dict):
+            payload[key] = full[key]
+    return payload
+
+
+def enrich_data_summary_inplace(
+    data_summary: dict[str, Any],
+    *,
+    data: dict[str, Any] | None = None,
+) -> None:
+    """打开历史报告时重新补全行业/股息率，避免固化 JSON 中空的 industry。"""
+    if not isinstance(data_summary, dict):
+        return
+    working = payload_for_core_metrics_enrichment(data_summary, data=data)
+    enrich_core_metrics(working)
+    if industry_has_display_name(working.get("industry")):
+        data_summary["industry"] = working["industry"]
+    factor = working.get("factor")
+    if isinstance(factor, dict) and factor.get("dividend_yield_ttm") is not None:
+        merged = dict(data_summary.get("factor") or {})
+        merged.update(factor)
+        data_summary["factor"] = merged

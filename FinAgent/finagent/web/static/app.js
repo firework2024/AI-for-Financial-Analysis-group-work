@@ -1064,13 +1064,23 @@ function industryLabel(industry) {
   return "数据缺失";
 }
 
-function resolveIndustryFromSummary(dataSummary) {
+function resolveIndustryFromSummary(dataSummary, extraData) {
   const label = industryLabel(dataSummary?.industry);
   if (label !== "数据缺失") return label;
   const block = dataSummary?.industry_comparison?.industry;
   if (block && typeof block === "object") {
     for (const key of ["level1_name", "selected_industry_name", "first_industry_name"]) {
       if (block[key] != null && block[key] !== "") return String(block[key]);
+    }
+  }
+  if (extraData && typeof extraData === "object") {
+    const fromData = industryLabel(extraData.industry);
+    if (fromData !== "数据缺失") return fromData;
+    const cmp = extraData.industry_comparison?.industry;
+    if (cmp && typeof cmp === "object") {
+      for (const key of ["level1_name", "selected_industry_name", "first_industry_name"]) {
+        if (cmp[key] != null && cmp[key] !== "") return String(cmp[key]);
+      }
     }
   }
   return label;
@@ -1110,13 +1120,13 @@ function resolveDividendYieldTtm(dataSummary) {
   return total / close;
 }
 
-function renderMultiCoreMetrics(dataSummary) {
+function renderMultiCoreMetrics(dataSummary, extraData) {
   const technical = dataSummary?.technical || {};
   const factor = dataSummary?.factor || {};
   const margin = latestMarginSnapshot(dataSummary);
   const dividendYield = resolveDividendYieldTtm(dataSummary);
   const rows = [
-    ["中信一级行业", resolveIndustryFromSummary(dataSummary)],
+    ["中信一级行业", resolveIndustryFromSummary(dataSummary, extraData)],
     ["最新收盘价", fmtNum(technical.latest_close)],
     ["MA20", fmtNum(technical.ma20)],
     ["MA60", fmtNum(technical.ma60)],
@@ -1227,6 +1237,7 @@ function renderMultiReport(report, anchors = {}) {
   const validation = report.validation || {};
   const meta = report.meta || {};
   const dataSummary = report.data_summary || {};
+  const reportData = report.data || {};
 
   const validationClass = meta.validation_passed ? "pass" : "fail";
   const validationText = meta.validation_passed
@@ -1250,7 +1261,7 @@ function renderMultiReport(report, anchors = {}) {
           anchors["执行摘要"]
         )
       : "",
-    cardSection("核心指标速览", renderMultiCoreMetrics(dataSummary), anchors["核心指标速览"]),
+    cardSection("核心指标速览", renderMultiCoreMetrics(dataSummary, reportData), anchors["核心指标速览"]),
     sectionBlocks,
   ].join("");
 

@@ -321,6 +321,16 @@ def _load_report(filename: str) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail=f"无法读取报告: {exc}") from exc
     _ensure_report_toc(payload)
+    if _report_type(payload) == "multi_analyze":
+        summary = payload.get("data_summary")
+        if isinstance(summary, dict):
+            try:
+                from ..core_metrics import enrich_data_summary_inplace
+
+                full_data = payload.get("data") if isinstance(payload.get("data"), dict) else None
+                enrich_data_summary_inplace(summary, data=full_data)
+            except Exception:
+                pass
     payload["_ui"] = _report_summary(payload, safe_name)
     payload["_disclaimer"] = DISCLAIMER
     return payload
