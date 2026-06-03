@@ -1,6 +1,22 @@
+"""规则引擎：基于阈值与趋势生成候选财务信号，供 LLM 审核或本地规则消费。
+
+输出是待审核线索，不是最终投资结论；下游可对 high/critical 负面项做程序保底，但表述与合并顺序可由审核层酌情处理。
+"""
+
 from __future__ import annotations
 
 from typing import Any
+
+
+def rule_engine_llm_guidance() -> str:
+    """供财务信号审核 LLM 阅读的软性说明（非业务规则本身）。"""
+    return (
+        "structured_signals / compound_signals 为规则引擎按阈值识别的候选线索，"
+        "供你筛选、合并与润色，不必逐条照搬 title 或 description。"
+        "建议优先解释有明确数字证据、且 severity 较高的负面项与异常组合项；"
+        "同 category 相近主题可合并为一条。"
+        "请避免在无证据时扩展结论或给出买卖建议；证据缺口写入 data_notes。"
+    )
 
 
 CATEGORY_LABELS = {

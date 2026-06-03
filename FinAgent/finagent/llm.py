@@ -12,6 +12,31 @@ from .report_writing import (
     fundamental_narrative_system_prompt,
     fundamental_narrative_writing_guide,
 )
+from .signals import rule_engine_llm_guidance
+
+
+def financial_llm_mode() -> str:
+    """data_first：先读 metrics/rows 自行归纳；signal_review：沿用逐条审核规则信号。"""
+    raw = (get_env("FINAGENT_FINANCIAL_LLM_MODE", "data_first") or "data_first").strip().lower()
+    return "signal_review" if raw in {"signal_review", "signals", "legacy"} else "data_first"
+
+
+_FINANCIAL_DATA_INTERPRETATION_SYSTEM = (
+    "你是财务数据分析助手。请直接阅读逐年 metrics、field_snapshot 与 trend_snapshot，"
+    "像分析师一样从数字中归纳趋势、矛盾与风险，而不是复述或逐条点评规则引擎标题。"
+    "规则引擎 signals 仅作对照参考，可忽略与数据不符的条目。"
+    "输出 JSON；叙述宜有具体年份与比率/增速；避免买卖建议；勿篡改原始数值。"
+)
+
+_FINANCIAL_SIGNAL_REVIEW_SYSTEM = (
+    "你是财务信号审核智能体：在规则引擎候选信号与财务证据之间做筛选、合并与表述润色，"
+    "输出可供报告引用的结构化 JSON。"
+    "写作风格建议专业、克制、可追溯；优先解释证据充分且影响较大的信号。"
+    "建议勿在无证据时扩展结论、勿改动原始财务数字、勿给出买卖建议；"
+    "对规则标记为 high/critical 的负面项宜保留或等价转述（程序层也会做保底）。"
+    "同主题重复信号可合并；证据缺口写入 data_notes。"
+    "请仅返回 JSON。"
+)
 
 
 def _openai_client(*, timeout: float | None = None):
@@ -26,11 +51,11 @@ def _openai_client(*, timeout: float | None = None):
     return OpenAI(**kwargs)
 
 
-def financial_signal_review_agent(
+def _financial_llm_completion(
     *,
-    evidence: dict[str, Any],
-    framework_text: str,
-    company_context: dict[str, Any],
+    agent_name: str,
+    system: str,
+    user: str,
 ) -> dict[str, Any]:
     from .progress import info
 
@@ -39,23 +64,13 @@ def financial_signal_review_agent(
 
     client = _openai_client()
     model = llm_model()
-    info(f"调用 LLM (financial_signal_review_agent): model={model}")
-    prompt = _build_financial_prompt(framework_text, evidence, company_context)
+    info(f"调用 LLM ({agent_name}): model={model}, mode={financial_llm_mode()}")
     response = client.chat.completions.create(
         **_chat_completion_kwargs(
             model=model,
             messages=[
-            {
-                "role": "system",
-                "content": (
-                    "你是财务信号审核智能体，而不是自由分析师。"
-                    "你会收到公司上下文、财务证据、规则引擎识别出的结构化信号，以及财务分析知识框架。"
-                    "你的任务是审核结构化信号、合并重复信号、按重要性排序，并用专业、克制、可追溯的语言解释信号。"
-                    "不得新增没有证据支持的结论，不得修改原始财务数据，不得删除 high 或 critical 的负面信号，不得给出买卖建议。"
-                    "请仅返回 JSON。"
-                ),
-            },
-            {"role": "user", "content": prompt},
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
             ],
             response_format={"type": "json_object"},
         )
@@ -65,13 +80,45 @@ def financial_signal_review_agent(
     return _normalize_financial_analysis_output(data)
 
 
+def financial_data_interpretation_agent(
+    *,
+    evidence: dict[str, Any],
+    framework_text: str,
+    company_context: dict[str, Any],
+) -> dict[str, Any]:
+    return _financial_llm_completion(
+        agent_name="financial_data_interpretation_agent",
+        system=_FINANCIAL_DATA_INTERPRETATION_SYSTEM,
+        user=_build_financial_data_first_prompt(framework_text, evidence, company_context),
+    )
+
+
+def financial_signal_review_agent(
+    *,
+    evidence: dict[str, Any],
+    framework_text: str,
+    company_context: dict[str, Any],
+) -> dict[str, Any]:
+    return _financial_llm_completion(
+        agent_name="financial_signal_review_agent",
+        system=_FINANCIAL_SIGNAL_REVIEW_SYSTEM,
+        user=_build_financial_signal_review_prompt(framework_text, evidence, company_context),
+    )
+
+
 def financial_analysis_agent(
     *,
     evidence: dict[str, Any],
     framework_text: str,
     company_context: dict[str, Any],
 ) -> dict[str, Any]:
-    return financial_signal_review_agent(
+    if financial_llm_mode() == "signal_review":
+        return financial_signal_review_agent(
+            evidence=evidence,
+            framework_text=framework_text,
+            company_context=company_context,
+        )
+    return financial_data_interpretation_agent(
         evidence=evidence,
         framework_text=framework_text,
         company_context=company_context,
@@ -119,9 +166,9 @@ def mda_summary_agent(mda_text: str, company_context: dict[str, Any]) -> str:
         year = company_context.get("report_year") or ""
         info("调用 LLM (mda_summary_agent)")
         result = llm_text(
-            "你是年报 MD&A 摘要 Agent。只基于给定 MD&A 原文提炼经营要点，不给买卖建议。"
-            "输出 Markdown：先 1 句总括，再 4-6 条 bullet；每条不超过 45 字，保留关键数字；"
-            "不要复制大段原文，不要输出 JSON 或代码块。",
+            "你是年报 MD&A 摘要 Agent。建议只基于给定 MD&A 原文提炼经营要点，避免买卖建议。"
+            "输出建议为 Markdown：先 1 句总括，再约 4-6 条 bullet；每条宜精炼并保留关键数字；"
+            "尽量避免大段照抄原文；无需输出 JSON 或代码块。",
             f"公司：{name}（{year} 年报）\n\nMD&A 原文：\n{mda_text[:15000]}",
         )
         normalized = normalize_section_text(result, "MD&A 摘要")
@@ -226,9 +273,15 @@ def _build_fundamental_narrative_prompt(
     return (
         "公司上下文：\n"
         f"{json.dumps(company_context, ensure_ascii=False, indent=2)}\n\n"
-        "财务数据分析智能体输出（含 signals / metrics / data_notes，请优先引用 metrics 与 reviewed_signals 中的数字）：\n"
-        f"{json.dumps(financial_analysis, ensure_ascii=False, indent=2)[:14000]}\n\n"
-        + (f"核心指标逐年表（{len(metrics)} 年）：\n{json.dumps(metrics, ensure_ascii=False, indent=2)}\n\n" if metrics else "")
+        + (f"核心指标逐年表（{len(metrics)} 年，请以此为主论据）：\n{json.dumps(metrics, ensure_ascii=False, indent=2)}\n\n" if metrics else "")
+        + (
+            "财务分析归纳（interpretation / key_findings，可优先采用）：\n"
+            f"{json.dumps({k: financial_analysis.get(k) for k in ('interpretation', 'key_findings', 'key_risks', 'data_notes') if financial_analysis.get(k)}, ensure_ascii=False, indent=2)}\n\n"
+            if any(financial_analysis.get(k) for k in ("interpretation", "key_findings"))
+            else ""
+        )
+        + "其余结构化字段（reviewed_signals 等为辅助，勿逐条复述标题）：\n"
+        f"{json.dumps({k: financial_analysis.get(k) for k in ('positive_signals', 'negative_signals', 'reviewed_signals', 'display_signals') if financial_analysis.get(k)}, ensure_ascii=False, indent=2)[:8000]}\n\n"
         + (
             "报表勾稽对照素材（融入各段分析，勿单独成章）：\n"
             f"{json.dumps(crosswalk[:12], ensure_ascii=False, indent=2)}\n\n"
@@ -243,13 +296,50 @@ def _build_fundamental_narrative_prompt(
         + "MD&A 文本：\n"
         f"{mda_text[:12000]}\n\n"
         + fundamental_narrative_writing_guide()
-        + "\n\n请融合财务信号、报表勾稽与 MD&A，"
-        "按公司实际情况自由组织正文，重点写清核心矛盾与数据依据；"
-        "有 crosswalk 时在相关段落自然对照；MD&A 未覆盖项写入数据局限。"
+        + "\n\n请从指标表与 MD&A 出发写连贯分析，"
+        "按公司实际情况组织正文，重点写清核心矛盾与数据依据；"
+        "有 crosswalk 时可在相关段落自然对照；MD&A 未覆盖项可写入数据局限。"
+        "以下为写作参考而非硬性模板，段落顺序与篇幅可按证据强弱灵活调整。"
     )
 
 
-def _build_financial_prompt(framework_text: str, evidence: dict[str, Any], company_context: dict[str, Any]) -> str:
+def _build_financial_data_first_prompt(
+    framework_text: str, evidence: dict[str, Any], company_context: dict[str, Any]
+) -> str:
+    metrics = evidence.get("metrics") or []
+    rows = evidence.get("rows") or []
+    signals = evidence.get("signals") if isinstance(evidence.get("signals"), dict) else {}
+    signal_appendix = {
+        "signal_summary": signals.get("signal_summary"),
+        "structured_signals": (signals.get("structured_signals") or [])[:12],
+        "compound_signals": (signals.get("compound_signals") or [])[:8],
+    }
+    return (
+        "公司上下文：\n"
+        f"{json.dumps(company_context, ensure_ascii=False, indent=2)}\n\n"
+        f"逐年衍生指标 metrics（{len(metrics)} 行，请通读并自行发现模式）：\n"
+        f"{json.dumps(metrics, ensure_ascii=False, indent=2)}\n\n"
+        f"逐年原始字段与趋势快照 rows（{len(rows)} 行）：\n"
+        f"{json.dumps(rows, ensure_ascii=False, indent=2)}\n\n"
+        "数据质量说明：\n"
+        f"{json.dumps(evidence.get('data_quality') or [], ensure_ascii=False, indent=2)}\n\n"
+        "知识框架（分析时可参考，不必逐条对应）：\n"
+        f"{framework_text[:6000]}\n\n"
+        "规则引擎附录（可选对照，勿要求与下列标题一一对应）：\n"
+        f"{json.dumps(signal_appendix, ensure_ascii=False, indent=2)}\n\n"
+        "请基于 metrics 与 rows 返回 JSON，字段名保持一致：\n"
+        "- `interpretation`：2–5 段连贯中文，写清趋势、矛盾、因果猜测（须有数字依据）。\n"
+        "- `key_findings`：3–8 条要点，每条含年份/指标/数值，不要写成规则标题复读。\n"
+        "- `positive_signals` / `negative_signals`：可选短句列表，从你自己读表得出的结论提炼，"
+        "  不必覆盖规则引擎全部条目。\n"
+        "- `key_risks`：短语列表；`data_notes`：证据缺口。\n"
+        "- `reviewed_signals`：可留空 `[]`；仅当你认为需要结构化存档时再填少量条目。"
+    )
+
+
+def _build_financial_signal_review_prompt(
+    framework_text: str, evidence: dict[str, Any], company_context: dict[str, Any]
+) -> str:
     return (
         "公司上下文：\n"
         f"{json.dumps(company_context, ensure_ascii=False, indent=2)}\n\n"
@@ -257,24 +347,28 @@ def _build_financial_prompt(framework_text: str, evidence: dict[str, Any], compa
         f"{json.dumps(evidence, ensure_ascii=False, indent=2)}\n\n"
         "知识框架原文：\n"
         f"{framework_text}\n\n"
-        "请审核规则引擎输出的结构化信号，输出 JSON，必须包含："
+        f"{rule_engine_llm_guidance()}\n\n"
+        "请审核规则引擎输出的结构化信号，并返回 JSON。"
+        "输出格式（字段名需保持一致，便于程序解析）："
         "`reviewed_signals`、`positive_signals`、`negative_signals`、`key_risks`、`data_notes`。"
-        "`reviewed_signals` 必须是数组，每个元素至少包含："
+        "`reviewed_signals` 为对象数组，每项建议包含："
         "`category`、`polarity`、`severity`、`title`、`explanation`、`evidence`、`metrics`、`confidence`。"
-        "其余字段都必须是数组。"
-        "要求："
-        "1. 只根据证据和框架下结论，不要添加买卖建议。"
-        "2. 不要新增没有证据支持的结论。"
-        "3. high 或 critical 的负面信号必须保留。"
-        "4. 如果某项证据缺失，写入 data_notes，不要编造。"
-        "5. key_risks 请输出短语，不要输出句子。"
-        "6. 尽量优先解释高强度负面信号和异常组合信号。"
-        "7. 同一 category 的重复信号应合并为一条，title/explanation 保持精炼，避免同主题多条罗列。"
+        "其余四个顶层字段建议为字符串数组。"
+        "审核参考（非硬性清单，可与证据权衡）："
+        "1. 结论宜有证据或框架支撑，避免买卖建议。"
+        "2. 避免无依据的推断；证据缺口可写入 data_notes。"
+        "3. 对 high / critical 负面项建议保留或等价表述（勿无声略过）。"
+        "4. key_risks 宜用短语而非长句。"
+        "5. 可优先解释高强度负面与异常组合信号。"
+        "6. 同 category 相近主题可合并，title/explanation 宜精炼。"
     )
 
 
 def _normalize_financial_analysis_output(data: dict[str, Any]) -> dict[str, Any]:
+    interpretation = str(data.get("interpretation") or "").strip()
     return {
+        "interpretation": interpretation,
+        "key_findings": _ensure_list_of_strings(data.get("key_findings")),
         "reviewed_signals": _ensure_reviewed_signals(data.get("reviewed_signals")),
         "positive_signals": _ensure_list_of_strings(data.get("positive_signals")),
         "negative_signals": _ensure_list_of_strings(data.get("negative_signals")),
@@ -336,15 +430,26 @@ def _ensure_reviewed_signals(value: Any) -> list[dict[str, Any]]:
 
 
 def _local_summary(mda_text: str, financial_analysis: dict[str, Any], company_context: dict[str, Any]) -> str:
+    interpretation = str(financial_analysis.get("interpretation") or "").strip()
+    findings = financial_analysis.get("key_findings") or []
     positives = "；".join(financial_analysis.get("positive_signals", [])[:4])
     negatives = "；".join(financial_analysis.get("negative_signals", [])[:4])
     mda_preview = _local_mda_summary(mda_text)
     name = company_context.get("sec_name") or company_context.get("stock_code")
+    body = ""
+    if interpretation:
+        body = f"{interpretation}\n\n"
+    elif findings:
+        body = "\n".join(f"- {item}" for item in findings[:6]) + "\n\n"
+    else:
+        body = (
+            f"积极面：{positives or '（见指标表）'}。\n\n"
+            f"需关注：{negatives or '（见指标表）'}。\n\n"
+        )
     return (
-        f"本地摘要模式：{name} 的财务数据积极信号主要包括：{positives}。\n\n"
-        f"消极或需要关注的数据信号主要包括：{negatives}。\n\n"
+        f"本地摘要模式：{name}\n\n{body}"
         f"MD&A 摘要：\n{mda_preview}\n\n"
-        "由于未配置 OPENAI_API_KEY，本次未调用外部大模型；以上为基于规则输出的基本面叙事占位总结。"
+        "由于未配置 OPENAI_API_KEY，本次未调用外部大模型；以上为基于规则/指标表的占位总结。"
     )
 
 

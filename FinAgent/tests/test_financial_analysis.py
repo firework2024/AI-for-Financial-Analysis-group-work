@@ -9,7 +9,7 @@ def test_financial_agent_output_shape():
     ]
     enriched = apply_financial_fallbacks(rows, "")
     result = analyze_financials(enriched)
-    assert set(result) == {
+    assert {
         "positive_signals",
         "negative_signals",
         "display_signals",
@@ -18,7 +18,10 @@ def test_financial_agent_output_shape():
         "raw_signals",
         "data_notes",
         "metrics",
-    }
+        "interpretation",
+        "key_findings",
+        "llm_mode",
+    }.issubset(set(result))
     assert result["positive_signals"]
     assert "structured_signals" in result["raw_signals"]
     assert "compound_signals" in result["raw_signals"]
@@ -35,7 +38,8 @@ def test_metric_factor_fallback_fills_missing_metric_only():
     assert result["metrics"][0]["metric_sources"]["inventory_turnover"] == "rqdata_factor"
 
 
-def test_compound_and_high_risk_signals_are_preserved_in_local_review():
+def test_compound_and_high_risk_signals_are_preserved_in_local_review(monkeypatch):
+    monkeypatch.setattr("finagent.financial_analysis.has_llm_api_key", lambda: False)
     rows = [
         {
             "year": 2023,

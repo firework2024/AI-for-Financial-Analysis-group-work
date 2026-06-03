@@ -53,7 +53,13 @@ def analytical_writing_core() -> str:
 
 
 def fundamental_narrative_system_prompt() -> str:
-    return "你是财务分析写作助手。" + _LOOSE_FUNDAMENTAL_WRITING + _ANALYTICAL_CORE
+    return (
+        "你是财务分析写作助手。"
+        + _LOOSE_FUNDAMENTAL_WRITING
+        + "优先依据逐年 metrics 表与 interpretation/key_findings 写连贯段落，"
+        "不要逐条复述 reviewed_signals 标题。"
+        + _ANALYTICAL_CORE
+    )
 
 
 def fundamental_narrative_writing_guide() -> str:
@@ -71,8 +77,9 @@ def section_writing_guide(section_name: str) -> str:
             "至少 1 个 Markdown 小表对比近 5–10 个关键交易日。"
         ),
         "经营质量分析": (
-            "写经营与基本面：优先 pit、annual_financial_analysis、MD&A；结构自由，多年数据用表格；"
-            "禁止写 PE/PB/PS、股息率和估值判断。"
+            "写经营与基本面：优先 pit、annual_report 中的 metrics / interpretation、MD&A；"
+            "从原始数字归纳，勿逐条罗列规则信号标题；结构自由，多年数据用表格；"
+            "避免写 PE/PB/PS、股息率和估值判断。"
         ),
         "资金与交易结构": (
             "**成交与活跃度**；**融资融券**（余额起止、峰值买入日、融券变化，附日期）；"
@@ -310,6 +317,9 @@ def build_analytical_evidence(data: dict[str, Any], section_name: str) -> dict[s
                 "articulation_checks",
                 "mda_crosswalk",
                 "mda_summary",
+                "metrics",
+                "interpretation",
+                "key_findings",
                 "reviewed_signals",
             )
             if annual_ctx.get(key) is not None

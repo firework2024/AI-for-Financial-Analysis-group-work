@@ -27,6 +27,8 @@ def test_build_plan_data_briefing_includes_technical_and_pit():
     assert briefing["technical_highlights"]["latest_close"] == 200.5
     assert len(briefing["pit_summary"]) >= 1
     assert briefing["data_coverage"]["price"] == 120
+    assert briefing.get("planning_guidance")
+    assert briefing.get("optional_narrative_angles") == briefing.get("narrative_signals")
 
 
 def test_is_operating_quality_by_kind_not_title():

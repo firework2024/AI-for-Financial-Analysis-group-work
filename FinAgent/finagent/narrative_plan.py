@@ -1,10 +1,25 @@
-"""采数后的叙事规划：压缩 data briefing、章节 kind 路由、定制报告标题。"""
+"""采数后的叙事规划：压缩 data briefing、章节 kind 路由、定制报告标题。
+
+briefing 中的叙事角度仅为提示，供 planner / 写作 Agent 参考，非必须执行的指令清单。
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 from .report_writing import summarize_pit_rows
+
+PLANNING_GUIDANCE_NOTE = (
+    "optional_narrative_angles（及兼容字段 narrative_signals）仅为采数后的可选叙事角度，"
+    "请结合公司实际与数据覆盖取舍，不必逐条套用或照抄措辞。"
+)
+
+
+def data_briefing_planner_preamble() -> str:
+    return (
+        "\n\n已采集数据摘要（供参考：可据实拟定 report_title、narrative_thesis 与章节；"
+        "叙事角度条目为提示而非硬性清单）："
+    )
 
 ALLOWED_SECTION_KINDS = frozenset(
     {"operating_quality", "market", "valuation", "capital", "macro", "risk"}
@@ -86,11 +101,11 @@ def build_plan_data_briefing(data: dict[str, Any]) -> dict[str, Any]:
         try:
             r20f, r60f = float(r20), float(r60)
             if r20f < -0.05 and r60f > 0.08:
-                signals.append("中期上涨但近月回调，叙事可聚焦「强势中的调整」")
+                signals.append("（可选）若与基本面一致，可考虑从「强势中的调整」切入")
             elif r20f > 0.1 and r60f > 0.15:
-                signals.append("短中期共振上行，可突出趋势与资金配合")
+                signals.append("（可选）短中期共振上行时，可酌情突出趋势与资金配合")
             elif r20f < -0.08 and r60f < -0.05:
-                signals.append("趋势偏弱，叙事宜先承认压力再谈基本面缓冲")
+                signals.append("（可选）趋势偏弱时，可先承认压力再谈基本面缓冲")
         except (TypeError, ValueError):
             pass
 
@@ -98,9 +113,9 @@ def build_plan_data_briefing(data: dict[str, Any]) -> dict[str, Any]:
     if pe is not None:
         try:
             if float(pe) > 40:
-                signals.append("估值偏高，可与盈利增速/行业对比挂钩")
+                signals.append("（可选）估值偏高时，可与盈利增速或行业对比挂钩")
             elif float(pe) < 15:
-                signals.append("估值偏低或成熟型，可强调股息与现金流")
+                signals.append("（可选）估值偏低或偏成熟时，可酌情强调股息与现金流")
         except (TypeError, ValueError):
             pass
 
@@ -136,6 +151,8 @@ def build_plan_data_briefing(data: dict[str, Any]) -> dict[str, Any]:
         "data_coverage": coverage,
         "pit_summary": summarize_pit_rows(pit_rows[-8:]) if pit_rows else [],
         "annual_years": (annual_ctx.get("financial_years") or [])[:4] if annual_ctx else [],
+        "planning_guidance": PLANNING_GUIDANCE_NOTE,
+        "optional_narrative_angles": signals,
         "narrative_signals": signals,
         "missing_or_thin": [
             k for k, v in coverage.items() if v in (0, False) and k in ("pit_rows", "annual_report", "factor_snapshot")

@@ -22,7 +22,11 @@ from .multi_report import (
     render_multi_markdown,
     resolve_multi_report_title,
 )
-from .narrative_plan import build_plan_data_briefing, is_operating_quality_section
+from .narrative_plan import (
+    build_plan_data_briefing,
+    data_briefing_planner_preamble,
+    is_operating_quality_section,
+)
 from .visual_placement import resolve_section_visuals
 from .report_format import normalize_section_text, normalize_sections, section_writing_style_hint
 from .report_writing import (
@@ -415,8 +419,8 @@ def planner_agent(
     if data:
         briefing = build_plan_data_briefing(data)
         briefing_block = (
-            "\n\n已采集数据摘要（请据此制定差异化 report_title、narrative_thesis 与章节，勿无视 narrative_signals）："
-            f"\n{json.dumps(briefing, ensure_ascii=False)[:8000]}"
+            data_briefing_planner_preamble()
+            + f"\n{json.dumps(briefing, ensure_ascii=False)[:8000]}"
         )
     try:
         plan = llm_json(

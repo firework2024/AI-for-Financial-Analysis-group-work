@@ -6,7 +6,7 @@ from typing import Any
 from .llm_settings import has_llm_api_key
 from .fields import FIELD_MAP
 from .framework import load_financial_framework_excerpt
-from .llm import financial_signal_review_agent
+from .llm import financial_analysis_agent, financial_llm_mode
 from .signals import CATEGORY_LABELS, POLARITY_RANK, SEVERITY_RANK, detect_compound_signals, detect_structured_signals, summarize_signals
 
 
@@ -44,14 +44,14 @@ def analyze_financials(
     info(f"LLM 证据包构建完成: {len(evidence.get('rows', []))} 行")
 
     if has_llm_api_key():
-        sub_section("LLM 信号审核")
+        sub_section("LLM 财务解读" if financial_llm_mode() == "data_first" else "LLM 信号审核")
         try:
-            analysis = financial_signal_review_agent(
+            analysis = financial_analysis_agent(
                 evidence=evidence,
                 framework_text=load_financial_framework_excerpt(),
                 company_context=company_context or {},
             )
-            info("LLM 信号审核完成")
+            info("LLM 财务分析完成")
             return _finalize_signal_review(analysis, signal_pack, rows, metrics)
         except Exception:
             info("LLM 审核失败，回退到本地规则审核")
@@ -86,23 +86,30 @@ def _finalize_signal_review(
             )
         )
     )
-    if not reviewed_signals and raw_signals:
+    has_narrative = _analysis_has_narrative(analysis)
+    if not reviewed_signals and raw_signals and not has_narrative:
         reviewed_signals = [_reviewed_signal_from_rule(signal, source="rule_only") for signal in raw_signals]
         reviewed_signals = _sort_reviewed_signals(reviewed_signals)
 
-    positive_signals = _dedupe_strings(analysis.get("positive_signals") or _signal_sentences(reviewed_signals, "positive"))
-    negative_signals = _dedupe_strings(analysis.get("negative_signals") or _signal_sentences(reviewed_signals, "negative"))
-    if not positive_signals:
+    positive_signals = _dedupe_strings(analysis.get("positive_signals") or [])
+    negative_signals = _dedupe_strings(analysis.get("negative_signals") or [])
+    if not positive_signals and not has_narrative:
+        positive_signals = _dedupe_strings(_signal_sentences(reviewed_signals, "positive"))
+    if not negative_signals and not has_narrative:
+        negative_signals = _dedupe_strings(_signal_sentences(reviewed_signals, "negative"))
+    if not positive_signals and not has_narrative:
         positive_signals = ["未识别到明确的积极财务信号。"]
-    if not negative_signals:
+    if not negative_signals and not has_narrative:
         negative_signals = ["未识别到明确的消极财务信号。"]
 
     data_notes = _dedupe_strings([*analysis.get("data_notes", []), *_data_notes(rows)])
     key_risks = _dedupe_strings(analysis.get("key_risks") or _derive_key_risks(reviewed_signals))
 
-    display_signals = consolidate_reviewed_signals(reviewed_signals)
+    display_signals = _build_display_signals(analysis, reviewed_signals, has_narrative)
 
     return {
+        "interpretation": str(analysis.get("interpretation") or "").strip(),
+        "key_findings": _dedupe_strings(analysis.get("key_findings") or []),
         "positive_signals": positive_signals,
         "negative_signals": negative_signals,
         "key_risks": key_risks,
@@ -111,7 +118,51 @@ def _finalize_signal_review(
         "raw_signals": signal_pack,
         "data_notes": data_notes,
         "metrics": metrics,
+        "llm_mode": financial_llm_mode(),
     }
+
+
+def _analysis_has_narrative(analysis: dict[str, Any]) -> bool:
+    if str(analysis.get("interpretation") or "").strip():
+        return True
+    return bool(analysis.get("key_findings"))
+
+
+def _build_display_signals(
+    analysis: dict[str, Any],
+    reviewed_signals: list[dict[str, Any]],
+    has_narrative: bool,
+) -> list[dict[str, Any]]:
+    if has_narrative:
+        findings = analysis.get("key_findings") or []
+        if findings:
+            items = [
+                {
+                    "category": "",
+                    "category_cn": "",
+                    "polarity": "",
+                    "severity": "",
+                    "title": str(text)[:80],
+                    "explanation": str(text),
+                    "evidence": "",
+                    "metrics": [],
+                    "confidence": "",
+                    "source_signal_id": "",
+                    "type": "finding",
+                }
+                for text in findings
+                if str(text).strip()
+            ]
+            return _sort_display_signals(items[:8])
+        critical = [
+            item
+            for item in reviewed_signals
+            if item.get("polarity") == "negative" and item.get("severity") in {"high", "critical"}
+        ]
+        if critical:
+            return consolidate_reviewed_signals(critical)
+        return []
+    return consolidate_reviewed_signals(reviewed_signals)
 
 
 def _local_signal_review(signal_pack: dict[str, Any]) -> dict[str, Any]:
@@ -494,9 +545,14 @@ def _build_llm_evidence(
 
     return {
         "company_context": company_context,
+        "metrics": metrics,
         "rows": evidence_rows,
         "signals": signal_pack,
         "data_quality": _data_quality_summary(rows),
+        "reading_guide": (
+            "请先通读 metrics 与 rows 中的逐年数字，自行归纳趋势与矛盾；"
+            "signals 为规则引擎附录，不必逐条复述。"
+        ),
     }
 
 
