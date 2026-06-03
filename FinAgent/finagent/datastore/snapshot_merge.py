@@ -166,6 +166,14 @@ def upsert_market_snapshot(
     created_at = datetime.now().isoformat(timespec="seconds")
     order_book_id = str(data.get("order_book_id") or latest.get("order_book_id") or "")
     as_of = end_date or datetime.now().date().isoformat()
+    stored_lb = latest.get("lookback_days")
+    if lookback_days is not None:
+        if stored_lb is not None:
+            merged_lookback = max(int(stored_lb), int(lookback_days))
+        else:
+            merged_lookback = int(lookback_days)
+    else:
+        merged_lookback = stored_lb
 
     with _locked_connect() as conn:
         conn.execute(
@@ -178,7 +186,7 @@ def upsert_market_snapshot(
             (
                 order_book_id,
                 as_of,
-                lookback_days,
+                merged_lookback,
                 start_date,
                 end_date,
                 source,

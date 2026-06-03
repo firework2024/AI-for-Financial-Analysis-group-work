@@ -212,7 +212,8 @@ def persist_market_snapshot(
 
             return upsert_market_snapshot(data, lookback_days=lookback_days, source=source)
         return save_data_snapshot(data, stock_code=stock_code, lookback_days=lookback_days, source=source)
-    except Exception:
+    except Exception as exc:
+        print(f"[persist_market_snapshot] failed: {type(exc).__name__}: {exc}")
         return None
 
 
@@ -443,6 +444,81 @@ def load_series(snapshot_id: int, data_keys: list[str] | None = None, *, tail: i
             "columns": columns,
         }
     return result
+
+
+# PIT 行是否含实质财务数字（用于区分米筐失败时的 year/quarter 占位行）
+PIT_CORE_VALUE_FIELDS: tuple[str, ...] = (
+    "revenue",
+    "operating_revenue",
+    "net_profit",
+    "net_profit_parent_company",
+    "total_assets",
+    "total_liabilities",
+    "cash_flow_from_operating_activities",
+    "gross_profit",
+    "cost_of_goods_sold",
+    "profit_from_operation",
+    "equity_parent_company",
+    "current_assets",
+    "current_liabilities",
+)
+
+
+def _pit_field_value(row: dict[str, Any], field: str) -> Any:
+    if field in row and row[field] is not None:
+        return row[field]
+    nested = row.get("fields")
+    if isinstance(nested, dict) and field in nested:
+        item = nested[field]
+        if isinstance(item, dict):
+            return item.get("value")
+        return item
+    metric = row.get("metric_snapshot")
+    if isinstance(metric, dict) and field in metric:
+        return metric[field]
+    return None
+
+
+def _value_is_numeric(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return bool(str(value).strip())
+    return number == number
+
+
+def pit_row_has_financial_values(row: dict[str, Any]) -> bool:
+    if not isinstance(row, dict):
+        return False
+    return any(_value_is_numeric(_pit_field_value(row, field)) for field in PIT_CORE_VALUE_FIELDS)
+
+
+def pit_rows_have_financial_values(rows: list[Any] | None) -> bool:
+    if not rows:
+        return False
+    return any(pit_row_has_financial_values(row) for row in rows if isinstance(row, dict))
+
+
+def pit_cache_is_usable(pit: dict[str, Any] | None, *, min_rows_with_values: int = 1) -> bool:
+    if not pit:
+        return False
+    rows = pit.get("rows") or []
+    valuable = sum(1 for row in rows if isinstance(row, dict) and pit_row_has_financial_values(row))
+    return valuable >= min_rows_with_values
+
+
+def count_pit_rows_with_values(rows: list[Any] | None) -> int:
+    if not rows:
+        return 0
+    return sum(1 for row in rows if isinstance(row, dict) and pit_row_has_financial_values(row))
+
+
+def delete_pit_financials_cache(stock_code: str) -> int:
+    with _locked_connect() as conn:
+        cursor = conn.execute("DELETE FROM pit_financials_cache WHERE stock_code = ?", (stock_code,))
+        return int(cursor.rowcount or 0)
 
 
 def get_pit_financials(stock_code: str) -> dict[str, Any] | None:

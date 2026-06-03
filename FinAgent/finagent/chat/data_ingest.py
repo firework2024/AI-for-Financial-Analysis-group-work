@@ -182,7 +182,7 @@ def bootstrap_stock_data(
 
 def get_data_gaps(stock_code: str, query: str) -> list[str]:
     """对话按需入库：1) 有无本地数据 2) 是否最新交易日 3) 过时则先增量再拉报告级行情/年报。"""
-    from ..datastore.db import get_annual_report, get_latest_snapshot, get_pit_financials
+    from ..datastore.db import get_annual_report, get_latest_snapshot, get_pit_financials, pit_cache_is_usable
     from ..datastore.market_cache import local_price_volume_available, market_is_current
     from ..stock_utils import calendar_trading_as_of
 
@@ -216,10 +216,12 @@ def get_data_gaps(stock_code: str, query: str) -> list[str]:
 
     if wants_annual and annual_report_needs_update(code, annual, report_year=report_year):
         gaps.append("annual_report")
-    if wants_financial and pit is None and "annual_report" not in gaps:
+    if wants_financial and not pit_cache_is_usable(pit) and "annual_report" not in gaps:
         gaps.append("pit_financials")
 
-    if not has_market and not pit and not annual and (query_needs_stored_data(query) or needs_live_data(query)):
+    if not has_market and not pit_cache_is_usable(pit) and not annual and (
+        query_needs_stored_data(query) or needs_live_data(query)
+    ):
         if wants_overview:
             for kind in ("market_history", "annual_report"):
                 if kind not in gaps:
@@ -342,19 +344,47 @@ def ingest_market_snapshot(
     return ingest_market_history(stock_code, lookback_days=lookback_days, force_refresh=force_refresh)
 
 
-def ingest_pit_financials(stock_code: str, *, report_year: int | None = None) -> dict[str, Any]:
-    from ..datastore.db import get_annual_report, get_pit_financials
+def ingest_pit_financials(
+    stock_code: str,
+    *,
+    report_year: int | None = None,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    from ..datastore.db import (
+        count_pit_rows_with_values,
+        delete_pit_financials_cache,
+        get_annual_report,
+        get_pit_financials,
+        pit_cache_is_usable,
+    )
     from ..rqdata_client import fetch_financials
 
     code = normalize_stock_code(stock_code)
-    if get_pit_financials(code):
-        pit = get_pit_financials(code)
-        return {"ok": True, "skipped": True, "row_count": len((pit or {}).get("rows") or [])}
+    pit = get_pit_financials(code)
+    if pit_cache_is_usable(pit) and not force_refresh:
+        rows = (pit or {}).get("rows") or []
+        return {
+            "ok": True,
+            "skipped": True,
+            "row_count": len(rows),
+            "rows_with_values": count_pit_rows_with_values(rows),
+            "skip_reason": "PIT 财务序列已就绪（含有效财报字段）",
+        }
+
+    if pit and (force_refresh or not pit_cache_is_usable(pit)):
+        delete_pit_financials_cache(code)
 
     annual = get_annual_report(code)
     year = report_year or (annual or {}).get("report_year") or (default_as_of(None).year - 1)
     fetched = fetch_financials(code, int(year), years=3)
-    return {"ok": True, "report_year": int(year), "row_count": len(fetched.rows)}
+    rows = fetched.rows or []
+    return {
+        "ok": True,
+        "report_year": int(year),
+        "row_count": len(rows),
+        "rows_with_values": count_pit_rows_with_values(rows),
+        "usable": pit_cache_is_usable({"rows": rows}),
+    }
 
 
 def ingest_annual_report(
@@ -481,7 +511,7 @@ def _ingest_gap(
     if gap == "annual_report":
         return ingest_annual_report(code, report_year=report_year, workdir=workdir, force_refresh=force_refresh)
     if gap == "pit_financials":
-        return ingest_pit_financials(code, report_year=report_year)
+        return ingest_pit_financials(code, report_year=report_year, force_refresh=force_refresh)
     if gap == "quote_refresh":
         return ingest_quote_refresh(code, force_refresh=force_refresh)
     if gap in ("market_snapshot", "market_history"):
@@ -513,9 +543,11 @@ def _financial_rows_for_annual(stock_code: str, report_year: int) -> tuple[list[
     from ..rqdata_client import fetch_financials
 
     code = normalize_stock_code(stock_code)
+    from ..datastore.db import pit_cache_is_usable
+
     pit = get_pit_financials(code)
     rows = (pit or {}).get("rows") if isinstance(pit, dict) else None
-    if rows and int((pit or {}).get("report_year") or report_year) == int(report_year):
+    if pit_cache_is_usable(pit) and int((pit or {}).get("report_year") or report_year) == int(report_year):
         obid = str((pit or {}).get("order_book_id") or to_order_book_id(code))
         return list(rows), obid
     fetched = fetch_financials(code, report_year, years=3)
@@ -730,7 +762,13 @@ def get_data_coverage(
     as_of: date | None = None,
 ) -> dict[str, Any]:
     """检查 SQLite 中行情/PIT/年报覆盖与新鲜度（供 API 与前端状态条）。"""
-    from ..datastore.db import get_annual_report, get_latest_snapshot, get_pit_financials
+    from ..datastore.db import (
+        count_pit_rows_with_values,
+        get_annual_report,
+        get_latest_snapshot,
+        get_pit_financials,
+        pit_cache_is_usable,
+    )
     from ..datastore.market_cache import (
         local_price_volume_available,
         market_is_current,
@@ -750,7 +788,9 @@ def get_data_coverage(
     market_fresh = bool(snapshot and snapshot_usable_for_executor(snapshot, as_of=ref, lookback_days=lb))
     market_stale = market_snapshot_is_stale(snapshot) if snapshot else True
     pit_rows = (pit or {}).get("rows") or []
-    pit_ok = bool(pit_rows)
+    pit_rows_with_values = count_pit_rows_with_values(pit_rows)
+    pit_ok = pit_cache_is_usable(pit)
+    pit_placeholder_only = bool(pit_rows) and not pit_ok
     annual_ok = bool(annual and not annual_report_needs_update(code, annual, as_of=ref))
 
     gaps: list[str] = []
@@ -782,6 +822,8 @@ def get_data_coverage(
         "pit_financials": {
             "present": pit_ok,
             "row_count": len(pit_rows),
+            "rows_with_values": pit_rows_with_values,
+            "placeholder_only": pit_placeholder_only,
             "report_year": (pit or {}).get("report_year"),
         },
         "annual_report": {

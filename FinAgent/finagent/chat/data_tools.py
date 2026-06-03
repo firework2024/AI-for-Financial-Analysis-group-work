@@ -385,13 +385,13 @@ def _financial_row_sort_key(row: dict[str, Any]) -> tuple[int, str]:
 def _local_financial_rows(stock_code: str) -> tuple[list[dict[str, Any]], str | None]:
     """读取最原始财务行：优先 PIT 三表缓存，其次年报抽取的 financial_data。"""
     try:
-        from ..datastore.db import get_annual_report, get_pit_financials
+        from ..datastore.db import get_annual_report, get_pit_financials, pit_cache_is_usable
     except Exception:
         return [], None
 
     pit = get_pit_financials(stock_code)
-    pit_rows = [row for row in (pit or {}).get("rows") or [] if isinstance(row, dict)]
-    if pit_rows:
+    if pit_cache_is_usable(pit):
+        pit_rows = [row for row in (pit or {}).get("rows") or [] if isinstance(row, dict)]
         return sorted(pit_rows, key=_financial_row_sort_key), "pit"
 
     annual = get_annual_report(stock_code)

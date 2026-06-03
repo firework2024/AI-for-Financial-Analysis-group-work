@@ -1016,11 +1016,11 @@ def _attach_stored_fundamentals(
 
     annual = None
     try:
-        from .datastore.db import get_annual_report, get_pit_financials
+        from .datastore.db import get_annual_report, get_pit_financials, pit_cache_is_usable
 
         annual = get_annual_report(stock_code)
         pit = get_pit_financials(stock_code)
-        if pit and pit.get("rows"):
+        if pit_cache_is_usable(pit):
             payload["pit_financials"] = {
                 "rows": pit["rows"],
                 "row_count": len(pit["rows"]),

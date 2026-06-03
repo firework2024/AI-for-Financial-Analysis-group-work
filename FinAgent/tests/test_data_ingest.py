@@ -50,8 +50,8 @@ def test_ensure_stored_data_market(monkeypatch, temp_db):
         calls.append(code)
         return {"ok": True, "snapshot_id": 1, "source": "rqdata", "end_date": "2026-05-29", "live": {"quote": {"close": 200}}}
 
-    monkeypatch.setattr("finagent.chat.data_ingest.ingest_market_snapshot", fake_ingest)
-    monkeypatch.setattr("finagent.chat.data_ingest.get_data_gaps", lambda _c, _q: ["market_snapshot"])
+    monkeypatch.setattr("finagent.chat.data_ingest.ingest_market_history", fake_ingest)
+    monkeypatch.setattr("finagent.chat.data_ingest.get_data_gaps", lambda _c, _q: ["market_history"])
 
     result = ensure_stored_data("300750", "查一下最新股价")
     assert result is not None
@@ -120,17 +120,17 @@ def test_bootstrap_stock_data_defaults_to_light_gaps(monkeypatch, temp_db):
         return {"ok": True, "row_count": 3}
 
     def _market(code, **kwargs):
-        calls.append("market_snapshot")
+        calls.append("market_history")
         return {"ok": True, "snapshot_id": 1}
 
     monkeypatch.setattr("finagent.chat.data_ingest.ingest_annual_report", _annual)
     monkeypatch.setattr("finagent.chat.data_ingest.ingest_pit_financials", _pit)
-    monkeypatch.setattr("finagent.chat.data_ingest.ingest_market_snapshot", _market)
+    monkeypatch.setattr("finagent.chat.data_ingest.ingest_market_history", _market)
 
     result = bootstrap_stock_data("300274", report_year=2025)
     assert result["ok"] is True
-    assert set(calls) == {"market_snapshot", "pit_financials"}
-    assert result["requested_gaps"] == ["market_snapshot", "pit_financials"]
+    assert set(calls) == {"market_history", "pit_financials"}
+    assert result["requested_gaps"] == ["market_history", "pit_financials"]
 
 
 def test_bootstrap_stock_data_can_include_annual(monkeypatch, temp_db):
@@ -145,18 +145,18 @@ def test_bootstrap_stock_data_can_include_annual(monkeypatch, temp_db):
         return {"ok": True, "row_count": 3}
 
     def _market(code, **kwargs):
-        calls.append("market_snapshot")
+        calls.append("market_history")
         return {"ok": True, "snapshot_id": 1}
 
     monkeypatch.setenv("FINAGENT_BOOTSTRAP_INCLUDE_ANNUAL_REPORT", "true")
     monkeypatch.setattr("finagent.chat.data_ingest.ingest_annual_report", _annual)
     monkeypatch.setattr("finagent.chat.data_ingest.ingest_pit_financials", _pit)
-    monkeypatch.setattr("finagent.chat.data_ingest.ingest_market_snapshot", _market)
+    monkeypatch.setattr("finagent.chat.data_ingest.ingest_market_history", _market)
 
     result = bootstrap_stock_data("300274", report_year=2025)
     assert result["ok"] is True
-    assert set(calls) == {"market_snapshot", "pit_financials", "annual_report"}
-    assert result["requested_gaps"] == ["market_snapshot", "pit_financials", "annual_report"]
+    assert set(calls) == {"market_history", "pit_financials", "annual_report"}
+    assert result["requested_gaps"] == ["market_history", "pit_financials", "annual_report"]
 
 
 def test_incremental_persist_merges_price_rows(temp_db):
@@ -238,6 +238,68 @@ def test_get_data_coverage_empty_db(temp_db):
     assert cov["stock_code"] == "300750"
     assert "market_history" in cov["gaps"]
     assert cov["ready_for_chat"] is False
+
+
+def test_get_data_coverage_placeholder_pit_flags_gap(temp_db):
+    from finagent.datastore import save_pit_financials
+    from finagent.rqdata_client import FinancialFetchResult
+
+    save_pit_financials(
+        FinancialFetchResult(
+            rows=[{"year": 2024, "quarter": "2024q4"}, {"year": 2023, "quarter": "2023q4"}],
+            order_book_id="300750.XSHE",
+            quarters=["2024q4", "2023q4"],
+        ),
+        stock_code="300750",
+        report_year=2024,
+        years=3,
+    )
+    cov = get_data_coverage("300750")
+    pit = cov["pit_financials"]
+    assert pit["row_count"] == 2
+    assert pit["rows_with_values"] == 0
+    assert pit["placeholder_only"] is True
+    assert pit["present"] is False
+    assert "pit_financials" in cov["gaps"]
+
+
+def test_ingest_pit_refetches_placeholder(monkeypatch, temp_db):
+    from finagent.chat.data_ingest import ingest_pit_financials
+    from finagent.datastore import save_pit_financials
+    from finagent.rqdata_client import FinancialFetchResult
+
+    save_pit_financials(
+        FinancialFetchResult(
+            rows=[{"year": 2024, "quarter": "2024q4"}],
+            order_book_id="300750.XSHE",
+            quarters=["2024q4"],
+        ),
+        stock_code="300750",
+        report_year=2024,
+        years=3,
+    )
+
+    def fake_fetch(code, year, years=3):
+        from finagent.datastore import save_pit_financials
+
+        result = FinancialFetchResult(
+            rows=[{"year": year, "quarter": f"{year}q4", "net_profit": 1.0e9}],
+            order_book_id="300750.XSHE",
+            quarters=[f"{year}q4"],
+        )
+        save_pit_financials(result, stock_code=code, report_year=int(year), years=years)
+        return result
+
+    monkeypatch.setattr("finagent.rqdata_client.fetch_financials", fake_fetch)
+
+    first = ingest_pit_financials("300750")
+    assert first.get("ok") is True
+    assert first.get("usable") is True
+    assert first.get("rows_with_values") == 1
+
+    second = ingest_pit_financials("300750")
+    assert second.get("skipped") is True
+    assert second.get("rows_with_values") == 1
 
 
 def test_report_generation_cached_only_accepts_stale_local_data(temp_db):

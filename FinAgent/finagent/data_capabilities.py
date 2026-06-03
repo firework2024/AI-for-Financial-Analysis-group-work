@@ -32,16 +32,22 @@ def build_data_capability_inventory(
     collected: dict[str, dict[str, Any]] = {}
     for key, label in COLLECTED_SERIES.items():
         value = data.get(key)
-        if key == "pit_financials":
-            row_count = int(value.get("row_count") or 0) if isinstance(value, dict) else 0
+        if key == "pit_financials" and isinstance(value, dict):
+            from .datastore.db import pit_cache_is_usable
+
+            rows = value.get("rows") or []
+            row_count = len(rows) if rows else int(value.get("row_count") or 0)
+            available = pit_cache_is_usable(value)
         elif isinstance(value, dict):
             row_count = int(value.get("row_count") or 0)
+            available = row_count > 0
         else:
             row_count = 0
+            available = False
         collected[key] = {
             "label": label,
             "row_count": row_count,
-            "available": row_count > 0 or (key == "pit_financials" and row_count > 0),
+            "available": available,
             "tool": tool_for_data_key(key),
         }
 

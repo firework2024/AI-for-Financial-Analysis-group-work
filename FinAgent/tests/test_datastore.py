@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 from finagent.datastore import init_db, query_stored_data, save_annual_report_record, save_data_snapshot, save_pit_financials
-from finagent.datastore.db import get_latest_snapshot, load_series
+from finagent.datastore.db import (
+    delete_pit_financials_cache,
+    get_latest_snapshot,
+    get_pit_financials,
+    load_series,
+    pit_cache_is_usable,
+)
 from finagent.rqdata_client import FinancialFetchResult
 
 
@@ -56,6 +62,28 @@ def test_save_pit_financials(temp_db):
     stored = query_stored_data("300750", "营收和利润")
     assert stored is not None
     assert stored["pit_financials_cache"]["rows"][0]["revenue"] == 123.0
+
+
+def test_pit_placeholder_not_usable(temp_db):
+    placeholder = FinancialFetchResult(
+        rows=[{"year": 2024, "quarter": "2024q4"}, {"year": 2023, "quarter": "2023q4"}],
+        order_book_id="300750.XSHE",
+        quarters=["2024q4", "2023q4"],
+    )
+    save_pit_financials(placeholder, stock_code="300750", report_year=2024, years=3)
+    pit = get_pit_financials("300750")
+    assert pit is not None
+    assert len(pit["rows"]) == 2
+    assert pit_cache_is_usable(pit) is False
+
+    real = FinancialFetchResult(
+        rows=[{"year": 2024, "quarter": "2024q4", "net_profit": 1.0e10}],
+        order_book_id="300750.XSHE",
+        quarters=["2024q4"],
+    )
+    delete_pit_financials_cache("300750")
+    save_pit_financials(real, stock_code="300750", report_year=2024, years=3)
+    assert pit_cache_is_usable(get_pit_financials("300750")) is True
 
 
 def test_query_matches_margin_keywords(temp_db):

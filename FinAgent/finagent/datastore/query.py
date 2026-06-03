@@ -7,7 +7,15 @@ from typing import Any
 
 from ..data_registry import COLLECTED_SERIES
 from .annual_text import search_mda_hits
-from .db import META_KEYS, SERIES_KEYS, get_annual_report, get_latest_snapshot, get_pit_financials, load_series
+from .db import (
+    META_KEYS,
+    SERIES_KEYS,
+    get_annual_report,
+    get_latest_snapshot,
+    get_pit_financials,
+    load_series,
+    pit_cache_is_usable,
+)
 
 # 问题关键词 → data_key（命中则优先返回对应序列）
 _QUERY_HINTS: dict[str, tuple[str, ...]] = {
@@ -141,7 +149,7 @@ def query_stored_data(
             payload["series"] = load_series(int(snapshot["id"]), selected_keys, tail=tail)
             payload["available_series"] = list(COLLECTED_SERIES.keys())
 
-    if pit and ("pit_financials" in selected_keys or _mentions_financials(query)):
+    if pit_cache_is_usable(pit) and ("pit_financials" in selected_keys or _mentions_financials(query)):
         pit_rows = pit["rows"]
         if metric_labels:
             pit_rows = filter_financial_rows(pit_rows, metric_labels)
