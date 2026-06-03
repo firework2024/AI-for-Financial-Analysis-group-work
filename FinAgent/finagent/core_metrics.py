@@ -45,6 +45,59 @@ def industry_has_display_name(industry: dict[str, Any] | None) -> bool:
     return False
 
 
+def _parse_as_of_date(value: Any) -> date | None:
+    if value is None or value == "":
+        return None
+    text = str(value).split("T", 1)[0][:10]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _industry_from_rqdata(stock_code: str, as_of: date | None = None) -> dict[str, Any]:
+    """米筐中信一级行业；需本机/环境变量 RQ 凭证。"""
+    from .stock_utils import default_as_of, to_order_book_id
+
+    code = str(stock_code or "").strip().split(".")[0]
+    if not code:
+        return {}
+    order_book_id = to_order_book_id(code)
+    as_of = as_of or default_as_of()
+    try:
+        import rqdatac
+        from .rqdata_client import _init_rqdata
+
+        _init_rqdata(rqdatac)
+        df = rqdatac.get_instrument_industry(
+            order_book_id, source="citics_2019", level=1, date=as_of
+        )
+    except Exception:
+        return {}
+    if df is None or getattr(df, "empty", True):
+        return {}
+    try:
+        import pandas as pd
+
+        row = df.reset_index().iloc[0].to_dict()
+    except Exception:
+        return {}
+    out: dict[str, Any] = {"industry_source": "rqdata_citics_2019_l1"}
+    for key, value in row.items():
+        if pd.isna(value):
+            continue
+        if hasattr(value, "item"):
+            try:
+                value = value.item()
+            except Exception:
+                pass
+        out[str(key)] = value
+    if industry_has_display_name(out):
+        return out
+    coded = _industry_from_citics_code(out)
+    return coded if coded else out
+
+
 def _industry_from_eastmoney(stock_code: str) -> dict[str, Any]:
     code = str(stock_code or "").strip().split(".")[0]
     if not code or len(code) != 6:
@@ -163,9 +216,14 @@ def resolve_industry_dict(data: dict[str, Any]) -> dict[str, Any]:
         return industry
 
     stock_code = str(data.get("stock_code") or data.get("order_book_id") or "").split(".")[0]
-    fallback = _industry_from_eastmoney(stock_code)
-    if fallback:
-        industry.update(fallback)
+    as_of = _parse_as_of_date(data.get("end_date"))
+    rq_fallback = _industry_from_rqdata(stock_code, as_of)
+    if rq_fallback:
+        industry.update(rq_fallback)
+        return industry
+    em_fallback = _industry_from_eastmoney(stock_code)
+    if em_fallback:
+        industry.update(em_fallback)
     return industry
 
 

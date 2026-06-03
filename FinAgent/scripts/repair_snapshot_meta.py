@@ -1,5 +1,9 @@
-"""修复快照 meta 中空 industry/technical，并写回 SQLite。用法: python scripts/repair_snapshot_meta.py 600519"""
+"""修复快照 meta 中空 industry/technical，并写回 SQLite。
 
+用法:
+  python scripts/repair_snapshot_meta.py 600519
+  python scripts/repair_snapshot_meta.py 600519 --industry 食品饮料 --industry-code 36
+"""
 import json
 import os
 import sqlite3
@@ -47,8 +51,30 @@ def _rebuild_payload_from_snapshot(conn, snapshot_id):
     return payload
 
 
+def _parse_cli(argv):
+    # type: (list) -> tuple
+    code = "600519"
+    force_name = None
+    force_code = None
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--industry" and i + 1 < len(argv):
+            force_name = argv[i + 1]
+            i += 2
+            continue
+        if arg == "--industry-code" and i + 1 < len(argv):
+            force_code = argv[i + 1]
+            i += 2
+            continue
+        if arg.isdigit() and len(arg) == 6:
+            code = arg
+        i += 1
+    return code.strip().split(".")[0], force_name, force_code
+
+
 def main():
-    code = (sys.argv[1] if len(sys.argv) > 1 else "600519").strip().split(".")[0]
+    code, force_industry_name, force_industry_code = _parse_cli(sys.argv)
     db = _db_path()
     if not Path(db).is_file():
         print("no db:", db)
@@ -57,7 +83,13 @@ def main():
     finagent_root = str(Path(__file__).resolve().parents[1])
     if finagent_root not in sys.path:
         sys.path.insert(0, finagent_root)
-    from finagent.core_metrics import enrich_core_metrics, industry_has_display_name, restore_industry_from_snapshot_history
+    from finagent.core_metrics import (
+        _industry_from_rqdata,
+        enrich_core_metrics,
+        industry_has_display_name,
+        restore_industry_from_snapshot_history,
+    )
+    from finagent.core_metrics import _parse_as_of_date
     from finagent.datastore.db import META_KEYS
     from finagent.datastore.meta_utils import meta_value_is_usable
     from finagent.price_technical import ensure_technical_from_price_rows
@@ -86,8 +118,27 @@ def main():
         enrich_core_metrics(payload)
 
         if not industry_has_display_name(payload.get("industry")):
-            em = payload.get("industry") or {}
-            print("  warn: industry still empty after enrich; check eastmoney network or re-run full rqdata ingest")
+            as_of = _parse_as_of_date(payload.get("end_date"))
+            rq_ind = _industry_from_rqdata(code, as_of)
+            if rq_ind:
+                payload["industry"] = rq_ind
+                print("  industry from rqdata:", json.dumps(rq_ind, ensure_ascii=False)[:120])
+
+        if force_industry_name:
+            manual = {
+                "first_industry_name": force_industry_name,
+                "industry_source": "manual_cli",
+            }
+            if force_industry_code:
+                manual["first_industry_code"] = str(force_industry_code)
+            payload["industry"] = manual
+            print("  industry set via CLI:", json.dumps(manual, ensure_ascii=False))
+
+        if not industry_has_display_name(payload.get("industry")):
+            print(
+                "  warn: industry still empty; try --industry 食品饮料 --industry-code 36, "
+                "or re-run full rqdata ingest (data_executor), or check RQ_* / eastmoney network"
+            )
 
         old_meta = json.loads(
             conn.execute("SELECT meta_json FROM data_snapshots WHERE id = ?", (sid,)).fetchone()[0] or "{}"
