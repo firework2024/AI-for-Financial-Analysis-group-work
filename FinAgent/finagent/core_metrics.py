@@ -17,6 +17,15 @@ _INDUSTRY_NAME_KEYS = (
 
 _DIVIDEND_AMOUNT_KEYS = ("dividend_cash_before_tax", "cash_div", "cash_amount", "amount")
 
+# 与米筐 citics_2019 一级行业代码对齐（以本仓库 report 样本为准，仅列已校验 code）
+CITICS_2019_L1_NAMES = {
+    "27": "电力设备及新能源",
+    "36": "食品饮料",
+    "40": "银行",
+    "42": "房地产",
+    "60": "电子",
+}
+
 
 def industry_has_display_name(industry: dict[str, Any] | None) -> bool:
     if not isinstance(industry, dict) or not industry:
@@ -64,10 +73,78 @@ def _industry_from_eastmoney(stock_code: str) -> dict[str, Any]:
     return {}
 
 
+def _industry_from_citics_code(industry: dict[str, Any]) -> dict[str, Any]:
+    for key in ("first_industry_code", "level1_code", "industry_code"):
+        raw = industry.get(key)
+        if raw in (None, ""):
+            continue
+        code = str(raw).strip()
+        name = CITICS_2019_L1_NAMES.get(code)
+        if name:
+            out = dict(industry)
+            out["first_industry_name"] = name
+            out["industry_source"] = "citics_2019_l1_code"
+            return out
+    return {}
+
+
+def restore_industry_from_snapshot_history(
+    conn: Any,
+    stock_code: str,
+    *,
+    exclude_snapshot_id: int | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """从同股票更早快照 meta 恢复未被清空的 industry（修复空对象覆盖后遗留问题）。"""
+    code = str(stock_code or "").strip().split(".")[0]
+    if not code:
+        return {}
+    try:
+        if exclude_snapshot_id is not None:
+            rows = conn.execute(
+                """
+                SELECT meta_json FROM data_snapshots
+                WHERE stock_code = ? AND id != ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (code, int(exclude_snapshot_id), int(limit)),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT meta_json FROM data_snapshots
+                WHERE stock_code = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (code, int(limit)),
+            ).fetchall()
+    except Exception:
+        return {}
+    import json
+
+    for (meta_raw,) in rows:
+        try:
+            meta = json.loads(meta_raw or "{}")
+        except (TypeError, ValueError):
+            continue
+        block = meta.get("industry")
+        if isinstance(block, dict) and industry_has_display_name(block):
+            restored = dict(block)
+            restored["industry_source"] = restored.get("industry_source") or "snapshot_history"
+            return restored
+    return {}
+
+
 def resolve_industry_dict(data: dict[str, Any]) -> dict[str, Any]:
     industry = dict(data.get("industry") or {}) if isinstance(data.get("industry"), dict) else {}
     if industry_has_display_name(industry):
         return industry
+
+    coded = _industry_from_citics_code(industry)
+    if coded:
+        return coded
 
     comparison = data.get("industry_comparison")
     if isinstance(comparison, dict):
@@ -211,7 +288,7 @@ def derive_dividend_yield_ttm(data: dict[str, Any]) -> float | None:
 def enrich_core_metrics(data: dict[str, Any]) -> None:
     """就地补全行业与股息率，供报告 HTML/前端 data_summary 使用。"""
     industry = resolve_industry_dict(data)
-    if industry:
+    if industry_has_display_name(industry):
         data["industry"] = industry
 
     factor = dict(data.get("factor") or {}) if isinstance(data.get("factor"), dict) else {}

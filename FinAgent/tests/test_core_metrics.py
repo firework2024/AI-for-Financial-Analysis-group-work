@@ -38,6 +38,13 @@ def test_derive_dividend_yield_from_dividend_rows():
     assert 0.002 < yield_ratio < 0.05
 
 
+def test_industry_from_citics_code_map():
+    from finagent.core_metrics import _industry_from_citics_code
+
+    out = _industry_from_citics_code({"first_industry_code": "36"})
+    assert out.get("first_industry_name") == "食品饮料"
+
+
 def test_enrich_core_metrics_updates_factor_and_industry():
     data = {
         "industry": {},
