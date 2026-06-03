@@ -118,7 +118,7 @@ CHART_QUALITY_REQUIREMENTS = [
 
 TABLE_QUALITY_REQUIREMENTS = [
     "量价/技术章节的技术指标只允许一张 Markdown 竖表（指标|数值|解读），禁止横表（维度|MA20|MA60…）与同指标第二张表并存。",
-    "若正文已用竖表列出 MA/RSI/收益率等，不要再额外插入「技术指标快照」或同内容重复表。",
+    "禁止机械插入或保留「表 · 技术指标快照」块；technical_snapshot_table 已停用，由 section_writer 自行写表。",
     "表格解读列应简短说明相对位置或趋势含义，数值列与 JSON 中 technical 字段一致。",
 ]
 
@@ -2295,7 +2295,6 @@ def _industry_comparison_writer_guidance(
             "3) 至少选择 2-3 个经营类关键指标说明目标公司相对行业均值、中位数和分位；"
             "4) 系统会插入「行业盈利能力对比」「行业成长与杠杆对比」Markdown 表格，写作时引用表格结论即可，不要逐条重复表格中的数值清单；"
             "5) DBSCAN 可用时只解释经营质量相关贡献指标；若主要异常来自估值因子，则说明聚类证据不用于经营质量结论；"
-            "6) 禁止写 PE/PB/PS、股息率、估值分位、估值吸引力或估值匹配判断。"
             "行业口径必须以 industry_comparison_summary.industry.selected_level 和 selected_industry_name 为准，不要把一级行业误写成同行池。"
             + (f"同行对比写作简报：{brief}" if brief else "")
         )

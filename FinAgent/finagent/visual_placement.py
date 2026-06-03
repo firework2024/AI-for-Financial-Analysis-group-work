@@ -12,6 +12,7 @@ from .chart_catalog import (
     MARKET_TECH_SECTION,
     TABLE_ALL_KEYS,
     chart_caption,
+    table_key_allowed_for_placement,
 )
 from .chart_dynamic import _pick_anchor, _text_matches_hints
 from .data_registry import data_available_for_chart
@@ -119,6 +120,9 @@ def local_visual_need(
 
         for table_key in table_candidates_for_plan_section(section_name, plan):
             if table_picked >= table_limit or table_key in used_tables:
+                continue
+            if not table_key_allowed_for_placement(table_key):
+                skip.append({"visual_key": table_key, "kind": "table", "reason": "已禁用机械插入"})
                 continue
             if not table_data_available(table_key, data):
                 skip.append({"visual_key": table_key, "kind": "table", "reason": "数据不足"})
@@ -232,6 +236,7 @@ def visual_need_agent(
             "available": table_data_available(key, data),
         }
         for key in _all_table_keys()
+        if table_key_allowed_for_placement(key)
     ]
     plan_sections = [
         {
@@ -248,6 +253,7 @@ def visual_need_agent(
             "你是 visual_need_agent。只返回 JSON。"
             "阅读各章节正文，决定需要哪些 chart（PNG）和 table（Markdown 表格）支撑叙述。"
             "优先选用 catalog 中 available=true 的项；正文未讨论的主题不要选。"
+            "technical_snapshot_table 已禁用，不得选用；技术指标表由章节作者自行撰写。"
             "每张图/表需指定 section 与 anchor（正文真实小节标题或 **加粗小标题** 短语）。"
             "量纲不可比的多指标用 table 而非 bar 图；同一语义只保留一项。",
             json.dumps(
@@ -291,6 +297,8 @@ def build_placement_from_visual_need(
         visual_key = str(item.get("visual_key") or item.get("chart_key") or "").strip()
         kind = str(item.get("kind") or "chart").strip()
         if not visual_key or visual_key in used or visual_key in blocked:
+            continue
+        if kind == "table" and not table_key_allowed_for_placement(visual_key):
             continue
         if kind == "chart" and embedded_chart_count >= max_embedded_charts:
             continue
@@ -340,11 +348,11 @@ def _visual_item(
 
 
 def _all_table_keys() -> set[str]:
-    return set(TABLE_ALL_KEYS)
+    return {key for key in TABLE_ALL_KEYS if table_key_allowed_for_placement(key)}
 
 
 # re-export for local_visual_need table hints
-from .chart_catalog import TABLE_SUBHEADING_HINTS  # noqa: E402
+from .chart_catalog import DISABLED_PLACEMENT_TABLE_KEYS, TABLE_SUBHEADING_HINTS  # noqa: E402
 
 
 def _sanitize_visual_need(
@@ -364,6 +372,8 @@ def _sanitize_visual_need(
             continue
         visual_key = str(item.get("visual_key") or item.get("chart_key") or "").strip()
         if not visual_key or visual_key in seen or visual_key in blocked:
+            continue
+        if visual_key in DISABLED_PLACEMENT_TABLE_KEYS:
             continue
         kind = str(item.get("kind") or ("table" if visual_key in TABLE_ALL_KEYS else "chart")).strip()
         if kind == "chart" and visual_key not in charts:

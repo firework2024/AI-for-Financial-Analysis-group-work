@@ -24,6 +24,7 @@ from .chart_catalog import (
     TABLE_SUBHEADING_HINTS,
     chart_caption,
     fallback_chart_note,
+    table_key_allowed_for_placement,
 )
 from .table_blocks import format_table_block, table_data_available
 from .data_capabilities import build_data_capability_inventory, filter_gap_notes
@@ -583,10 +584,12 @@ def _inline_chart_limit(section: str) -> int:
 
 
 def _placement_keys(charts: dict[str, str], data: dict[str, Any] | None = None) -> set[str]:
+    from .chart_catalog import TABLE_ALL_KEYS, table_key_allowed_for_placement
+
     keys = set(charts)
     if data:
         for name in TABLE_ALL_KEYS:
-            if table_data_available(name, data):
+            if table_key_allowed_for_placement(name) and table_data_available(name, data):
                 keys.add(name)
     return keys
 
@@ -972,7 +975,11 @@ def apply_chart_placements(
             name
             for name in item.get("charts") or []
             if name in charts
-            or (str(name) in TABLE_ALL_KEYS and table_data_available(str(name), data))
+            or (
+                str(name) in TABLE_ALL_KEYS
+                and table_key_allowed_for_placement(str(name))
+                and table_data_available(str(name), data)
+            )
         ]
         anchor = str(item.get("anchor") or "").strip() or None
         placement_note = str(item.get("note") or "").strip() or None

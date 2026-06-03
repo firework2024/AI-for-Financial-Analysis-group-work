@@ -118,11 +118,12 @@ INDUSTRY_COMPARE_TABLE_SPECS: dict[str, tuple[str, ...]] = {
 }
 INDUSTRY_COMPARE_TABLE_KEYS = frozenset(INDUSTRY_COMPARE_TABLE_SPECS)
 
+DISABLED_PLACEMENT_TABLE_KEYS = frozenset({"technical_snapshot_table"})
+
 TABLE_CAPTIONS: dict[str, str] = {
     "latest_quality_snapshot": "最新盈利质量因子",
     "latest_valuation_snapshot": "最新估值因子",
     "latest_liquidity_snapshot": "最新偿债与流动性",
-    "technical_snapshot_table": "技术指标快照",
     "margin_snapshot_table": "融资融券快照",
     "margin_period_table": "两融区间变动",
     "share_structure_table": "股本结构快照",
@@ -139,7 +140,6 @@ TABLE_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "latest_quality_snapshot": ("盈利", "毛利率", "净利率", "ROE", "财务健康"),
     "latest_valuation_snapshot": ("估值", "市盈率", "市净率", "PE", "PB", "PS"),
     "latest_liquidity_snapshot": ("偿债", "流动比率", "速动", "负债"),
-    "technical_snapshot_table": ("RSI", "均线", "MA20", "MA60", "技术指标", "收益率"),
     "margin_snapshot_table": ("融资", "两融", "融券", "杠杆", "融资融券"),
     "margin_period_table": ("融资余额", "近两周", "攀升", "两融", "变动", "区间"),
     "share_structure_table": ("股东", "股本", "流通", "自由流通", "限售"),
@@ -194,7 +194,6 @@ TABLE_ALL_KEYS = frozenset(
     set(TABLE_SNAPSHOT_KEYS)
     | set(INDUSTRY_COMPARE_TABLE_KEYS)
     | {
-        "technical_snapshot_table",
         "margin_snapshot_table",
         "margin_period_table",
         "share_structure_table",
@@ -410,6 +409,10 @@ SECTION_INLINE_CHART_LIMITS: dict[str, int] = {
     "宏观利率背景":21,
     "资金与交易结构": 2,
 }
+
+
+def table_key_allowed_for_placement(table_key: str) -> bool:
+    return table_key in TABLE_ALL_KEYS and table_key not in DISABLED_PLACEMENT_TABLE_KEYS
 
 
 def chart_caption(name: str) -> str:

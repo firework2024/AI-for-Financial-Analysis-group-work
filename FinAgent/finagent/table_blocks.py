@@ -6,7 +6,13 @@ from typing import Any
 
 import pandas as pd
 
-from .chart_catalog import INDUSTRY_COMPARE_TABLE_SPECS, TABLE_CAPTIONS, TABLE_SNAPSHOT_SPECS
+from .chart_catalog import (
+    DISABLED_PLACEMENT_TABLE_KEYS,
+    INDUSTRY_COMPARE_TABLE_SPECS,
+    TABLE_CAPTIONS,
+    TABLE_SNAPSHOT_SPECS,
+    table_key_allowed_for_placement,
+)
 from .chart_style import format_factor_display, label, to_percent_points
 from .peer_analysis import FACTOR_LABELS
 from .report_format import fmt_money, fmt_num, fmt_pct
@@ -33,12 +39,13 @@ def table_caption(table_key: str) -> str:
 
 def format_table_block(table_key: str, data: dict[str, Any]) -> str | None:
     """渲染单个表格块；无数据时返回 None。"""
+    if table_key in DISABLED_PLACEMENT_TABLE_KEYS:
+        return None
     if table_key in INDUSTRY_COMPARE_TABLE_SPECS:
         return _format_industry_compare_table(table_key, data)
     if table_key in TABLE_SNAPSHOT_SPECS:
         return _format_factor_snapshot_table(table_key, data)
     builders = {
-        "technical_snapshot_table": _format_technical_snapshot_table,
         "margin_snapshot_table": _format_margin_snapshot_table,
         "margin_period_table": _format_margin_period_table,
         "share_structure_table": _format_share_structure_table,
@@ -184,137 +191,6 @@ def _format_industry_compare_table(table_key: str, data: dict[str, Any]) -> str 
     headers = ("指标", "本公司", "行业中位数", "行业均值", "行业分位", "解读")
     lines.extend(_markdown_table(headers, rows))
     return "\n".join(lines).strip()
-
-
-def _latest_price_date(data: dict[str, Any]) -> str:
-    end_date = data.get("end_date")
-    if end_date:
-        return str(end_date)[:10]
-    price = data.get("price")
-    if isinstance(price, dict) and isinstance(price.get("rows"), list) and price["rows"]:
-        latest = price["rows"][-1]
-        if isinstance(latest, dict) and latest.get("date"):
-            return str(latest["date"])[:10]
-    return "最新"
-
-
-def _return_note(value: Any, *, window: str) -> str:
-    parsed = _safe_float(value)
-    if parsed is None:
-        return "—"
-    pct = parsed * 100 if abs(parsed) <= 1.5 else parsed
-    if pct >= 5:
-        return f"{window}上涨"
-    if pct <= -5:
-        return f"{window}回调明显"
-    if pct >= 1:
-        return f"{window}小幅上涨"
-    if pct <= -1:
-        return f"{window}小幅走弱"
-    return f"{window}波动不大"
-
-
-def _ma_note(close: float | None, ma: float | None, *, period: int) -> str:
-    if close is None or ma is None or ma == 0:
-        return "—"
-    if close > ma * 1.01:
-        return f"当前价格高于{period}日均线"
-    if close < ma * 0.99:
-        return f"当前价格低于{period}日均线"
-    return f"当前价格贴近{period}日均线"
-
-
-def _rsi_note(value: Any) -> str:
-    parsed = _safe_float(value)
-    if parsed is None:
-        return "—"
-    if parsed >= 70:
-        return "偏强，接近超买"
-    if parsed <= 30:
-        return "偏弱，接近超卖"
-    if parsed >= 55:
-        return "偏强，未超买"
-    if parsed <= 45:
-        return "偏弱，未超卖"
-    return "中性区间"
-
-
-def _macd_note(macd: Any, signal: Any) -> str:
-    m = _safe_float(macd)
-    s = _safe_float(signal)
-    if m is None or s is None:
-        return "—"
-    if m > s:
-        return "MACD 在信号线上方"
-    if m < s:
-        return "MACD 在信号线下方"
-    return "MACD 与信号线接近"
-
-
-def _drawdown_note(value: Any, *, label: str) -> str:
-    parsed = _safe_float(value)
-    if parsed is None:
-        return "—"
-    pct = abs(parsed * 100 if abs(parsed) <= 1.5 else parsed)
-    if pct >= 20:
-        return f"{label}较深"
-    if pct >= 10:
-        return f"{label}中等"
-    if pct >= 3:
-        return f"{label}温和"
-    return f"{label}较小"
-
-
-def _technical_metric_notes(technical: dict[str, Any], data: dict[str, Any]) -> dict[str, str]:
-    as_of = _latest_price_date(data)
-    close = _safe_float(technical.get("latest_close"))
-    ma20 = _safe_float(technical.get("ma20"))
-    ma60 = _safe_float(technical.get("ma60"))
-    macd = _safe_float(technical.get("macd"))
-    signal = _safe_float(technical.get("macd_signal"))
-    return {
-        "最新收盘价": f"截至{as_of}",
-        "MA20": _ma_note(close, ma20, period=20),
-        "MA60": _ma_note(close, ma60, period=60),
-        "20 日收益率": _return_note(technical.get("return_20d"), window="短期"),
-        "60 日收益率": _return_note(technical.get("return_60d"), window="中期"),
-        "RSI14": _rsi_note(technical.get("rsi14")),
-        "MACD": _macd_note(macd, signal),
-        "MACD 信号线": _macd_note(macd, signal),
-        "20 日波动率": _drawdown_note(technical.get("volatility_20d"), label="波动"),
-        "最新回撤": _drawdown_note(technical.get("latest_drawdown"), label="回撤"),
-        "最大回撤": _drawdown_note(technical.get("max_drawdown"), label="区间回撤"),
-        "20 日均量": "近20个交易日均量",
-    }
-
-
-def _format_technical_snapshot_table(data: dict[str, Any]) -> list[str]:
-    technical = data.get("technical") if isinstance(data.get("technical"), dict) else {}
-    if not technical:
-        return []
-    columns = [
-        ("最新收盘价", fmt_num(technical.get("latest_close"))),
-        ("MA20", fmt_num(technical.get("ma20"))),
-        ("MA60", fmt_num(technical.get("ma60"))),
-        ("20 日收益率", fmt_pct(technical.get("return_20d"))),
-        ("60 日收益率", fmt_pct(technical.get("return_60d"))),
-        ("RSI14", fmt_num(technical.get("rsi14"))),
-        ("MACD", fmt_num(technical.get("macd"))),
-        ("MACD 信号线", fmt_num(technical.get("macd_signal"))),
-        ("20 日波动率", fmt_pct(technical.get("volatility_20d"))),
-        ("最新回撤", fmt_pct(technical.get("latest_drawdown"))),
-        ("最大回撤", fmt_pct(technical.get("max_drawdown"))),
-        ("20 日均量", fmt_num(technical.get("avg_volume_20d"))),
-    ]
-    notes = _technical_metric_notes(technical, data)
-    rows = [
-        (name, value, notes.get(name, "—"))
-        for name, value in columns
-        if value not in ("—", "-", "N/A", "数据缺失", "")
-    ]
-    if len(rows) < 3:
-        return []
-    return _markdown_table(("指标", "数值", "解读"), rows)
 
 
 def _format_margin_snapshot_table(data: dict[str, Any]) -> list[str]:
@@ -553,4 +429,6 @@ def _latest_margin_row(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def table_data_available(table_key: str, data: dict[str, Any]) -> bool:
+    if not table_key_allowed_for_placement(table_key):
+        return False
     return format_table_block(table_key, data) is not None
