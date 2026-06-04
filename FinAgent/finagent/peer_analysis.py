@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -242,7 +242,9 @@ def _industry_members(rqdatac: Any, industry: str, as_of: date) -> list[str]:
 def _latest_factor_frame(rqdatac: Any, order_book_ids: list[str], factors: list[str], as_of: date) -> pd.DataFrame:
     if not order_book_ids or not factors:
         return pd.DataFrame()
-    df = rqdatac.get_factor(order_book_ids, factors, start_date=as_of, end_date=as_of)
+    # 当日因子可能尚未更新；回看若干交易日取各股票最近一条有效截面。
+    lookback_start = as_of - timedelta(days=15)
+    df = rqdatac.get_factor(order_book_ids, factors, start_date=lookback_start, end_date=as_of)
     if df is None or getattr(df, "empty", True):
         return pd.DataFrame(index=order_book_ids, columns=factors)
     frame = df.reset_index()
@@ -250,8 +252,16 @@ def _latest_factor_frame(rqdatac: Any, order_book_ids: list[str], factors: list[
         first = frame.columns[0]
         frame = frame.rename(columns={first: "order_book_id"})
     if "date" in frame.columns:
-        frame = frame.sort_values("date")
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+        frame = frame.sort_values(["order_book_id", "date"])
+        core = [name for name in CORE_EFFECTIVE_FACTORS if name in frame.columns]
+        if core:
+            frame = frame[frame[core].notna().any(axis=1)]
     frame = frame.groupby("order_book_id", as_index=True).tail(1).set_index("order_book_id")
+    for order_book_id in order_book_ids:
+        if order_book_id not in frame.index:
+            frame.loc[order_book_id] = pd.NA
+    frame = frame.reindex(order_book_ids)
     for factor in factors:
         if factor not in frame.columns:
             frame[factor] = pd.NA

@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from finagent.peer_analysis import PEER_FACTOR_CANDIDATES, fetch_industry_comparison
+from finagent.peer_analysis import PEER_FACTOR_CANDIDATES, _latest_factor_frame, fetch_industry_comparison
 
 
 TARGET = "000001.XSHE"
@@ -133,3 +133,39 @@ def test_dbscan_outputs_noise_or_single_metric_anomaly_when_target_is_extreme():
     assert cluster["status"] == "ok"
     assert cluster["points"]
     assert cluster["is_noise"] or cluster["single_metric_anomalies"]
+
+
+def test_latest_factor_frame_uses_recent_history_when_as_of_is_empty():
+    members = [TARGET, "000002.XSHE"]
+    factors = ["pe_ratio_ttm", "pb_ratio_ttm", "ps_ratio_ttm"]
+
+    class StaleTodayRQData(FakeRQData):
+        def get_factor(self, order_book_ids, factors, start_date=None, end_date=None):
+            rows = []
+            for order_book_id in order_book_ids:
+                rows.append(
+                    {
+                        "order_book_id": order_book_id,
+                        "date": date(2026, 6, 3),
+                        "pe_ratio_ttm": 10.0,
+                        "pb_ratio_ttm": 1.0,
+                        "ps_ratio_ttm": 2.0,
+                    }
+                )
+                rows.append(
+                    {
+                        "order_book_id": order_book_id,
+                        "date": date(2026, 6, 4),
+                        "pe_ratio_ttm": None,
+                        "pb_ratio_ttm": None,
+                        "ps_ratio_ttm": None,
+                    }
+                )
+            frame = pd.DataFrame(rows)
+            return frame.set_index(["order_book_id", "date"])
+
+    rq = StaleTodayRQData(third_members=members, second_members=[], values=_values(members))
+    frame = _latest_factor_frame(rq, members, factors, date(2026, 6, 4))
+
+    assert frame.loc[TARGET, "pe_ratio_ttm"] == pytest.approx(10.0)
+    assert frame.loc[TARGET, "pb_ratio_ttm"] == pytest.approx(1.0)
