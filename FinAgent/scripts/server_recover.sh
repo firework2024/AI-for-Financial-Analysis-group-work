@@ -2,7 +2,7 @@
 # 在服务器 Git 仓库根目录执行（含 FinAgent/ 子目录的那一层）：
 #   cd /www/wwwroot/AI-for-Financial-Analysis-group-work
 #   bash FinAgent/scripts/server_recover.sh
-set -euo pipefail
+set -eu
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [[ -z "${ROOT}" || ! -d "${ROOT}/FinAgent" ]]; then
