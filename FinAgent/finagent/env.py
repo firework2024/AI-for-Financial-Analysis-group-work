@@ -55,7 +55,16 @@ def rqdata_configured() -> bool:
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    env_root = os.getenv("FINAGENT_ROOT")
+    if env_root:
+        return Path(env_root).expanduser().resolve()
+    here = Path(__file__).resolve().parent.parent
+    if (here / "pyproject.toml").exists():
+        return here
+    cwd = Path.cwd()
+    if (cwd / "pyproject.toml").exists():
+        return cwd
+    return here
 
 
 def _strip_quotes(value: str) -> str:

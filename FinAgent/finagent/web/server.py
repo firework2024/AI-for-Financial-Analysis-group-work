@@ -34,8 +34,24 @@ from ..multiagent import MultiAgentOptions, run_multi_agent
 from ..report_format import DISCLAIMER
 from ..workflow import WorkflowOptions, run
 
-FINAGENT_ROOT = Path(__file__).resolve().parents[2]
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+def _resolve_static_dir() -> Path:
+    candidates = [
+        Path(__file__).resolve().parent / "static",
+        project_root() / "finagent" / "web" / "static",
+    ]
+    seen: set[Path] = set()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if (resolved / "index.html").is_file():
+            return resolved
+    return candidates[0].resolve()
+
+FINAGENT_ROOT = project_root()
+STATIC_DIR = _resolve_static_dir()
 OUTPUTS_DIR = FINAGENT_ROOT / "outputs"
 PARENT_OUTPUTS_DIR = FINAGENT_ROOT.parent / "outputs"
 CHAT_DIR = FINAGENT_ROOT / "chat_data"
@@ -806,10 +822,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
+        static_ok = (STATIC_DIR / "index.html").is_file()
         return {
-            "status": "ok",
+            "status": "ok" if static_ok else "degraded",
             "rqdata": "configured" if rqdata_configured() else "missing",
             "web_search": "enabled" if web_search_configured() else "disabled",
+            "static_ui": "ok" if static_ok else "missing",
+            "static_dir": str(STATIC_DIR),
         }
 
     @app.get("/api/data/stocks/{stock_code}")
@@ -1178,7 +1197,10 @@ def create_app() -> FastAPI:
         """兼容前端相对路径 charts/...（浏览器会请求 /charts/... 而非 /files/charts/...）。"""
         return _serve_output_file(f"charts/{chart_path}", user)
 
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
+    if not (STATIC_DIR / "index.html").is_file():
+        raise RuntimeError(f"FinAgent 前端静态文件缺失: {STATIC_DIR / 'index.html'}")
+
+    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR)), name="assets")
 
     @app.get("/")
     def index() -> FileResponse:

@@ -23,6 +23,9 @@ finagent = "finagent.cli:main"
 include = ["finagent*"]
 exclude = ["annual_reports*", "outputs*", "tests*"]
 
+[tool.setuptools.package-data]
+finagent = ["web/static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
