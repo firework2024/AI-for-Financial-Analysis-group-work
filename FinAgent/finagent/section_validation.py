@@ -34,8 +34,7 @@ CHART_QUALITY_REQUIREMENTS = [
 ]
 
 TABLE_QUALITY_REQUIREMENTS = [
-    "section_writer 禁止在正文输出任何 Markdown 表格（| 列 |）；多年财务、技术指标等对比用句子或 - 列表，表格由系统 mechanical placement 插入。",
-    "若正文出现 LLM 自画的 | 表格（含多年宽表、技术指标表、TTM 快照表），必须在 section_feedback 要求全部删除。",
+    "LLM 可在正文输出 Markdown 表格（| 列 |）展示多年/多指标对比；勿因「自画表」要求删表改 prose。",
     peer_compare_table_writing_rule(),
     "系统机械插入的「表·同行横向坐标」「表·行业横向坐标」「表·行业估值对比」等不得再在正文逐条重复数值；正文只保留一句定性判断。",
     "禁止在正文重复系统「表·xxx」机械表内容；同一表头不得跨章重复出现。",
@@ -213,19 +212,8 @@ def _is_wide_technical_table(rows: list[list[str]]) -> bool:
 
 
 def technical_table_section_review(sections: dict[str, str]) -> dict[str, list[str]]:
-    feedback: dict[str, list[str]] = {}
-    note = "禁止 LLM 自画 Markdown 表格；请删去正文中的 | 技术指标/量价表，改用句子或 - 列表表述。"
-    for section_name, content in sections.items():
-        if not section_is_market_technical(section_name):
-            continue
-        text = str(content or "")
-        tables = markdown_tables(text)
-        if not tables:
-            continue
-        technical_tables = [table for table in tables if _table_covers_technical_metrics(table)]
-        if technical_tables or len(tables) >= 1:
-            feedback.setdefault(section_name, []).append(note)
-    return feedback
+    """保留接口；不再因 LLM 自画 Markdown 表触发 validation 删表建议。"""
+    return {}
 
 
 def _section_is_peer_compare_section(section_name: str, plan: dict[str, Any] | None = None) -> bool:
@@ -275,23 +263,8 @@ def factor_snapshot_table_section_review(
     *,
     plan: dict[str, Any] | None = None,
 ) -> dict[str, list[str]]:
-    feedback: dict[str, list[str]] = {}
-    note = (
-        "请删去正文中的 Markdown 表格（含「表·最新盈利质量因子」类自画表、多年宽表、TTM 快照表）；"
-        "盈利/现金流/营运效率多年对比改用句子或 - 列表，勿输出 | 表格。"
-    )
-    for section_name, content in sections.items():
-        if not is_operating_quality_section(section_name, plan) and not any(
-            token in section_name for token in ("经营质量", "基本面", "财务")
-        ):
-            continue
-        text = str(content or "")
-        if any(heading in text for heading in _DISABLED_FACTOR_SNAPSHOT_HEADINGS):
-            feedback.setdefault(section_name, []).append(note)
-            continue
-        if re.search(r"\|\s*维度\s*\|\s*毛利率\(TTM\)", text):
-            feedback.setdefault(section_name, []).append(note)
-    return feedback
+    """保留接口；不再因 TTM/多年宽表等 LLM Markdown 表触发 validation 删表建议。"""
+    return {}
 
 
 def section_is_market_kind(section_name: str, plan: dict[str, Any] | None = None) -> bool:
@@ -710,7 +683,7 @@ def market_writer_guidance() -> str:
     return (
         "本章节仅写量价与技术面：收盘价、均线、成交量、换手率、RSI/MACD、累计收益、回撤。"
         "禁止 PE/PB/PS、股息率、市值、营收/净利润/现金流、两融、Shibor/国债、同行对比及 valuation 类图表。"
-        "禁止自画 Markdown 表格；技术指标用句子或 - 列表表述，系统会机械插入「表·技术指标快照」等表。"
+        "技术指标可用 Markdown 表格或句子/列表表述。"
     )
 
 
@@ -1076,8 +1049,7 @@ def validation_agent_system_prompt() -> str:
         "如果图表数量不足 8 张或存在大量低质量图，应在 `refinement_requests` 中将 `refresh_charts` 设为 true，并说明原因。\n\n"
         "## 表格质量标准（必须逐章节核对）\n"
         + _numbered_rules(TABLE_QUALITY_REQUIREMENTS)
-        + "\n\n若任意章节正文出现 LLM 自画的 | 表格，必须在 section_feedback 要求删除并改为 prose/列表。"
-        + "\n若经营质量/估值章节在「同行横向坐标」等小标题下逐条写行业中位数/分位，必须要求删 prose 数值、改由系统机械表展示。"
+        + "\n\n若经营质量/估值章节在「同行横向坐标」等小标题下逐条写行业中位数/分位，必须要求删 prose 数值、改由系统机械表展示。"
         + "\n\n## 章节去重与分工（重点）\n"
         + _numbered_rules(SECTION_DEDUP_REQUIREMENTS)
         + "\n\n必须逐对检查「宏观利率背景」与基本面/估值/资金/经营质量/风险章是否重复。"

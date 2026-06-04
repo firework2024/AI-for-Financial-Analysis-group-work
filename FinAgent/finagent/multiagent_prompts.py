@@ -15,7 +15,7 @@ from .report_format import section_writing_style_hint
 from .report_writing import (
     analytical_writing_core,
     fundamental_narrative_system_prompt,
-    llm_no_table_writing_rule,
+    llm_table_writing_rule,
     section_opening_conclusion_rule,
 )
 from .section_prompts import (
@@ -43,8 +43,8 @@ _DATA_INTEGRITY_RULES = (
 _MDA_WRITING_RULES = (
     "若有 mda_business_brief、mda_crosswalk 或 mda_full_text，在相关段落做「量化数据 + MD&A 基本业务/业务发展/风险披露 + 独立判断」三者对照，"
     "作为本节论述支撑，勿设独立勾稽章节；数值结论必须可从 JSON 追溯；"
-    + llm_no_table_writing_rule()
-    + "pit_financials_table / financial_years 等多指标对比用句子或 - 列表，勿自画表。"
+    + llm_table_writing_rule()
+    + "pit_financials_table / financial_years 等多指标对比可用 Markdown 表格或句子/列表表述。"
 )
 
 _OUTPUT_FORMAT_RULES = (
@@ -112,8 +112,8 @@ def revise_section_system_prompt(
         + f"{section_writing_style_hint(section_name)} "
         + f"{guidance}"
         + f"{hard_constraints}"
-        + f"{llm_no_table_writing_rule()} "
-        + "优先引用 data.analytical_evidence；多年数据用句子或 - 列表表述，禁止输出 | 表格。"
+        + f"{llm_table_writing_rule()} "
+        + "优先引用 data.analytical_evidence；多年数据可用 Markdown 表格或句子/列表表述。"
         + "若有 mda_business_brief 或 mda_crosswalk，在相关段落融入基本业务/业务发展等 MD&A 表述作论述支撑，"
         + "形成「报表或行情数据 + 管理层解释 + 独立判断」，勿设独立勾稽章节。"
         + "每一段都必须回到目标股票本身：引用目标股票代码、具体指标、目标股票图表或目标股票对应行业归属。"

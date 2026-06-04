@@ -10,14 +10,14 @@ _ANALYTICAL_CORE = (
     "空一行后再写小标题与细节；全报告级执行摘要另由系统生成。"
     "每个判断必须可追溯至 JSON 字段或由其可推导（同比、CAGR、区间收益、简易估值倍数等须注明口径）；"
     "禁止空泛形容词替代数据；"
-    "禁止在正文输出 Markdown 表格（| 列 |）；多年/多指标对比用连贯句子或 - 列表，对比表由系统机械插入。"
+    "多年/多指标对比可用 Markdown 表格（| 列 |）或连贯句子与 - 列表；系统亦会机械插入「表·xxx」，勿与机械表重复展开。"
     "同行/行业横向比较只引用系统「表·同行横向坐标」等机械表结论，禁止正文逐条列举中位数与分位；"
     "解释「为什么」而不只描述「是什么」；不给买卖建议；"
     "禁止输出思考过程或 <thinking> 标签。"
 )
 
 _LOOSE_FUNDAMENTAL_WRITING = (
-    "基于给定数据写 Markdown 正文：结论先行、数字具体；禁止输出 Markdown 表格，数值用句子或列表。"
+    "基于给定数据写 Markdown 正文：结论先行、数字具体；多年/多指标可用 Markdown 表格或列表呈现。"
     "小标题与段落顺序按公司实际情况自由组织，聚焦本轮最重要的矛盾（如增收不增利、现金流背离、结构迁移等），"
     "不必套用固定章节模板。"
     "有 MD&A 或 mda_crosswalk 时在叙述中自然对照管理层表述与报表数字，勿单独设「勾稽」章节。"
@@ -25,16 +25,16 @@ _LOOSE_FUNDAMENTAL_WRITING = (
 )
 
 _LOOSE_SECTION_WRITING = (
-    "本节正文：优先用 JSON 中的数字写清判断与因果；禁止输出 Markdown 表格（| 开头），数据不足用 - 列表说明局限。"
+    "本节正文：优先用 JSON 中的数字写清判断与因果；数据不足用 - 列表说明局限。"
     "可选用 **加粗短语** 作小标题，无合适切块时可连贯段落书写，勿套用固定小节清单。"
     "有 mda_business_brief 或 mda_crosswalk 时，在相关段落自然融入 MD&A 中基本业务、业务发展、行业与战略等管理层表述，"
     "与量化指标形成「数据事实 + 管理层解释 + 独立判断」三层论述，勿单独设勾稽章节。"
 )
 
-def llm_no_table_writing_rule() -> str:
+def llm_table_writing_rule() -> str:
     return (
-        "禁止在正文输出任何 Markdown 表格（不得以 | 分隔行列）；"
-        "指标对比用连贯句子或 - 列表；系统会机械插入「表·xxx」，正文只引用表结论一句，勿复述表内数字。"
+        "可用 Markdown 表格（| 分隔行列）展示多年/多指标对比；"
+        "系统会机械插入「表·xxx」时，正文只引用表结论一句，勿与机械表重复复述表内数字。"
     )
 
 _MDA_KIND_WRITING: dict[str, str] = {
@@ -146,10 +146,10 @@ def mda_business_writing_guide(section_name: str, *, section_kind: str | None = 
 
 def section_writing_guide(section_name: str, *, section_kind: str | None = None) -> str:
     """多智能体各章节写作补充指引（不重复 analytical_writing_core，无固定分节模板）。"""
-    guide = _LOOSE_SECTION_WRITING + llm_no_table_writing_rule() + mda_business_writing_guide(section_name, section_kind=section_kind)
+    guide = _LOOSE_SECTION_WRITING + llm_table_writing_rule() + mda_business_writing_guide(section_name, section_kind=section_kind)
     if any(token in section_name for token in ("量价", "技术", "趋势", "K线", "均线")):
         guide += (
-            "技术指标由系统插入「表·技术指标快照」竖表；正文只写解读与因果，勿自画表。"
+            "技术指标可用 Markdown 表格或句子表述；系统亦可能插入「表·技术指标快照」等机械表。"
             "禁止 PE/PB/PS、股息率、两融、Shibor/国债、营收利润/现金流及估值类图表。"
         )
     if any(token in section_name for token in ("基本面", "估值")):
@@ -159,7 +159,7 @@ def section_writing_guide(section_name: str, *, section_kind: str | None = None)
     if "经营质量" in section_name or "财务" in section_name:
         guide += peer_compare_table_writing_rule() + (
             "系统会机械插入「表·同行横向坐标」「表·三表核心指标对比」等竖表。"
-            "盈利/现金流/营运效率数值由机械表展示，正文只写 MD&A 对照与独立判断。"
+            "盈利/现金流/营运效率可用 Markdown 表格或机械表展示，正文写 MD&A 对照与独立判断。"
         )
     if any(token in section_name for token in ("宏观", "利率", "Shibor", "国债")):
         guide += (

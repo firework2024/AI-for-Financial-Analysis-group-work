@@ -1,7 +1,7 @@
 from finagent.section_validation import factor_snapshot_table_section_review
 
 
-def test_factor_snapshot_review_flags_disabled_mechanical_heading():
+def test_factor_snapshot_review_allows_llm_markdown_tables():
     sections = {
         "经营质量分析": (
             "**核心结论**\n\n"
@@ -10,7 +10,7 @@ def test_factor_snapshot_review_flags_disabled_mechanical_heading():
         )
     }
     feedback = factor_snapshot_table_section_review(sections)
-    assert "经营质量分析" in feedback
+    assert not feedback
 
 
 def test_factor_snapshot_review_ignores_clean_multi_year_table():

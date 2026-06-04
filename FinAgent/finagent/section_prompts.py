@@ -298,8 +298,8 @@ def operating_quality_writer_guidance() -> str:
     return (
         "本章节写经营与基本面：优先 annual_financial_analysis、pit、MD&A（基本业务、业务发展、行业与勾稽 crosswalk）"
         "与同行经营类对比；正文结构自由，不必固定八段模板。"
-        "盈利、现金流、营运效率多年对比（pit_financials_table / financial_years）用连贯句子或 - 列表写入，禁止自画 Markdown 表格。"
-        "小标题可按主题组织（如利润表、现金流与营运效率）；数值对比表由系统机械插入，正文只写解读与 MD&A 对照。"
+        "盈利、现金流、营运效率多年对比（pit_financials_table / financial_years）可用 Markdown 表格或连贯句子/列表写入。"
+        "小标题可按主题组织（如利润表、现金流与营运效率）；系统亦会机械插入对比表，正文写解读与 MD&A 对照。"
         "同行横向对比数值只引用系统「表·同行横向坐标」，正文一句定性即可。"
         "禁止写 PE/PB/PS、股息率、估值分位或估值匹配判断。"
     )
