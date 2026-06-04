@@ -48,6 +48,7 @@ from .section_validation import (
     validation_agent_system_prompt,
     validation_markdown,
 )
+from .table_analysis import analyze_table_duplicates, apply_table_dedup
 from .stock_utils import default_as_of, normalize_stock_code, resolve_as_of, to_order_book_id
 from .visual_placement import resolve_section_visuals
 
@@ -250,6 +251,11 @@ def run_multi_agent(options: MultiAgentOptions) -> dict[str, Any]:
 
     # ── 第 7 步：修订章节 ──
     section("步骤 7/8：修订 Agent — 根据验证反馈改写章节")
+    step("执行 table_dedup（保留 info_score 更高的表）")
+    table_dup = analyze_table_duplicates(sections, plan=plan)
+    sections = apply_table_dedup(sections, table_dup)
+    if isinstance(validation, dict):
+        validation["table_duplicate_analysis"] = table_dup
     step("执行 revise_sections_with_validation")
     sections = revise_sections_with_validation(plan=plan, data=data, charts=charts, sections=sections, validation=validation)
     for name, content in sections.items():

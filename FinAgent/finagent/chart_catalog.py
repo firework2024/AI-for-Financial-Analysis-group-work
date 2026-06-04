@@ -147,6 +147,8 @@ DISABLED_PLACEMENT_TABLE_KEYS = frozenset(
         # TTM 因子快照与经营质量章 LLM 多年宽表（pit/三表）重复，改由作者自写
         "latest_quality_snapshot",
         "latest_liquidity_snapshot",
+        # 期末余额/买卖与「两融区间变动」合并展示，避免与 margin_period_table 重复
+        "margin_snapshot_table",
     }
 )
 
@@ -228,7 +230,7 @@ TABLE_SUBHEADING_HINTS: dict[str, tuple[str, ...]] = {
     "latest_valuation_snapshot": ("估值", "市盈率", "市净率", "PE", "PB", "PS"),
     "latest_liquidity_snapshot": ("偿债", "流动比率", "速动", "负债"),
     "margin_snapshot_table": ("融资", "两融", "融券", "杠杆", "融资融券"),
-    "margin_period_table": ("融资余额", "近两周", "攀升", "两融", "变动", "区间"),
+    "margin_period_table": ("融资余额", "近两周", "攀升", "两融", "变动", "区间", "融券", "融资买入", "融资融券"),
     "share_structure_table": ("股东", "股本", "流通", "自由流通", "限售"),
     "trading_activity_table": ("成交", "换手", "成交额", "资金流向", "活跃度", "放量"),
     "funding_cost_table": ("分红", "资金成本", "Shibor", "国债", "股息", "无风险"),
@@ -273,7 +275,6 @@ SECTION_TABLE_LIMITS: dict[str, int] = {
 DEFAULT_SECTION_TABLE_CANDIDATES: dict[str, tuple[str, ...]] = {
     "经营质量分析": ("industry_operating_peer_compare_table",),
     "资金与交易结构": (
-        "margin_snapshot_table",
         "margin_period_table",
         "trading_activity_table",
         "share_structure_table",

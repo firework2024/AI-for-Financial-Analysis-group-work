@@ -222,6 +222,7 @@ def _format_margin_snapshot_table(data: dict[str, Any]) -> list[str]:
 
 
 def _format_margin_period_table(data: dict[str, Any]) -> list[str]:
+    """期初/期末/变动横表，并含期末日买卖与区间峰值（合并原融资融券快照）。"""
     block = data.get("securities_margin")
     if not isinstance(block, dict):
         return []
@@ -230,33 +231,70 @@ def _format_margin_period_table(data: dict[str, Any]) -> list[str]:
         return []
     first = rows_raw[0] if isinstance(rows_raw[0], dict) else {}
     last = rows_raw[-1] if isinstance(rows_raw[-1], dict) else {}
+    start_label = str(first.get("date") or "—")
+    end_label = str(last.get("date") or "—")
+
+    def _period_row(
+        label: str,
+        start_val: Any,
+        end_val: Any,
+        *,
+        pct_from: float | None = None,
+        value_fmt=fmt_money,
+    ) -> tuple[str, str, str, str, str]:
+        start_text = value_fmt(start_val) if start_val is not None else "—"
+        end_text = value_fmt(end_val) if end_val is not None else "—"
+        if start_val is not None and end_val is not None:
+            try:
+                change = float(end_val) - float(start_val)
+            except (TypeError, ValueError):
+                change = None
+        else:
+            change = None
+        change_text = value_fmt(change) if change is not None else "—"
+        if pct_from is not None and change is not None and pct_from:
+            pct_text = f"{change / pct_from * 100:.2f}%"
+        else:
+            pct_text = "—"
+        return label, start_text, end_text, change_text, pct_text
+
+    def _append_period_metric(
+        label: str,
+        key: str,
+        *,
+        value_fmt=fmt_money,
+    ) -> None:
+        start_val = _safe_float(first.get(key))
+        end_val = _safe_float(last.get(key))
+        if start_val is None and end_val is None:
+            return
+        table_rows.append(
+            _period_row(label, start_val, end_val, pct_from=start_val, value_fmt=value_fmt)
+        )
+
     mb0 = _safe_float(first.get("margin_balance"))
     mb1 = _safe_float(last.get("margin_balance"))
     if mb0 is None or mb1 is None:
         return []
-    change = mb1 - mb0
-    pct = (change / mb0 * 100) if mb0 else None
-    table_rows: list[tuple[str, str]] = [
-        ("区间起始", str(first.get("date") or "—")),
-        ("区间结束", str(last.get("date") or "—")),
-        ("融资余额（期初）", fmt_money(mb0)),
-        ("融资余额（期末）", fmt_money(mb1)),
-        ("融资余额变动", fmt_money(change)),
-        ("变动幅度", f"{pct:.2f}%" if pct is not None else "—"),
+
+    table_rows: list[tuple[str, str, str, str, str]] = [
+        _period_row("融资余额", mb0, mb1, pct_from=mb0),
     ]
     sb0 = _safe_float(first.get("short_balance"))
     sb1 = _safe_float(last.get("short_balance"))
     if sb0 is not None and sb1 is not None:
-        sb_change = sb1 - sb0
-        sb_pct = (sb_change / sb0 * 100) if sb0 else None
-        table_rows.extend(
-            [
-                ("融券余额（期初）", fmt_money(sb0)),
-                ("融券余额（期末）", fmt_money(sb1)),
-                ("融券余额变动", fmt_money(sb_change)),
-                ("融券变动幅度", f"{sb_pct:.2f}%" if sb_pct is not None else "—"),
-            ]
-        )
+        table_rows.append(_period_row("融券余额", sb0, sb1, pct_from=sb0))
+    tb0 = _safe_float(first.get("total_balance"))
+    tb1 = _safe_float(last.get("total_balance"))
+    if tb0 is not None and tb1 is not None:
+        table_rows.append(_period_row("两融余额", tb0, tb1, pct_from=tb0))
+    elif tb1 is not None:
+        table_rows.append(_period_row("两融余额", None, tb1))
+
+    _append_period_metric("融资买入额", "buy_on_margin_value")
+    _append_period_metric("融资偿还额", "margin_repayment")
+    _append_period_metric("融券余量", "short_balance_quantity", value_fmt=fmt_num)
+
     peak_date = None
     peak_buy = None
     for item in rows_raw:
@@ -269,8 +307,17 @@ def _format_margin_period_table(data: dict[str, Any]) -> list[str]:
             peak_buy = buy
             peak_date = item.get("date")
     if peak_buy is not None:
-        table_rows.append(("融资买入峰值", f"{fmt_money(peak_buy)}（{peak_date}）"))
-    return _markdown_table(("指标", "数值"), table_rows)
+        peak_text = f"{fmt_money(peak_buy)}（{peak_date}）" if peak_date else fmt_money(peak_buy)
+        table_rows.append(("融资买入峰值（区间）", "—", peak_text, "—", "—"))
+
+    headers = (
+        "指标",
+        f"期初（{start_label}）",
+        f"期末（{end_label}）",
+        "变动",
+        "变动幅度",
+    )
+    return _markdown_table(headers, table_rows)
 
 
 def _format_share_structure_table(data: dict[str, Any]) -> list[str]:

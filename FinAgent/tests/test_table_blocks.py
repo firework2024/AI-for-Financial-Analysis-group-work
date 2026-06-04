@@ -25,13 +25,19 @@ def _capital_section_data():
                     "date": "2026-05-13",
                     "margin_balance": 19_062_000_000,
                     "short_balance": 1_310_000_000,
+                    "total_balance": 20_372_000_000,
                     "buy_on_margin_value": 500_000_000,
+                    "margin_repayment": 480_000_000,
+                    "short_balance_quantity": 95_000,
                 },
                 {
                     "date": "2026-05-28",
                     "margin_balance": 20_048_000_000,
                     "short_balance": 1_630_000_000,
+                    "total_balance": 21_678_000_000,
                     "buy_on_margin_value": 1_466_000_000,
+                    "margin_repayment": 1_200_000_000,
+                    "short_balance_quantity": 108_400,
                 },
             ]
         },
@@ -76,9 +82,21 @@ def test_margin_period_and_share_structure_tables():
     margin = format_table_block("margin_period_table", data)
     share = format_table_block("share_structure_table", data)
     assert margin and "两融区间变动" in margin
+    assert "期初（" in margin and "期末（" in margin
     assert "变动幅度" in margin
+    assert "融资余额" in margin
+    assert "两融余额" in margin
+    assert "融资买入额" in margin
+    assert "期末日" not in margin
+    assert "5.00 亿" in margin or "5 亿" in margin
     assert share and "股本结构快照" in share
     assert "自由流通占比" in share
+
+
+def test_margin_snapshot_table_is_disabled():
+    data = _capital_section_data()
+    assert format_table_block("margin_snapshot_table", data) is None
+    assert table_data_available("margin_snapshot_table", data) is False
 
 
 def test_funding_cost_table():

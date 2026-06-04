@@ -16,6 +16,7 @@ from .narrative_plan import (
 )
 from .peer_analysis import _dedupe
 from .report_writing import peer_compare_table_writing_rule
+from .table_analysis import analyze_table_duplicates, apply_table_dedup, duplicate_table_review
 
 CHART_QUALITY_REQUIREMENTS = [
     "每张图必须回答一个明确的分析问题，不画冗余或纯信息重复的图。",
@@ -38,6 +39,8 @@ TABLE_QUALITY_REQUIREMENTS = [
     peer_compare_table_writing_rule(),
     "系统机械插入的「表·同行横向坐标」「表·行业横向坐标」「表·行业估值对比」等不得再在正文逐条重复数值；正文只保留一句定性判断。",
     "禁止在正文重复系统「表·xxx」机械表内容；同一表头不得跨章重复出现。",
+    "必须依据 local_table_duplicate_analysis.table_inventory 识别每张表的结构（vertical/horizontal/wide）与 info_score；"
+    "对 duplicate_groups 中内容重复的表，只保留 info_score 最高且位于 owner 章节的一张，其余在 rewrite_sections 中要求整段删除。",
 ]
 
 SECTION_DEDUP_REQUIREMENTS = [
@@ -456,81 +459,6 @@ def section_scope_review(
                     keep_in=macro_owner,
                     note=f"「{section_name}」不应复述 Shibor/国债分析（命中 {hits} 处），宏观内容保留在《{macro_owner}》。",
                 )
-
-    return {"section_feedback": section_feedback, "structural_feedback": structural_feedback}
-
-
-def duplicate_table_review(
-    sections: dict[str, str],
-    *,
-    plan: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    section_feedback: dict[str, list[str]] = {}
-    structural_feedback: list[dict[str, Any]] = []
-    caption_map: dict[str, list[str]] = {}
-    header_map: dict[str, list[str]] = {}
-
-    for section_name, content in sections.items():
-        text = str(content or "")
-        for caption in mechanical_table_captions(text):
-            caption_map.setdefault(caption, []).append(section_name)
-        captions_in_section = mechanical_table_captions(text)
-        if len(captions_in_section) != len(set(captions_in_section)):
-            dupes = {c for c in captions_in_section if captions_in_section.count(c) > 1}
-            note = f"本章重复出现相同机械表标题：{', '.join(sorted(dupes))}；请只保留一张或删去重复块。"
-            section_feedback.setdefault(section_name, []).append(note)
-        for table in markdown_tables(text):
-            fp = _table_header_fingerprint(table)
-            if len(fp) < 8:
-                continue
-            body = _table_text(table)
-            if not any(token in body for token in ("融资余额", "经营现金流", "归母净利润", "shibor", "2025-", "2026-")):
-                continue
-            header_map.setdefault(fp, []).append(section_name)
-
-    for caption, owners in caption_map.items():
-        unique = list(dict.fromkeys(owners))
-        if len(unique) <= 1:
-            continue
-        keep = next((name for name in sections if name in unique), unique[0])
-        for section_name in unique:
-            if section_name == keep:
-                continue
-            note = f"「表·{caption}」已在《{keep}》出现；请从《{section_name}》删除该表及重复解读，只保留 owner 章节。"
-            section_feedback.setdefault(section_name, []).append(note)
-            structural_feedback.append(
-                {
-                    "section": section_name,
-                    "issue": "duplicate_table",
-                    "keep_in": keep,
-                    "rewrite_sections": [section_name],
-                    "suggestion": note,
-                }
-            )
-
-    for fp, owners in header_map.items():
-        unique = list(dict.fromkeys(owners))
-        if len(unique) <= 1:
-            continue
-        keep = next((name for name in sections if name in unique), unique[0])
-        for section_name in unique:
-            if section_name == keep:
-                continue
-            preview = fp if len(fp) <= 60 else fp[:60] + "…"
-            note = (
-                f"《{section_name}》与《{keep}》存在相同表头 Markdown 表（{preview}）；"
-                f"请删除《{section_name}》中的重复表，数据保留在《{keep}》。"
-            )
-            section_feedback.setdefault(section_name, []).append(note)
-            structural_feedback.append(
-                {
-                    "section": section_name,
-                    "issue": "duplicate_table",
-                    "keep_in": keep,
-                    "rewrite_sections": [section_name],
-                    "suggestion": note,
-                }
-            )
 
     return {"section_feedback": section_feedback, "structural_feedback": structural_feedback}
 
@@ -1021,7 +949,11 @@ def local_validation(
     )
     overlap_review = section_overlap_review(sections, plan=plan)
     scope_review = section_scope_review(sections, plan=plan)
-    duplicate_review = duplicate_table_review(sections, plan=plan)
+    table_dup_analysis = analyze_table_duplicates(sections, plan=plan)
+    duplicate_review = {
+        "section_feedback": table_dup_analysis.get("section_feedback") or {},
+        "structural_feedback": table_dup_analysis.get("structural_feedback") or [],
+    }
     section_feedback = merge_section_feedback(
         {},
         industry_feedback,
@@ -1060,6 +992,7 @@ def local_validation(
         "stock_relevance_review": relevance_review,
         "section_narrative_review": narrative_review,
         "final_decision": "revise" if action_items or unsupported or structural_feedback else "pass",
+        "table_duplicate_analysis": table_dup_analysis,
         "refinement_requests": {
             "refresh_data": False,
             "refresh_charts": len(charts) < 8 or bool(chart_review.get("redraw")),
@@ -1157,8 +1090,12 @@ def validation_agent_system_prompt() -> str:
         + "\n\n## 章节 scope 硬约束（重点）\n"
         + _numbered_rules(SECTION_SCOPE_REQUIREMENTS)
         + "\n\n## 跨章重复表（重点）\n"
-        "逐章检查是否存在与其它章相同表头或相同「表·标题」的 Markdown 表；"
-        "若 local_duplicate_table_review 有命中，必须在 rewrite_sections 中要求删除重复表，只保留 owner 章节。"
+        "先阅读 local_table_duplicate_analysis：table_inventory 列出每张表的结构 layout、来源 source、info_score；"
+        "duplicate_groups 已按内容相似度聚类并给出 keep_id（保留信息量更大的表）。\n"
+        "你必须：1) 核对表结构分类是否合理；2) 确认 duplicate_groups 的保留/删除决策；"
+        "3) 在 structural_feedback 中输出 issue=duplicate_table，并点名 delete_table_id 对应章节需删表；"
+        "4) 若多张表内容重复，只保留 info_score 最高的一张，不因 source（mechanical/llm）偏袒。"
+        "若 local_duplicate_table_review 有命中，必须在 rewrite_sections 中要求删除重复表，只保留 keep_section。"
         + "\n\n## 整体报告质量要求\n"
         "除了逐图审核外，你还需要从整体视角评估报告的可读性和逻辑连贯性：\n"
         "1. **图文布局**：图表不应全部挤在「可视化」章节，应尽量分散到对应分析段落附近（例如在量价分析段插入价格图，在资金流段插入资金图）。\n"
@@ -1200,6 +1137,7 @@ def build_validation_llm_user_payload(
         "mda_integration_requirements": MDA_INTEGRATION_REQUIREMENTS,
         "local_overlap_review": section_overlap_review(sections, plan=plan),
         "local_scope_review": section_scope_review(sections, plan=plan),
+        "local_table_duplicate_analysis": analyze_table_duplicates(sections, plan=plan),
         "local_duplicate_table_review": duplicate_table_review(sections, plan=plan),
         "local_stock_relevance_review": stock_relevance_review(data=data, sections=sections),
         "charts": charts,

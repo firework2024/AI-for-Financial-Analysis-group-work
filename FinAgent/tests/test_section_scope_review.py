@@ -43,7 +43,13 @@ def test_duplicate_margin_table_across_macro_and_capital():
         "资金与交易结构": f"**核心结论**\n\n{table}",
         "宏观利率背景": f"**核心结论**\n\n{table}\n\nShibor 1.32%。",
     }
-    review = duplicate_table_review(sections)
+    plan = {
+        "sections": [
+            {"name": "宏观利率背景", "kind": "macro"},
+            {"name": "资金与交易结构", "kind": "capital"},
+        ]
+    }
+    review = duplicate_table_review(sections, plan=plan)
     assert review["section_feedback"].get("宏观利率背景")
 
 
