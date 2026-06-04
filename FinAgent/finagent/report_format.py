@@ -197,7 +197,7 @@ def polish_field_refs(text: str) -> str:
             return token
         return f"`{token}`"
 
-    result = re.sub(rf"(?<![`/\w])({field}|{quarter})(?![`\w])", _wrap_token, result, flags=re.IGNORECASE)
+    result = re.sub(rf"(?<![`/\w])({field}|{quarter})(?![`\w.])", _wrap_token, result, flags=re.IGNORECASE)
     result = re.sub(r"[，,]\s*[，,]", "，", result)
     result = re.sub(r"\n{3,}", "\n\n", result)
     return result.strip()

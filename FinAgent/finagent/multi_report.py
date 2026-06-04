@@ -479,15 +479,29 @@ def render_multi_markdown(
     )
     lines.extend(markdown_section("免责声明", anchors["免责声明"], DISCLAIMER))
     markdown = "\n".join(lines)
-    return _fix_legacy_chart_paths(markdown)
+    return _fix_legacy_chart_paths(markdown, charts)
 
 
-def _fix_legacy_chart_paths(text: str) -> str:
+def _fix_legacy_chart_paths(text: str, charts: dict[str, str] | None = None) -> str:
+    charts = charts or {}
+
+    def _resolve_chart_url(url: str) -> str:
+        cleaned = str(url or "").strip().replace("`", "")
+        if cleaned.startswith(("http://", "https://", "data:")):
+            return cleaned
+        if cleaned.startswith("charts/"):
+            return cleaned
+        match = re.match(r"^([a-zA-Z0-9_]+)\.(png|jpe?g|gif|webp)$", cleaned, re.IGNORECASE)
+        if match:
+            key = match.group(1)
+            mapped = charts.get(key)
+            if mapped:
+                return _normalize_chart_path(mapped)
+        return _normalize_chart_path(cleaned)
+
     def repl(match: re.Match[str]) -> str:
         alt, url = match.group(1), match.group(2)
-        if url.startswith(("http://", "https://", "data:")):
-            return match.group(0)
-        return f"![{alt}]({_normalize_chart_path(url)})"
+        return f"![{alt}]({_resolve_chart_url(url)})"
 
     return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", repl, text)
 
@@ -1860,6 +1874,8 @@ def normalize_output_relative_path(path: str | None) -> str:
     for prefix in ("FinAgent/outputs/", "outputs/"):
         if stripped.startswith(prefix):
             return stripped[len(prefix) :]
+    if stripped.startswith("charts/"):
+        return stripped
     marker = "outputs/"
     idx = stripped.lower().rfind(marker)
     if idx >= 0:

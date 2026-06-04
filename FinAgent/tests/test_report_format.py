@@ -7,6 +7,19 @@ from finagent.report_writing import FUNDAMENTAL_NARRATIVE_SECTION
 from finagent.report_format import build_report_toc, clean_chart_prose, normalize_section_text, polish_field_refs, render_toc_markdown, section_anchor
 
 
+def test_polish_field_refs_preserves_markdown_image_urls():
+    text = "![均线走势](charts/600519_multi_agent_report/moving_averages.png)"
+    out = polish_field_refs(text)
+    assert out == text
+
+
+def test_polish_field_refs_preserves_bare_chart_filename_in_image():
+    text = "![均线](moving_averages.png)"
+    out = polish_field_refs(text)
+    assert "![均线](moving_averages.png)" in out
+    assert "`moving_averages`.png" not in out
+
+
 def test_polish_field_refs_removes_redundant_metadata():
     text = (
         "根据dividend_recent数据，目标股票（300750.XSHE）在2025年第四季度（quarter为2025q4）"

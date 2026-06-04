@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from finagent.multi_report import _fix_legacy_chart_paths, normalize_output_relative_path
 from finagent.web.server import _find_output_file, _normalize_output_relative_path
 
 
@@ -10,6 +11,20 @@ def test_normalize_output_relative_path_strips_prefix():
         _normalize_output_relative_path("/root/FinAgent/outputs/600064_multi_agent_report.html")
         == "600064_multi_agent_report.html"
     )
+
+
+def test_normalize_output_relative_path_preserves_charts_prefix():
+    path = "charts/600519_multi_agent_report/moving_averages.png"
+    assert normalize_output_relative_path(path) == path
+    assert _normalize_output_relative_path(path) == path
+
+
+def test_fix_legacy_chart_paths_resolves_broken_markdown_urls():
+    charts = {"moving_averages": "moving_averages.png"}
+    text = "![均线](`moving_averages`.png)"
+    fixed = _fix_legacy_chart_paths(text, charts)
+    assert "`" not in fixed.split("](")[1]
+    assert "moving_averages.png" in fixed
 
 
 def test_find_output_file_supports_nested_chart_paths():

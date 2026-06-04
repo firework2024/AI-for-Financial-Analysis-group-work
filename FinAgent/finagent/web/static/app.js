@@ -366,10 +366,45 @@ function escapeHtml(text) {
 
 const FIGURE_PLACEHOLDER = "FINAGENT_FIGURE_";
 
-function extractMarkdownFigures(text) {
+function multiReportChartStem(report) {
+  const fn =
+    report?._ui?.filename ||
+    report?.meta?.output_json ||
+    report?.meta?.output_markdown ||
+    "";
+  const base = String(fn).split(/[/\\]/).pop() || "";
+  const stem = base.replace(/\.(json|md|html)$/i, "");
+  if (stem) return stem;
+  const code = report?.meta?.stock_code || report?.data?.stock_code || "";
+  return code ? `${code}_multi_agent_report` : "multi_agent_report";
+}
+
+function resolveChartImagePath(rawPath, charts, reportStem) {
+  let path = String(rawPath || "").trim().replace(/`/g, "");
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = normalizeFilePath(path);
+  if (normalized.includes("/")) return normalized;
+  const match = path.match(/^([a-z0-9_]+)\.(png|jpe?g|gif|webp)$/i);
+  if (match) {
+    const key = match[1];
+    const mapped = charts?.[key];
+    if (mapped && String(mapped).includes("/")) {
+      return normalizeFilePath(mapped);
+    }
+    if (reportStem) {
+      return `charts/${reportStem}/${key}.${match[2]}`;
+    }
+  }
+  return normalized;
+}
+
+function extractMarkdownFigures(text, resolvePath = null) {
   const figures = [];
   const stripped = String(text).replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, rawPath) => {
-    figures.push({ alt: String(alt || "图表").trim(), path: String(rawPath || "").trim() });
+    const raw = String(rawPath || "").trim();
+    const path = typeof resolvePath === "function" ? resolvePath(raw) : raw;
+    figures.push({ alt: String(alt || "图表").trim(), path });
     return `\n\n${FIGURE_PLACEHOLDER}${figures.length - 1}\n\n`;
   });
   return { stripped, figures };
@@ -403,7 +438,7 @@ function polishFieldRefs(text) {
   result = result.replace(new RegExp(`\`?(${field})\`?\\s*字段`, "gi"), "");
   result = result.replace(new RegExp(`基于米筐数据\\s*\`?(${field})\`?\\s*字段[，,]?\\s*`, "gi"), "基于米筐数据，");
   result = result.replace(new RegExp(`JSON\\s*中的\\s*\`?(${field})\`?\\s*`, "gi"), "");
-  result = result.replace(new RegExp(`(?<![\`/\\w])(${field}|${quarter})(?![\`\\w])`, "gi"), (_m, token) => {
+  result = result.replace(new RegExp(`(?<![\`/\\w])(${field}|${quarter})(?![\`\\w.])`, "gi"), (_m, token) => {
     if (!token.includes("_") && !new RegExp(`^${quarter}$`, "i").test(token)) return token;
     return `\`${token}\``;
   });
@@ -434,14 +469,15 @@ function enhanceReportTables(html) {
   });
 }
 
-function renderMarkdown(text, charts = null) {
+function renderMarkdown(text, charts = null, reportStem = "") {
   if (!text) return "<p>暂无内容</p>";
   initMarkdownLibs();
   if (typeof marked === "undefined") {
     return escapeHtml(String(text)).replace(/\n/g, "<br>");
   }
+  const resolvePath = (raw) => resolveChartImagePath(raw, charts, reportStem);
   const cleaned = cleanChartProse(polishFieldRefs(String(text)));
-  const { stripped, figures } = extractMarkdownFigures(cleaned);
+  const { stripped, figures } = extractMarkdownFigures(cleaned, resolvePath);
   let html = marked.parse(stripped.trim() || " ");
   html = injectFigurePlaceholders(html, figures);
   html = fixImagePaths(html);
@@ -1254,6 +1290,8 @@ function renderMultiReport(report, anchors = {}) {
   const meta = report.meta || {};
   const dataSummary = report.data_summary || {};
   const reportData = report.data || {};
+  const charts = report.charts || {};
+  const chartStem = multiReportChartStem(report);
 
   const validationClass = meta.validation_passed ? "pass" : "fail";
   const validationText = meta.validation_passed
@@ -1262,7 +1300,11 @@ function renderMultiReport(report, anchors = {}) {
 
   const sectionBlocks = sectionOrder
     .map((name) =>
-      cardSection(name, `<div class="prose">${renderMarkdown(sections[name] || "")}</div>`, anchors[name])
+      cardSection(
+        name,
+        `<div class="prose">${renderMarkdown(sections[name] || "", charts, chartStem)}</div>`,
+        anchors[name]
+      )
     )
     .join("");
 
@@ -1273,7 +1315,7 @@ function renderMultiReport(report, anchors = {}) {
     executiveSummary
       ? cardSection(
           "执行摘要",
-          `<div class="prose prose-lead">${renderMarkdown(executiveSummary)}</div>`,
+          `<div class="prose prose-lead">${renderMarkdown(executiveSummary, charts, chartStem)}</div>`,
           anchors["执行摘要"]
         )
       : "",
